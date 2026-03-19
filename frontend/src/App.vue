@@ -1,31 +1,60 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
-type HealthResponse = {
+type StepResult = {
+  name?: string
   status?: string
+  output?: Record<string, unknown>
+}
+
+type WorkflowRunResponse = {
+  workflow_id?: string
+  run_id?: string
+  status?: string
+  steps?: StepResult[]
+  outputs?: Record<string, unknown>
+  timestamp?: string
   [key: string]: unknown
 }
 
 const loading = ref(false)
 const errorMessage = ref('')
 const resultText = ref('')
+const topic = ref('写一个关于小猫冒险的故事')
 
 const apiBaseUrl =
   (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() ||
   'http://127.0.0.1:8004'
 
-async function pingBackend() {
+const canSubmit = computed(() => topic.value.trim().length > 0 && !loading.value)
+
+async function runWorkflow() {
   loading.value = true
   errorMessage.value = ''
   resultText.value = ''
 
+  const payload = {
+    workflow_id: 'storybook-demo',
+    input: {
+      topic: topic.value.trim(),
+    },
+    steps: [{ name: 'story' }],
+  }
+
   try {
-    const response = await fetch(`${apiBaseUrl}/health`)
+    const response = await fetch(`${apiBaseUrl}/v1/workflow/run`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`)
     }
 
-    const data: HealthResponse = await response.json()
+    const data: WorkflowRunResponse = await response.json()
     resultText.value = JSON.stringify(data, null, 2)
   } catch (error) {
     errorMessage.value =
@@ -40,10 +69,21 @@ async function pingBackend() {
   <main class="page">
     <section class="card">
       <h1>Jinsie Multimodal Frontend</h1>
-      <p class="desc">Day57 最小闭环：前端调用项目四后端 health 接口。</p>
+      <p class="desc">
+        //前端调用项目四后端 workflow 接口并展示结果。
+      </p>
 
-      <button class="btn" :disabled="loading" @click="pingBackend">
-        {{ loading ? '请求中...' : 'Ping Backend /health' }}
+      <label class="label" for="topic">Topic</label>
+      <textarea
+        id="topic"
+        v-model="topic"
+        class="textarea"
+        rows="5"
+        placeholder="请输入一个主题，例如：写一个关于小猫冒险的故事"
+      />
+
+      <button class="btn" :disabled="!canSubmit" @click="runWorkflow">
+        {{ loading ? '请求中...' : 'Run Workflow' }}
       </button>
 
       <p v-if="errorMessage" class="error">
@@ -87,7 +127,34 @@ h1 {
   font-size: 15px;
 }
 
+.label {
+  display: block;
+  margin-bottom: 8px;
+  color: #111827;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #d1d5db;
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 15px;
+  line-height: 1.5;
+  resize: vertical;
+  background: #ffffff;
+  color: #111827;
+}
+
+.textarea:focus {
+  outline: none;
+  border-color: #111827;
+}
+
 .btn {
+  margin-top: 16px;
   border: none;
   border-radius: 10px;
   padding: 12px 18px;
