@@ -42,6 +42,10 @@ class WorkflowRunner:
     Phase 1 provider dispatch:
     - route video-related generation through provider abstraction
     - reserve mock/kling/jimeng provider entrypoints for future integration
+
+    Phase 1 session/history:
+    - keep minimal in-memory session store
+    - return session memory summary in response
     """
 
     def __init__(self) -> None:
@@ -54,6 +58,7 @@ class WorkflowRunner:
             "subtitles": self._run_subtitles,
             "render_plan": self._run_render_plan,
         }
+        self._session_store: Dict[str, Dict[str, Any]] = {}
 
     def run(self, req: WorkflowRunRequest) -> WorkflowRunResponse:
         run_id = f"run_{uuid4().hex[:12]}"
@@ -63,6 +68,8 @@ class WorkflowRunner:
             run_id=run_id,
             input=req.input,
         )
+
+        previous_session_data = self._get_session_data(req.session_id)
 
         step_results: List[StepResult] = []
         aggregated_outputs: Dict[str, Any] = {}
@@ -79,6 +86,13 @@ class WorkflowRunner:
             )
             aggregated_outputs[name] = output
 
+        session_memory_summary = self._build_session_memory_summary(
+            req.session_id,
+            previous_session_data,
+            aggregated_outputs,
+        )
+        self._save_session_data(req, aggregated_outputs)
+
         return WorkflowRunResponse(
             workflow_id=req.workflow_id,
             session_id=req.session_id,
@@ -86,8 +100,62 @@ class WorkflowRunner:
             status="COMPLETED",
             steps=step_results,
             outputs=aggregated_outputs,
+            session_memory_summary=session_memory_summary,
             timestamp=WorkflowRunResponse.now_timestamp(),
         )
+
+    def _get_session_data(self, session_id: Optional[str]) -> Optional[Dict[str, Any]]:
+        if not session_id:
+            return None
+        return self._session_store.get(session_id)
+
+    def _save_session_data(
+        self, req: WorkflowRunRequest, outputs: Dict[str, Any]
+    ) -> None:
+        if not req.session_id:
+            return
+
+        self._session_store[req.session_id] = {
+            "workflow_id": req.workflow_id,
+            "last_input": req.input.model_dump(),
+            "last_story": outputs.get("story") or {},
+            "last_storyboard": outputs.get("storyboard") or {},
+            "last_render_plan": outputs.get("render_plan") or {},
+        }
+
+    def _build_session_memory_summary(
+        self,
+        session_id: Optional[str],
+        previous_session_data: Optional[Dict[str, Any]],
+        outputs: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        if not session_id:
+            return {
+                "enabled": False,
+                "session_id": None,
+                "has_previous_session": False,
+            }
+
+        current_story = outputs.get("story") or {}
+        current_storyboard = outputs.get("storyboard") or {}
+
+        summary: Dict[str, Any] = {
+            "enabled": True,
+            "session_id": session_id,
+            "has_previous_session": previous_session_data is not None,
+            "current_story_title": current_story.get("title"),
+            "current_scene_count": current_storyboard.get("scene_count"),
+        }
+
+        if previous_session_data is not None:
+            last_input = previous_session_data.get("last_input") or {}
+            last_story = previous_session_data.get("last_story") or {}
+            last_storyboard = previous_session_data.get("last_storyboard") or {}
+            summary["previous_topic"] = last_input.get("topic")
+            summary["previous_story_title"] = last_story.get("title")
+            summary["previous_scene_count"] = last_storyboard.get("scene_count")
+
+        return summary
 
     def _scene_count(self, duration_sec: int) -> int:
         if duration_sec <= 30:
