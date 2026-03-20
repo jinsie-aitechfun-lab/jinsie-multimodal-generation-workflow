@@ -16,6 +16,10 @@ class UnknownStepError(Exception):
     pass
 
 
+class UnknownVideoProviderError(Exception):
+    pass
+
+
 @dataclass(frozen=True)
 class StepContext:
     workflow_id: str
@@ -34,6 +38,10 @@ class WorkflowRunner:
     Phase 1 quality refinement:
     - generate more natural Chinese story text
     - produce non-duplicated storyboard scenes
+
+    Phase 1 provider dispatch:
+    - route video-related generation through provider abstraction
+    - reserve mock/kling/jimeng provider entrypoints for future integration
     """
 
     def __init__(self) -> None:
@@ -127,6 +135,12 @@ class WorkflowRunner:
         }
         return mapping.get(character_style.lower(), character_style)
 
+    def _normalized_video_provider(self, provider: str) -> str:
+        value = provider.strip().lower()
+        if not value:
+            return "mock"
+        return value
+
     def _build_story_paragraphs(self, ctx: StepContext) -> List[str]:
         topic = ctx.input.topic.strip() or "一个温暖的童话故事"
         audience_label = self._audience_label(ctx.input.audience)
@@ -215,6 +229,214 @@ class WorkflowRunner:
             },
         ]
         return base[:scene_count]
+
+    def _build_video_prompt_base(
+        self, ctx: StepContext, scene: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        return {
+            "scene_id": scene.get("scene_id"),
+            "scene_title": scene.get("scene_title"),
+            "visual_description": str(scene.get("visual_description", "")),
+            "narration": str(scene.get("narration", "")),
+            "duration_sec": scene.get("duration_sec"),
+            "shot_type": scene.get("shot_type"),
+            "transition": scene.get("transition"),
+            "visual_style": ctx.input.visual_style,
+            "tone": ctx.input.tone,
+            "character_style": ctx.input.character_style,
+            "provider": self._normalized_video_provider(ctx.input.video_provider),
+        }
+
+    def _build_video_provider_prompts(
+        self, ctx: StepContext, scenes: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        provider = self._normalized_video_provider(ctx.input.video_provider)
+
+        if provider == "mock":
+            return self._build_mock_video_prompts(ctx, scenes)
+        if provider == "kling":
+            return self._build_kling_video_prompts(ctx, scenes)
+        if provider == "jimeng":
+            return self._build_jimeng_video_prompts(ctx, scenes)
+
+        raise UnknownVideoProviderError(f"Unknown video provider: {provider}")
+
+    def _build_mock_video_prompts(
+        self, ctx: StepContext, scenes: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        prompts: List[Dict[str, Any]] = []
+        for scene in scenes:
+            base = self._build_video_prompt_base(ctx, scene)
+            prompt = (
+                f"Create a short animated video shot in {ctx.input.visual_style} style, "
+                f"{ctx.input.tone} atmosphere, with {ctx.input.character_style} characters. "
+                f"Scene description: {base['visual_description']}. "
+                f"Narration context: {base['narration']}"
+            )
+            prompts.append(
+                {
+                    "scene_id": base["scene_id"],
+                    "scene_title": base["scene_title"],
+                    "provider": "mock",
+                    "prompt": prompt,
+                    "duration_sec": base["duration_sec"],
+                    "shot_type": base["shot_type"],
+                    "transition": base["transition"],
+                }
+            )
+
+        return {
+            "provider": "mock",
+            "mode": "placeholder",
+            "integration_status": "mock_only",
+            "prompts": prompts,
+        }
+
+    def _build_kling_video_prompts(
+        self, ctx: StepContext, scenes: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        prompts: List[Dict[str, Any]] = []
+        for scene in scenes:
+            base = self._build_video_prompt_base(ctx, scene)
+            prompts.append(
+                {
+                    "scene_id": base["scene_id"],
+                    "scene_title": base["scene_title"],
+                    "provider": "kling",
+                    "prompt": (
+                        f"[KLING] style={ctx.input.visual_style}; tone={ctx.input.tone}; "
+                        f"character={ctx.input.character_style}; shot={base['shot_type']}; "
+                        f"scene={base['visual_description']}; narration={base['narration']}"
+                    ),
+                    "duration_sec": base["duration_sec"],
+                    "shot_type": base["shot_type"],
+                    "transition": base["transition"],
+                    "api_ready": False,
+                }
+            )
+
+        return {
+            "provider": "kling",
+            "mode": "adapter_placeholder",
+            "integration_status": "pending_api_integration",
+            "prompts": prompts,
+        }
+
+    def _build_jimeng_video_prompts(
+        self, ctx: StepContext, scenes: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        prompts: List[Dict[str, Any]] = []
+        for scene in scenes:
+            base = self._build_video_prompt_base(ctx, scene)
+            prompts.append(
+                {
+                    "scene_id": base["scene_id"],
+                    "scene_title": base["scene_title"],
+                    "provider": "jimeng",
+                    "prompt": (
+                        f"[JIMENG] visual={ctx.input.visual_style}; atmosphere={ctx.input.tone}; "
+                        f"role={ctx.input.character_style}; transition={base['transition']}; "
+                        f"scene={base['visual_description']}; narration={base['narration']}"
+                    ),
+                    "duration_sec": base["duration_sec"],
+                    "shot_type": base["shot_type"],
+                    "transition": base["transition"],
+                    "api_ready": False,
+                }
+            )
+
+        return {
+            "provider": "jimeng",
+            "mode": "adapter_placeholder",
+            "integration_status": "pending_api_integration",
+            "prompts": prompts,
+        }
+
+    def _build_render_plan_by_provider(
+        self, ctx: StepContext, scenes: List[Dict[str, Any]], subtitles_enabled: bool
+    ) -> Dict[str, Any]:
+        provider = self._normalized_video_provider(ctx.input.video_provider)
+
+        if provider == "mock":
+            return self._build_mock_render_plan(ctx, scenes, subtitles_enabled)
+        if provider == "kling":
+            return self._build_kling_render_plan(ctx, scenes, subtitles_enabled)
+        if provider == "jimeng":
+            return self._build_jimeng_render_plan(ctx, scenes, subtitles_enabled)
+
+        raise UnknownVideoProviderError(f"Unknown video provider: {provider}")
+
+    def _base_asset_plan(
+        self, scenes: List[Dict[str, Any]], subtitles_enabled: bool
+    ) -> List[Dict[str, Any]]:
+        asset_plan: List[Dict[str, Any]] = []
+        for scene in scenes:
+            asset_plan.append(
+                {
+                    "scene_id": scene.get("scene_id"),
+                    "image_required": True,
+                    "video_required": True,
+                    "audio_required": True,
+                    "subtitle_required": subtitles_enabled,
+                }
+            )
+        return asset_plan
+
+    def _build_mock_render_plan(
+        self, ctx: StepContext, scenes: List[Dict[str, Any]], subtitles_enabled: bool
+    ) -> Dict[str, Any]:
+        return {
+            "provider": "mock",
+            "output_mode": ctx.input.output_mode,
+            "total_duration_sec": ctx.input.duration_sec,
+            "scene_count": len(scenes),
+            "asset_plan": self._base_asset_plan(scenes, subtitles_enabled),
+            "edit_plan": {
+                "subtitle_enabled": ctx.input.subtitle_enabled,
+                "voice_style": ctx.input.voice_style,
+                "visual_style": ctx.input.visual_style,
+                "note": (
+                    "Phase 1 render plan placeholder: "
+                    "可继续对接可灵/即梦/剪映素材整合链路"
+                ),
+            },
+        }
+
+    def _build_kling_render_plan(
+        self, ctx: StepContext, scenes: List[Dict[str, Any]], subtitles_enabled: bool
+    ) -> Dict[str, Any]:
+        return {
+            "provider": "kling",
+            "output_mode": ctx.input.output_mode,
+            "total_duration_sec": ctx.input.duration_sec,
+            "scene_count": len(scenes),
+            "asset_plan": self._base_asset_plan(scenes, subtitles_enabled),
+            "edit_plan": {
+                "subtitle_enabled": ctx.input.subtitle_enabled,
+                "voice_style": ctx.input.voice_style,
+                "visual_style": ctx.input.visual_style,
+                "adapter_status": "pending_api_integration",
+                "next_step": "connect kling video generation api",
+            },
+        }
+
+    def _build_jimeng_render_plan(
+        self, ctx: StepContext, scenes: List[Dict[str, Any]], subtitles_enabled: bool
+    ) -> Dict[str, Any]:
+        return {
+            "provider": "jimeng",
+            "output_mode": ctx.input.output_mode,
+            "total_duration_sec": ctx.input.duration_sec,
+            "scene_count": len(scenes),
+            "asset_plan": self._base_asset_plan(scenes, subtitles_enabled),
+            "edit_plan": {
+                "subtitle_enabled": ctx.input.subtitle_enabled,
+                "voice_style": ctx.input.voice_style,
+                "visual_style": ctx.input.visual_style,
+                "adapter_status": "pending_api_integration",
+                "next_step": "connect jimeng video generation api",
+            },
+        }
 
     def _run_story(self, ctx: StepContext, outputs: Dict[str, Any]) -> Dict[str, Any]:
         topic = ctx.input.topic.strip() or "一个温暖的童话故事"
@@ -306,25 +528,7 @@ class WorkflowRunner:
     ) -> Dict[str, Any]:
         storyboard = outputs.get("storyboard") or {}
         scenes = storyboard.get("scenes") or []
-
-        prompts: List[Dict[str, Any]] = []
-        for scene in scenes:
-            narration = str(scene.get("narration", ""))
-            visual_description = str(scene.get("visual_description", ""))
-            prompt = (
-                f"Create a short animated video shot in {ctx.input.visual_style} style, "
-                f"{ctx.input.tone} atmosphere, with {ctx.input.character_style} characters. "
-                f"Scene description: {visual_description}. Narration context: {narration}"
-            )
-            prompts.append(
-                {
-                    "scene_id": scene.get("scene_id"),
-                    "prompt": prompt,
-                    "provider": ctx.input.video_provider,
-                }
-            )
-
-        return {"provider": ctx.input.video_provider, "prompts": prompts}
+        return self._build_video_provider_prompts(ctx, scenes)
 
     def _run_narration(
         self, ctx: StepContext, outputs: Dict[str, Any]
@@ -402,32 +606,6 @@ class WorkflowRunner:
         storyboard = outputs.get("storyboard") or {}
         scenes = storyboard.get("scenes") or []
         subtitles = outputs.get("subtitles") or {}
+        subtitles_enabled = bool(subtitles.get("enabled"))
 
-        asset_plan: List[Dict[str, Any]] = []
-        for scene in scenes:
-            asset_plan.append(
-                {
-                    "scene_id": scene.get("scene_id"),
-                    "image_required": True,
-                    "video_required": True,
-                    "audio_required": True,
-                    "subtitle_required": bool(subtitles.get("enabled")),
-                }
-            )
-
-        return {
-            "provider": ctx.input.video_provider,
-            "output_mode": ctx.input.output_mode,
-            "total_duration_sec": ctx.input.duration_sec,
-            "scene_count": len(scenes),
-            "asset_plan": asset_plan,
-            "edit_plan": {
-                "subtitle_enabled": ctx.input.subtitle_enabled,
-                "voice_style": ctx.input.voice_style,
-                "visual_style": ctx.input.visual_style,
-                "note": (
-                    "Phase 1 render plan placeholder: "
-                    "可继续对接可灵/即梦/剪映素材整合链路"
-                ),
-            },
-        }
+        return self._build_render_plan_by_provider(ctx, scenes, subtitles_enabled)
