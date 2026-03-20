@@ -30,6 +30,10 @@ class WorkflowRunner:
     - move from simple demo workflow to structured story-video generation workflow
     - keep placeholder generation style, but upgrade protocol and outputs
     - support default parameters for topic-driven generation
+
+    Phase 1 quality refinement:
+    - generate more natural Chinese story text
+    - produce non-duplicated storyboard scenes
     """
 
     def __init__(self) -> None:
@@ -86,33 +90,142 @@ class WorkflowRunner:
             return 5
         return 6
 
-    def _split_story_segments(self, text: str, scene_count: int) -> List[str]:
-        cleaned = text.replace("。", "。|").replace("！", "！|").replace("？", "？|")
-        parts = [item.strip() for item in cleaned.split("|") if item.strip()]
-        if not parts:
-            parts = [text]
+    def _audience_label(self, audience: str) -> str:
+        mapping = {
+            "children": "小朋友",
+            "kids": "小朋友",
+            "general": "所有人",
+            "family": "亲子家庭",
+            "teen": "青少年",
+        }
+        return mapping.get(audience.lower(), audience)
 
-        if len(parts) >= scene_count:
-            return parts[:scene_count]
+    def _tone_label(self, tone: str) -> str:
+        mapping = {
+            "warm": "温暖",
+            "funny": "轻松有趣",
+            "healing": "治愈",
+            "adventure": "冒险",
+            "gentle": "柔和",
+        }
+        return mapping.get(tone.lower(), tone)
 
-        while len(parts) < scene_count:
-            parts.append(parts[-1])
+    def _visual_style_label(self, visual_style: str) -> str:
+        mapping = {
+            "storybook": "绘本",
+            "illustration": "插画",
+            "cartoon": "卡通",
+            "animation": "动画",
+        }
+        return mapping.get(visual_style.lower(), visual_style)
 
-        return parts
+    def _character_style_label(self, character_style: str) -> str:
+        mapping = {
+            "animal": "小动物",
+            "human": "人物",
+            "fantasy": "奇幻角色",
+        }
+        return mapping.get(character_style.lower(), character_style)
+
+    def _build_story_paragraphs(self, ctx: StepContext) -> List[str]:
+        topic = ctx.input.topic.strip() or "一个温暖的童话故事"
+        audience_label = self._audience_label(ctx.input.audience)
+        tone_label = self._tone_label(ctx.input.tone)
+        visual_label = self._visual_style_label(ctx.input.visual_style)
+        character_label = self._character_style_label(ctx.input.character_style)
+
+        paragraph_1 = (
+            f"在一个安静又明亮的清晨，围绕“{topic}”展开了一段{tone_label}的小故事。"
+            f"故事的主角是一位可爱的{character_label}朋友，它带着好奇心走进了新的旅程。"
+        )
+        paragraph_2 = (
+            f"起初，一切都很顺利，可没过多久，主角就遇到了一点小麻烦。"
+            f"它有些紧张，也有些犹豫，不知道该不该继续往前走。"
+        )
+        paragraph_3 = (
+            f"但在一路上的观察、尝试和他人的帮助下，主角慢慢鼓起勇气，"
+            f"一点点找到了解决问题的方法，也学会了相信自己。"
+        )
+        paragraph_4 = (
+            f"最后，主角顺利完成了这段旅程，也收获了陪伴、勇气和成长。"
+            f"这是一个适合{audience_label}观看、适合用{visual_label}风格呈现的{tone_label}故事。"
+        )
+
+        return [paragraph_1, paragraph_2, paragraph_3, paragraph_4]
+
+    def _scene_blueprints(self, ctx: StepContext, scene_count: int) -> List[Dict[str, str]]:
+        tone_label = self._tone_label(ctx.input.tone)
+        visual_label = self._visual_style_label(ctx.input.visual_style)
+        character_label = self._character_style_label(ctx.input.character_style)
+
+        base = [
+            {
+                "scene_title": "故事开场",
+                "visual_description": (
+                    f"{visual_label}风格画面，晨光柔和，{character_label}主角第一次出场，"
+                    f"整体氛围{tone_label}、轻盈而有期待感。"
+                ),
+                "shot_type": "wide",
+                "transition": "fade",
+            },
+            {
+                "scene_title": "遇到问题",
+                "visual_description": (
+                    f"{visual_label}风格画面，主角停下脚步思考，周围环境出现小小变化，"
+                    f"画面强调困惑与转折。"
+                ),
+                "shot_type": "medium",
+                "transition": "cut",
+            },
+            {
+                "scene_title": "行动推进",
+                "visual_description": (
+                    f"{visual_label}风格画面，主角主动尝试解决问题，动作更明确，"
+                    f"节奏变得积极，画面更有前进感。"
+                ),
+                "shot_type": "medium",
+                "transition": "dissolve",
+            },
+            {
+                "scene_title": "温暖收束",
+                "visual_description": (
+                    f"{visual_label}风格画面，主角完成旅程，表情放松，"
+                    f"画面回到温暖明亮的氛围，用来承接结尾情绪。"
+                ),
+                "shot_type": "close-up",
+                "transition": "fade",
+            },
+            {
+                "scene_title": "回味结尾",
+                "visual_description": (
+                    f"{visual_label}风格画面，主角回头望向来时的路，"
+                    f"环境安静舒展，用于强化余韵与成长感。"
+                ),
+                "shot_type": "wide",
+                "transition": "fade",
+            },
+            {
+                "scene_title": "片尾定格",
+                "visual_description": (
+                    f"{visual_label}风格画面，主角站在新的起点上，"
+                    f"适合作为片尾定格镜头，氛围柔和完整。"
+                ),
+                "shot_type": "close-up",
+                "transition": "fade",
+            },
+        ]
+        return base[:scene_count]
 
     def _run_story(self, ctx: StepContext, outputs: Dict[str, Any]) -> Dict[str, Any]:
         topic = ctx.input.topic.strip() or "一个温暖的童话故事"
+        paragraphs = self._build_story_paragraphs(ctx)
         title = f"{topic}的故事"
         summary = (
-            f"面向{ctx.input.audience}，采用{ctx.input.tone}语气，"
-            f"以{ctx.input.character_style}角色风格展开。"
+            f"一个围绕“{topic}”展开的短篇故事，整体气质温暖，"
+            f"适合做成儿童向的多模态视频内容。"
         )
-        text = (
-            f"在一个{ctx.input.tone}的世界里，主角围绕“{topic}”展开了一段冒险。"
-            f"故事整体面向{ctx.input.audience}，画面适合{ctx.input.visual_style}风格呈现。"
-            f"旅途中主角经历了发现问题、尝试行动、获得帮助、最终成长四个阶段，"
-            f"最后收获了勇气、陪伴与温暖。"
-        )
+        text = "\n".join(paragraphs)
+
         return {
             "title": title,
             "summary": summary,
@@ -131,24 +244,30 @@ class WorkflowRunner:
     ) -> Dict[str, Any]:
         story = outputs.get("story") or {}
         story_text = str(story.get("text", ""))
+        story_parts = [part.strip() for part in story_text.split("\n") if part.strip()]
         scene_count = self._scene_count(ctx.input.duration_sec)
-        segments = self._split_story_segments(story_text, scene_count)
         duration_per_scene = max(5, ctx.input.duration_sec // scene_count)
 
+        while len(story_parts) < scene_count and story_parts:
+            story_parts.append(story_parts[-1])
+
+        if not story_parts:
+            story_parts = ["一个温暖的故事正在展开。"] * scene_count
+
+        story_parts = story_parts[:scene_count]
+        blueprints = self._scene_blueprints(ctx, scene_count)
+
         scenes: List[Dict[str, Any]] = []
-        for index, segment in enumerate(segments, start=1):
+        for index, (segment, blueprint) in enumerate(zip(story_parts, blueprints), start=1):
             scenes.append(
                 {
                     "scene_id": f"scene_{index:02d}",
-                    "scene_title": f"第{index}幕",
-                    "visual_description": (
-                        f"{ctx.input.visual_style}风格画面，突出{ctx.input.character_style}主角，"
-                        f"氛围为{ctx.input.tone}。"
-                    ),
+                    "scene_title": blueprint["scene_title"],
+                    "visual_description": blueprint["visual_description"],
                     "narration": segment,
                     "duration_sec": duration_per_scene,
-                    "shot_type": "medium",
-                    "transition": "fade",
+                    "shot_type": blueprint["shot_type"],
+                    "transition": blueprint["transition"],
                 }
             )
 
