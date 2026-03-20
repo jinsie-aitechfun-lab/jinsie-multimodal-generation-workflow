@@ -46,6 +46,9 @@ class WorkflowRunner:
     Phase 1 session/history:
     - keep minimal in-memory session store
     - return session memory summary in response
+
+    Phase 1 render package:
+    - export a structured delivery package for downstream rendering/editing/publishing
     """
 
     def __init__(self) -> None:
@@ -92,6 +95,7 @@ class WorkflowRunner:
             aggregated_outputs,
         )
         self._save_session_data(req, aggregated_outputs)
+        render_package = self._build_render_package(ctx, aggregated_outputs)
 
         return WorkflowRunResponse(
             workflow_id=req.workflow_id,
@@ -101,6 +105,7 @@ class WorkflowRunner:
             steps=step_results,
             outputs=aggregated_outputs,
             session_memory_summary=session_memory_summary,
+            render_package=render_package,
             timestamp=WorkflowRunResponse.now_timestamp(),
         )
 
@@ -503,6 +508,44 @@ class WorkflowRunner:
                 "visual_style": ctx.input.visual_style,
                 "adapter_status": "pending_api_integration",
                 "next_step": "connect jimeng video generation api",
+            },
+        }
+
+    def _build_render_package(
+        self, ctx: StepContext, outputs: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        story = outputs.get("story") or {}
+        storyboard = outputs.get("storyboard") or {}
+        image_prompts = outputs.get("image_prompts") or {}
+        video_prompts = outputs.get("video_prompts") or {}
+        narration = outputs.get("narration") or {}
+        subtitles = outputs.get("subtitles") or {}
+        render_plan = outputs.get("render_plan") or {}
+
+        publish_manifest = {
+            "topic": ctx.input.topic,
+            "session_id": ctx.session_id,
+            "video_provider": self._normalized_video_provider(ctx.input.video_provider),
+            "output_mode": ctx.input.output_mode,
+            "language": ctx.input.language,
+            "voice_style": ctx.input.voice_style,
+            "subtitle_enabled": ctx.input.subtitle_enabled,
+            "scene_count": storyboard.get("scene_count"),
+            "story_title": story.get("title"),
+        }
+
+        return {
+            "format": "render_package_v1",
+            "package_name": f"{ctx.workflow_id}_{ctx.run_id}",
+            "files": {
+                "story.json": story,
+                "storyboard.json": storyboard,
+                "image_prompts.json": image_prompts,
+                "video_prompts.json": video_prompts,
+                "narration.txt": narration.get("full_text", ""),
+                "subtitles.srt": subtitles.get("srt_preview", ""),
+                "render_plan.json": render_plan,
+                "publish_manifest.json": publish_manifest,
             },
         }
 

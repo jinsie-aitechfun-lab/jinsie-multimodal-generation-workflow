@@ -55,6 +55,7 @@ class WorkflowRunResponse(BaseModel):
     steps: List[StepResult]
     outputs: Dict[str, Any] = Field(default_factory=dict)
     session_memory_summary: Dict[str, Any] = Field(default_factory=dict)
+    render_package: Dict[str, Any] = Field(default_factory=dict)
     timestamp: str
 
     @staticmethod
