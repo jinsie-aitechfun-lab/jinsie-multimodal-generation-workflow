@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
+type StepName = 'story' | 'image' | 'audio' | 'video'
+
 type StepResult = {
   name?: string
   status?: string
@@ -17,17 +19,32 @@ type WorkflowRunResponse = {
   [key: string]: unknown
 }
 
+const STEP_OPTIONS: Array<{ label: string; value: StepName }> = [
+  { label: 'Story', value: 'story' },
+  { label: 'Image', value: 'image' },
+  { label: 'Audio', value: 'audio' },
+  { label: 'Video', value: 'video' },
+]
+
 const loading = ref(false)
 const errorMessage = ref('')
 const resultText = ref('')
 const storyText = ref('')
 const topic = ref('写一个关于小猫冒险的故事')
+const selectedSteps = ref<StepName[]>(['story', 'image', 'audio', 'video'])
+const stepSummaries = ref<Array<{ name: string; status: string; preview: string }>>([])
 
 const apiBaseUrl =
   (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() ||
   'http://127.0.0.1:8004'
 
-const canSubmit = computed(() => topic.value.trim().length > 0 && !loading.value)
+const canSubmit = computed(() => {
+  return (
+    topic.value.trim().length > 0 &&
+    selectedSteps.value.length > 0 &&
+    !loading.value
+  )
+})
 
 function extractStoryText(data: WorkflowRunResponse): string {
   const outputsStory = data.outputs?.story
@@ -49,18 +66,55 @@ function extractStoryText(data: WorkflowRunResponse): string {
   return ''
 }
 
+function formatPreview(output?: Record<string, unknown>): string {
+  if (!output) {
+    return ''
+  }
+
+  if (typeof output.text === 'string') {
+    return output.text
+  }
+
+  if (typeof output.image_prompt === 'string') {
+    return output.image_prompt
+  }
+
+  if (typeof output.tts_text === 'string') {
+    return output.tts_text
+  }
+
+  if (output.video_plan && typeof output.video_plan === 'object') {
+    return JSON.stringify(output.video_plan, null, 2)
+  }
+
+  return JSON.stringify(output, null, 2)
+}
+
+function buildStepSummaries(data: WorkflowRunResponse): Array<{
+  name: string
+  status: string
+  preview: string
+}> {
+  return (data.steps || []).map((step) => ({
+    name: step.name || 'unknown',
+    status: step.status || 'UNKNOWN',
+    preview: formatPreview(step.output),
+  }))
+}
+
 async function runWorkflow() {
   loading.value = true
   errorMessage.value = ''
   resultText.value = ''
   storyText.value = ''
+  stepSummaries.value = []
 
   const payload = {
     workflow_id: 'storybook-demo',
     input: {
       topic: topic.value.trim(),
     },
-    steps: [{ name: 'story' }],
+    steps: selectedSteps.value.map((name) => ({ name })),
   }
 
   try {
@@ -78,6 +132,7 @@ async function runWorkflow() {
 
     const data: WorkflowRunResponse = await response.json()
     storyText.value = extractStoryText(data)
+    stepSummaries.value = buildStepSummaries(data)
     resultText.value = JSON.stringify(data, null, 2)
   } catch (error) {
     errorMessage.value =
@@ -93,7 +148,7 @@ async function runWorkflow() {
     <section class="card">
       <h1>Jinsie Multimodal Frontend</h1>
       <p class="desc">
-        //前端调用项目四后端 workflow 接口并展示结果。
+        前端调用项目四后端 workflow 接口并展示多 step 结果。
       </p>
 
       <label class="label" for="topic">Topic</label>
@@ -105,6 +160,23 @@ async function runWorkflow() {
         placeholder="请输入一个主题，例如：写一个关于小猫冒险的故事"
       />
 
+      <section class="steps-panel">
+        <h2 class="section-title">Steps</h2>
+        <div class="steps-grid">
+          <label
+            v-for="step in STEP_OPTIONS"
+            :key="step.value"
+            class="step-option"
+          >
+            <input v-model="selectedSteps" type="checkbox" :value="step.value" />
+            <span>{{ step.label }}</span>
+          </label>
+        </div>
+        <p v-if="selectedSteps.length === 0" class="hint">
+          请至少选择一个 step。
+        </p>
+      </section>
+
       <button class="btn" :disabled="!canSubmit" @click="runWorkflow">
         {{ loading ? '请求中...' : 'Run Workflow' }}
       </button>
@@ -112,6 +184,22 @@ async function runWorkflow() {
       <p v-if="errorMessage" class="error">
         请求失败：{{ errorMessage }}
       </p>
+
+      <section v-if="stepSummaries.length > 0" class="summary-panel">
+        <h2 class="section-title">Steps Summary</h2>
+
+        <article
+          v-for="item in stepSummaries"
+          :key="item.name"
+          class="summary-item"
+        >
+          <div class="summary-head">
+            <strong>{{ item.name }}</strong>
+            <span class="summary-status">{{ item.status }}</span>
+          </div>
+          <pre class="summary-preview">{{ item.preview }}</pre>
+        </article>
+      </section>
 
       <section v-if="storyText" class="story-panel">
         <h2 class="section-title">Story Result</h2>
@@ -138,7 +226,7 @@ async function runWorkflow() {
 
 .card {
   width: 100%;
-  max-width: 720px;
+  max-width: 820px;
   background: #ffffff;
   border-radius: 16px;
   padding: 32px;
@@ -184,6 +272,34 @@ h1 {
   border-color: #111827;
 }
 
+.steps-panel {
+  margin-top: 20px;
+  padding: 16px;
+  border-radius: 14px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+}
+
+.steps-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.step-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #111827;
+  font-size: 14px;
+}
+
+.hint {
+  margin: 12px 0 0;
+  color: #dc2626;
+  font-size: 13px;
+}
+
 .btn {
   margin-top: 16px;
   border: none;
@@ -204,6 +320,40 @@ h1 {
   margin-top: 16px;
   color: #dc2626;
   font-size: 14px;
+}
+
+.summary-panel {
+  margin-top: 24px;
+}
+
+.summary-item {
+  margin-top: 12px;
+  padding: 16px;
+  border-radius: 14px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+}
+
+.summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.summary-status {
+  color: #2563eb;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.summary-preview {
+  margin: 12px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #1f2937;
 }
 
 .story-panel {
