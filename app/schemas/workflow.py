@@ -7,7 +7,28 @@ from pydantic import BaseModel, Field
 
 
 class StepSpec(BaseModel):
-    name: str = Field(..., description="Step name, e.g. story/image/audio/video")
+    name: str = Field(
+        ...,
+        description=(
+            "Step name, e.g. "
+            "story/storyboard/image_prompts/video_prompts/"
+            "narration/subtitles/render_plan"
+        ),
+    )
+
+
+class WorkflowInput(BaseModel):
+    topic: str = Field(..., description="Story topic or user prompt")
+    audience: str = Field(default="children")
+    tone: str = Field(default="warm")
+    visual_style: str = Field(default="storybook")
+    character_style: str = Field(default="animal")
+    voice_style: str = Field(default="warm_female")
+    duration_sec: int = Field(default=60, ge=15, le=300)
+    language: str = Field(default="zh-CN")
+    subtitle_enabled: bool = Field(default=True)
+    video_provider: str = Field(default="mock")
+    output_mode: str = Field(default="full_video")
 
 
 class WorkflowRunRequest(BaseModel):
@@ -16,7 +37,7 @@ class WorkflowRunRequest(BaseModel):
         default=None,
         description="Optional session identifier for future multi-turn workflow memory",
     )
-    input: Dict[str, Any] = Field(default_factory=dict)
+    input: WorkflowInput
     steps: List[StepSpec]
 
 

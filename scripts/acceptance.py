@@ -35,8 +35,28 @@ def main() -> None:
     payload: Dict[str, Any] = {
         "workflow_id": "storybook-demo",
         "session_id": "acceptance-session-001",
-        "input": {"topic": "小兔子的一天", "audience": "children"},
-        "steps": [{"name": "story"}, {"name": "image"}, {"name": "audio"}, {"name": "video"}],
+        "input": {
+            "topic": "小兔子的一天",
+            "audience": "children",
+            "tone": "warm",
+            "visual_style": "storybook",
+            "character_style": "animal",
+            "voice_style": "warm_female",
+            "duration_sec": 60,
+            "language": "zh-CN",
+            "subtitle_enabled": True,
+            "video_provider": "mock",
+            "output_mode": "full_video",
+        },
+        "steps": [
+            {"name": "story"},
+            {"name": "storyboard"},
+            {"name": "image_prompts"},
+            {"name": "video_prompts"},
+            {"name": "narration"},
+            {"name": "subtitles"},
+            {"name": "render_plan"},
+        ],
     }
 
     r = requests.post(f"{base_url}/v1/workflow/run", json=payload, timeout=15)
@@ -55,13 +75,43 @@ def main() -> None:
         _fail(f"status != COMPLETED: {resp.get('status')}")
 
     steps = resp.get("steps")
-    if not isinstance(steps, list) or len(steps) != 4:
+    if not isinstance(steps, list) or len(steps) != 7:
         _fail(f"steps invalid len: {steps}")
 
-    if steps[0].get("name") != "story":
-        _fail(f"steps[0].name != story: {steps[0]}")
-    if steps[-1].get("name") != "video":
-        _fail(f"steps[-1].name != video: {steps[-1]}")
+    expected_names = [
+        "story",
+        "storyboard",
+        "image_prompts",
+        "video_prompts",
+        "narration",
+        "subtitles",
+        "render_plan",
+    ]
+    actual_names = [step.get("name") for step in steps]
+    if actual_names != expected_names:
+        _fail(f"step names mismatch: {actual_names}")
+
+    outputs = resp.get("outputs") or {}
+    for key in expected_names:
+        if key not in outputs:
+            _fail(f"missing output key: {key}")
+
+    storyboard = outputs.get("storyboard") or {}
+    scenes = storyboard.get("scenes")
+    if not isinstance(scenes, list) or len(scenes) == 0:
+        _fail(f"storyboard.scenes invalid: {scenes}")
+
+    narration = outputs.get("narration") or {}
+    if not narration.get("full_text"):
+        _fail(f"narration.full_text missing: {narration}")
+
+    subtitles = outputs.get("subtitles") or {}
+    if subtitles.get("enabled") is not True:
+        _fail(f"subtitles.enabled invalid: {subtitles}")
+
+    render_plan = outputs.get("render_plan") or {}
+    if render_plan.get("provider") != "mock":
+        _fail(f"render_plan.provider invalid: {render_plan}")
 
     _ok("/v1/workflow/run")
     print(json.dumps(resp, ensure_ascii=False, indent=2))
