@@ -105,6 +105,27 @@ def main() -> None:
     if memory1.get("has_previous_session") is not False:
         _fail(f"first request should have no previous session: {memory1}")
 
+    render_package1 = resp1.get("render_package") or {}
+    files1 = render_package1.get("files") or {}
+    expected_package_keys = [
+        "story.json",
+        "storyboard.json",
+        "image_prompts.json",
+        "video_prompts.json",
+        "narration.txt",
+        "subtitles.srt",
+        "render_plan.json",
+        "publish_manifest.json",
+    ]
+    for key in expected_package_keys:
+        if key not in files1:
+            _fail(f"missing render package file: {key}")
+
+    if not files1.get("narration.txt"):
+        _fail("render_package narration.txt empty")
+    if not files1.get("subtitles.srt"):
+        _fail("render_package subtitles.srt empty")
+
     # 3) second run with same session id
     resp2 = _run_request(base_url, "acceptance-session-001", "小兔子的新冒险")
     memory2 = resp2.get("session_memory_summary") or {}
@@ -117,6 +138,14 @@ def main() -> None:
         _fail(f"previous_topic mismatch: {memory2}")
     if memory2.get("previous_scene_count") != 4:
         _fail(f"previous_scene_count mismatch: {memory2}")
+
+    render_package2 = resp2.get("render_package") or {}
+    files2 = render_package2.get("files") or {}
+    manifest2 = files2.get("publish_manifest.json") or {}
+    if manifest2.get("topic") != "小兔子的新冒险":
+        _fail(f"publish_manifest topic mismatch: {manifest2}")
+    if manifest2.get("video_provider") != "mock":
+        _fail(f"publish_manifest video_provider mismatch: {manifest2}")
 
     _ok("/v1/workflow/run")
     print(json.dumps(resp2, ensure_ascii=False, indent=2))
