@@ -11,6 +11,7 @@ type StepResult = {
 
 type WorkflowRunResponse = {
   workflow_id?: string
+  session_id?: string
   run_id?: string
   status?: string
   steps?: StepResult[]
@@ -31,6 +32,7 @@ const errorMessage = ref('')
 const resultText = ref('')
 const storyText = ref('')
 const topic = ref('写一个关于小猫冒险的故事')
+const sessionId = ref('demo-session-001')
 const selectedSteps = ref<StepName[]>(['story', 'image', 'audio', 'video'])
 const stepSummaries = ref<Array<{ name: string; status: string; preview: string }>>([])
 
@@ -111,6 +113,7 @@ async function runWorkflow() {
 
   const payload = {
     workflow_id: 'storybook-demo',
+    session_id: sessionId.value.trim() || 'demo-session-001',
     input: {
       topic: topic.value.trim(),
     },
@@ -131,6 +134,9 @@ async function runWorkflow() {
     }
 
     const data: WorkflowRunResponse = await response.json()
+    if (typeof data.session_id === 'string' && data.session_id.trim()) {
+      sessionId.value = data.session_id
+    }
     storyText.value = extractStoryText(data)
     stepSummaries.value = buildStepSummaries(data)
     resultText.value = JSON.stringify(data, null, 2)
@@ -150,6 +156,14 @@ async function runWorkflow() {
       <p class="desc">
         前端调用项目四后端 workflow 接口并展示多 step 结果。
       </p>
+      <label class="label" for="session-id">Session ID</label>
+      <input
+        id="session-id"
+        v-model="sessionId"
+        class="input"
+        type="text"
+        placeholder="请输入会话标识，例如 demo-session-001"
+      />
 
       <label class="label" for="topic">Topic</label>
       <textarea
@@ -252,6 +266,18 @@ h1 {
   color: #111827;
   font-size: 14px;
   font-weight: 600;
+}
+
+.input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #d1d5db;
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  font-size: 14px;
+  color: #111827;
+  background: #ffffff;
 }
 
 .textarea {

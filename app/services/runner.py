@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 from app.schemas.workflow import StepResult, WorkflowRunRequest, WorkflowRunResponse
@@ -14,6 +14,7 @@ class UnknownStepError(Exception):
 @dataclass(frozen=True)
 class StepContext:
     workflow_id: str
+    session_id: Optional[str]
     run_id: str
     input: Dict[str, Any]
 
@@ -24,6 +25,10 @@ class WorkflowRunner:
     - sequential steps
     - structured outputs
     - placeholder implementations only
+
+    Day59 extension:
+    - accept session_id as minimal conversation/session semantic entry
+    - no real memory implementation yet
     """
 
     def __init__(self) -> None:
@@ -36,7 +41,12 @@ class WorkflowRunner:
 
     def run(self, req: WorkflowRunRequest) -> WorkflowRunResponse:
         run_id = f"run_{uuid4().hex[:12]}"
-        ctx = StepContext(workflow_id=req.workflow_id, run_id=run_id, input=req.input)
+        ctx = StepContext(
+            workflow_id=req.workflow_id,
+            session_id=req.session_id,
+            run_id=run_id,
+            input=req.input,
+        )
 
         step_results: List[StepResult] = []
         aggregated_outputs: Dict[str, Any] = {}
@@ -55,6 +65,7 @@ class WorkflowRunner:
 
         return WorkflowRunResponse(
             workflow_id=req.workflow_id,
+            session_id=req.session_id,
             run_id=run_id,
             status="COMPLETED",
             steps=step_results,

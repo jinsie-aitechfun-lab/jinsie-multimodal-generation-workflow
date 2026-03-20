@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -12,6 +12,10 @@ class StepSpec(BaseModel):
 
 class WorkflowRunRequest(BaseModel):
     workflow_id: str
+    session_id: Optional[str] = Field(
+        default=None,
+        description="Optional session identifier for future multi-turn workflow memory",
+    )
     input: Dict[str, Any] = Field(default_factory=dict)
     steps: List[StepSpec]
 
@@ -24,6 +28,7 @@ class StepResult(BaseModel):
 
 class WorkflowRunResponse(BaseModel):
     workflow_id: str
+    session_id: Optional[str] = None
     run_id: str
     status: str
     steps: List[StepResult]

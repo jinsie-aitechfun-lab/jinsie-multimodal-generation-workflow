@@ -34,6 +34,7 @@ def main() -> None:
     # 2) /v1/workflow/run
     payload: Dict[str, Any] = {
         "workflow_id": "storybook-demo",
+        "session_id": "acceptance-session-001",
         "input": {"topic": "小兔子的一天", "audience": "children"},
         "steps": [{"name": "story"}, {"name": "image"}, {"name": "audio"}, {"name": "video"}],
     }
@@ -46,6 +47,8 @@ def main() -> None:
 
     if resp.get("workflow_id") != "storybook-demo":
         _fail(f"workflow_id mismatch: {resp.get('workflow_id')}")
+    if resp.get("session_id") != "acceptance-session-001":
+        _fail(f"session_id mismatch: {resp.get('session_id')}")
     if not str(resp.get("run_id", "")).startswith("run_"):
         _fail(f"run_id invalid: {resp.get('run_id')}")
     if resp.get("status") != "COMPLETED":
