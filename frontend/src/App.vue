@@ -20,6 +20,7 @@ type WorkflowRunResponse = {
 const loading = ref(false)
 const errorMessage = ref('')
 const resultText = ref('')
+const storyText = ref('')
 const topic = ref('写一个关于小猫冒险的故事')
 
 const apiBaseUrl =
@@ -28,10 +29,31 @@ const apiBaseUrl =
 
 const canSubmit = computed(() => topic.value.trim().length > 0 && !loading.value)
 
+function extractStoryText(data: WorkflowRunResponse): string {
+  const outputsStory = data.outputs?.story
+  if (
+    outputsStory &&
+    typeof outputsStory === 'object' &&
+    'text' in outputsStory &&
+    typeof outputsStory.text === 'string'
+  ) {
+    return outputsStory.text
+  }
+
+  const storyStep = data.steps?.find((step) => step.name === 'story')
+  const stepOutputText = storyStep?.output?.text
+  if (typeof stepOutputText === 'string') {
+    return stepOutputText
+  }
+
+  return ''
+}
+
 async function runWorkflow() {
   loading.value = true
   errorMessage.value = ''
   resultText.value = ''
+  storyText.value = ''
 
   const payload = {
     workflow_id: 'storybook-demo',
@@ -55,6 +77,7 @@ async function runWorkflow() {
     }
 
     const data: WorkflowRunResponse = await response.json()
+    storyText.value = extractStoryText(data)
     resultText.value = JSON.stringify(data, null, 2)
   } catch (error) {
     errorMessage.value =
@@ -90,7 +113,15 @@ async function runWorkflow() {
         请求失败：{{ errorMessage }}
       </p>
 
-      <pre v-if="resultText" class="result">{{ resultText }}</pre>
+      <section v-if="storyText" class="story-panel">
+        <h2 class="section-title">Story Result</h2>
+        <p class="story-text">{{ storyText }}</p>
+      </section>
+
+      <section v-if="resultText" class="debug-panel">
+        <h2 class="section-title">Raw JSON</h2>
+        <pre class="result">{{ resultText }}</pre>
+      </section>
     </section>
   </main>
 </template>
@@ -175,8 +206,35 @@ h1 {
   font-size: 14px;
 }
 
+.story-panel {
+  margin-top: 24px;
+  padding: 20px;
+  border-radius: 14px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+}
+
+.debug-panel {
+  margin-top: 20px;
+}
+
+.section-title {
+  margin: 0 0 12px;
+  font-size: 16px;
+  line-height: 1.4;
+  color: #111827;
+}
+
+.story-text {
+  margin: 0;
+  color: #1f2937;
+  font-size: 15px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+}
+
 .result {
-  margin-top: 16px;
+  margin: 0;
   padding: 16px;
   border-radius: 12px;
   background: #0f172a;
