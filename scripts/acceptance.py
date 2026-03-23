@@ -2,6 +2,7 @@ import argparse
 import json
 import sys
 from typing import Any, Dict
+from uuid import uuid4
 
 import requests
 
@@ -15,7 +16,11 @@ def _ok(msg: str) -> None:
     print(f"[OK] {msg}")
 
 
-def _run_request(base_url: str, session_id: str, topic: str) -> Dict[str, Any]:
+def _run_request(
+    base_url: str,
+    session_id: str,
+    topic: str,
+) -> Dict[str, Any]:
     payload: Dict[str, Any] = {
         "workflow_id": "storybook-demo",
         "session_id": session_id,
@@ -55,6 +60,7 @@ def main() -> None:
     args = parser.parse_args()
 
     base_url = args.base_url.rstrip("/")
+    session_id = f"acceptance-session-{uuid4().hex[:8]}"
 
     # 1) /health
     r = requests.get(f"{base_url}/health", timeout=5)
@@ -66,11 +72,11 @@ def main() -> None:
     _ok("/health")
 
     # 2) first run
-    resp1 = _run_request(base_url, "acceptance-session-001", "小兔子的一天")
+    resp1 = _run_request(base_url, session_id, "小兔子的一天")
 
     if resp1.get("workflow_id") != "storybook-demo":
         _fail(f"workflow_id mismatch: {resp1.get('workflow_id')}")
-    if resp1.get("session_id") != "acceptance-session-001":
+    if resp1.get("session_id") != session_id:
         _fail(f"session_id mismatch: {resp1.get('session_id')}")
     if not str(resp1.get("run_id", "")).startswith("run_"):
         _fail(f"run_id invalid: {resp1.get('run_id')}")
@@ -167,10 +173,13 @@ def main() -> None:
 
     kling_real_ref1 = kling_scene_package1.get("real_sample_manifest_ref") or {}
     if kling_real_ref1.get("sample_id") != "kling-scene-01-real-sample":
-        _fail(f"kling_scene_package real_sample_manifest_ref mismatch: {kling_scene_package1}")
+        _fail(
+            f"kling_scene_package real_sample_manifest_ref mismatch: "
+            f"{kling_scene_package1}"
+        )
 
     # 3) second run with same session id
-    resp2 = _run_request(base_url, "acceptance-session-001", "小兔子的新冒险")
+    resp2 = _run_request(base_url, session_id, "小兔子的新冒险")
     memory2 = resp2.get("session_memory_summary") or {}
 
     if memory2.get("enabled") is not True:
