@@ -243,7 +243,9 @@ class WorkflowRunner:
 
         return [paragraph_1, paragraph_2, paragraph_3, paragraph_4]
 
-    def _scene_blueprints(self, ctx: StepContext, scene_count: int) -> List[Dict[str, str]]:
+    def _scene_blueprints(
+        self, ctx: StepContext, scene_count: int
+    ) -> List[Dict[str, str]]:
         tone_label = self._tone_label(ctx.input.tone)
         visual_label = self._visual_style_label(ctx.input.visual_style)
         character_label = self._character_style_label(ctx.input.character_style)
@@ -514,6 +516,44 @@ class WorkflowRunner:
             },
         }
 
+    def _build_real_samples_manifest(self) -> Dict[str, Any]:
+        return {
+            "provider": "kling",
+            "manifest_type": "real_samples",
+            "version": "v1",
+            "samples": [
+                {
+                    "sample_id": "kling-scene-01-real-sample",
+                    "scene_id": "scene-01",
+                    "generated_scene_id": "scene_01",
+                    "status": "archived",
+                    "notes": (
+                        "First real Kling scene sample archived for project "
+                        "render-package backfill."
+                    ),
+                    "assets": {
+                        "notes": "assets/samples/kling/scene-01/docs/scene-01-kling-notes.md",
+                        "clean_video": "assets/samples/kling/scene-01/scene-01-kling-clean.mp4",
+                        "watermarked_video": (
+                            "assets/samples/kling/scene-01/scene-01-kling-watermarked.mp4"
+                        ),
+                        "input_screenshot": (
+                            "assets/samples/kling/scene-01/screenshots/"
+                            "scene-01-kling-input.png"
+                        ),
+                        "result_screenshots": [
+                            "assets/samples/kling/scene-01/screenshots/scene-01-kling-result-01.png",
+                            "assets/samples/kling/scene-01/screenshots/scene-01-kling-result-02.png",
+                            "assets/samples/kling/scene-01/screenshots/scene-01-kling-result-03.png",
+                            "assets/samples/kling/scene-01/screenshots/scene-01-kling-result-04.png",
+                            "assets/samples/kling/scene-01/screenshots/scene-01-kling-result-05.png",
+                            "assets/samples/kling/scene-01/screenshots/scene-01-kling-result-06.png",
+                        ],
+                    },
+                }
+            ],
+        }
+
     def _build_kling_scene_package(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -557,6 +597,13 @@ class WorkflowRunner:
                 "画幅优先选择 9:16，适合短视频发布",
                 "生成后将视频片段回填到项目四样例链中",
             ],
+            "real_sample_manifest_ref": {
+                "path": "assets/samples/kling/real_samples_manifest.json",
+                "provider": "kling",
+                "sample_id": "kling-scene-01-real-sample",
+                "scene_id": "scene-01",
+                "generated_scene_id": "scene_01",
+            },
         }
 
     def _build_render_package(
@@ -570,6 +617,8 @@ class WorkflowRunner:
         subtitles = outputs.get("subtitles") or {}
         render_plan = outputs.get("render_plan") or {}
 
+        real_samples_manifest = self._build_real_samples_manifest()
+
         publish_manifest = {
             "topic": ctx.input.topic,
             "session_id": ctx.session_id,
@@ -580,6 +629,11 @@ class WorkflowRunner:
             "subtitle_enabled": ctx.input.subtitle_enabled,
             "scene_count": storyboard.get("scene_count"),
             "story_title": story.get("title"),
+            "real_sample_manifest_ref": {
+                "path": "assets/samples/kling/real_samples_manifest.json",
+                "provider": "kling",
+                "sample_count": len(real_samples_manifest.get("samples") or []),
+            },
         }
 
         kling_scene_package = self._build_kling_scene_package(ctx, outputs)
@@ -597,6 +651,7 @@ class WorkflowRunner:
                 "render_plan.json": render_plan,
                 "publish_manifest.json": publish_manifest,
                 "kling_scene_package.json": kling_scene_package,
+                "real_samples_manifest.json": real_samples_manifest,
             },
         }
 
@@ -642,7 +697,9 @@ class WorkflowRunner:
         blueprints = self._scene_blueprints(ctx, scene_count)
 
         scenes: List[Dict[str, Any]] = []
-        for index, (segment, blueprint) in enumerate(zip(story_parts, blueprints), start=1):
+        for index, (segment, blueprint) in enumerate(
+            zip(story_parts, blueprints), start=1
+        ):
             scenes.append(
                 {
                     "scene_id": f"scene_{index:02d}",

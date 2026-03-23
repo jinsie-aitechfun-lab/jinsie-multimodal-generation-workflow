@@ -117,6 +117,7 @@ def main() -> None:
         "render_plan.json",
         "publish_manifest.json",
         "kling_scene_package.json",
+        "real_samples_manifest.json",
     ]
     for key in expected_package_keys:
         if key not in files1:
@@ -136,6 +137,37 @@ def main() -> None:
         _fail(f"kling_scene_package aspect ratio mismatch: {kling_scene_package1}")
     if not kling_scene_package1.get("recommended_prompt"):
         _fail("kling_scene_package recommended_prompt empty")
+
+    real_manifest1 = files1.get("real_samples_manifest.json") or {}
+    if real_manifest1.get("provider") != "kling":
+        _fail(f"real_samples_manifest provider mismatch: {real_manifest1}")
+    samples1 = real_manifest1.get("samples") or []
+    if not isinstance(samples1, list) or len(samples1) != 1:
+        _fail(f"real_samples_manifest samples invalid: {real_manifest1}")
+
+    sample1 = samples1[0]
+    if sample1.get("scene_id") != "scene-01":
+        _fail(f"real sample scene_id mismatch: {sample1}")
+    if sample1.get("generated_scene_id") != "scene_01":
+        _fail(f"real sample generated_scene_id mismatch: {sample1}")
+
+    sample_assets1 = sample1.get("assets") or {}
+    if sample_assets1.get("clean_video") != (
+        "assets/samples/kling/scene-01/scene-01-kling-clean.mp4"
+    ):
+        _fail(f"real sample clean_video mismatch: {sample_assets1}")
+    result_screenshots1 = sample_assets1.get("result_screenshots") or []
+    if not isinstance(result_screenshots1, list) or len(result_screenshots1) != 6:
+        _fail(f"real sample result_screenshots invalid: {sample_assets1}")
+
+    publish_manifest1 = files1.get("publish_manifest.json") or {}
+    real_manifest_ref1 = publish_manifest1.get("real_sample_manifest_ref") or {}
+    if real_manifest_ref1.get("path") != "assets/samples/kling/real_samples_manifest.json":
+        _fail(f"publish_manifest real_sample_manifest_ref mismatch: {publish_manifest1}")
+
+    kling_real_ref1 = kling_scene_package1.get("real_sample_manifest_ref") or {}
+    if kling_real_ref1.get("sample_id") != "kling-scene-01-real-sample":
+        _fail(f"kling_scene_package real_sample_manifest_ref mismatch: {kling_scene_package1}")
 
     # 3) second run with same session id
     resp2 = _run_request(base_url, "acceptance-session-001", "小兔子的新冒险")
