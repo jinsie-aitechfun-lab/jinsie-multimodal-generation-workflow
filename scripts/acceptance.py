@@ -116,6 +116,7 @@ def main() -> None:
         "subtitles.srt",
         "render_plan.json",
         "publish_manifest.json",
+        "kling_scene_package.json",
     ]
     for key in expected_package_keys:
         if key not in files1:
@@ -125,6 +126,16 @@ def main() -> None:
         _fail("render_package narration.txt empty")
     if not files1.get("subtitles.srt"):
         _fail("render_package subtitles.srt empty")
+
+    kling_scene_package1 = files1.get("kling_scene_package.json") or {}
+    if kling_scene_package1.get("provider") != "kling":
+        _fail(f"kling_scene_package provider mismatch: {kling_scene_package1}")
+    if kling_scene_package1.get("scene_id") != "scene_01":
+        _fail(f"kling_scene_package scene_id mismatch: {kling_scene_package1}")
+    if kling_scene_package1.get("recommended_aspect_ratio") != "9:16":
+        _fail(f"kling_scene_package aspect ratio mismatch: {kling_scene_package1}")
+    if not kling_scene_package1.get("recommended_prompt"):
+        _fail("kling_scene_package recommended_prompt empty")
 
     # 3) second run with same session id
     resp2 = _run_request(base_url, "acceptance-session-001", "小兔子的新冒险")
@@ -146,6 +157,13 @@ def main() -> None:
         _fail(f"publish_manifest topic mismatch: {manifest2}")
     if manifest2.get("video_provider") != "mock":
         _fail(f"publish_manifest video_provider mismatch: {manifest2}")
+
+    kling_scene_package2 = files2.get("kling_scene_package.json") or {}
+    if kling_scene_package2.get("scene_title") != "故事开场":
+        _fail(f"kling_scene_package scene_title mismatch: {kling_scene_package2}")
+    notes = kling_scene_package2.get("manual_generation_notes") or []
+    if not isinstance(notes, list) or len(notes) == 0:
+        _fail(f"kling_scene_package manual_generation_notes invalid: {kling_scene_package2}")
 
     _ok("/v1/workflow/run")
     print(json.dumps(resp2, ensure_ascii=False, indent=2))

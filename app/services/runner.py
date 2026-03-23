@@ -49,6 +49,9 @@ class WorkflowRunner:
 
     Phase 1 render package:
     - export a structured delivery package for downstream rendering/editing/publishing
+
+    Phase 1 kling scene package:
+    - export a manual scene-level package for Kling web generation
     """
 
     def __init__(self) -> None:
@@ -511,6 +514,51 @@ class WorkflowRunner:
             },
         }
 
+    def _build_kling_scene_package(
+        self, ctx: StepContext, outputs: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        storyboard = outputs.get("storyboard") or {}
+        scenes = storyboard.get("scenes") or []
+        if not scenes:
+            return {}
+
+        scene = scenes[0]
+        visual_description = str(scene.get("visual_description", ""))
+        narration = str(scene.get("narration", ""))
+        shot_type = str(scene.get("shot_type", "wide"))
+        transition = str(scene.get("transition", "fade"))
+        duration_sec = int(scene.get("duration_sec", 15))
+
+        recommended_prompt = (
+            f"{ctx.input.visual_style} style video, {ctx.input.tone} atmosphere, "
+            f"{ctx.input.character_style} protagonist, {visual_description}, "
+            f"camera shot: {shot_type}, transition feeling: {transition}, "
+            f"story context: {narration}"
+        )
+
+        return {
+            "provider": "kling",
+            "scene_id": scene.get("scene_id"),
+            "scene_title": scene.get("scene_title"),
+            "narration": narration,
+            "visual_description": visual_description,
+            "recommended_prompt": recommended_prompt,
+            "recommended_duration_sec": duration_sec,
+            "recommended_aspect_ratio": "9:16",
+            "recommended_style": ctx.input.visual_style,
+            "recommended_negative_prompt": (
+                "low quality, blurry, distorted anatomy, broken composition, "
+                "extra limbs, duplicated subject, unreadable details"
+            ),
+            "manual_generation_notes": [
+                "打开可灵网页视频生成入口",
+                "使用 recommended_prompt 作为主提示词",
+                "时长优先使用 recommended_duration_sec",
+                "画幅优先选择 9:16，适合短视频发布",
+                "生成后将视频片段回填到项目四样例链中",
+            ],
+        }
+
     def _build_render_package(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -534,6 +582,8 @@ class WorkflowRunner:
             "story_title": story.get("title"),
         }
 
+        kling_scene_package = self._build_kling_scene_package(ctx, outputs)
+
         return {
             "format": "render_package_v1",
             "package_name": f"{ctx.workflow_id}_{ctx.run_id}",
@@ -546,6 +596,7 @@ class WorkflowRunner:
                 "subtitles.srt": subtitles.get("srt_preview", ""),
                 "render_plan.json": render_plan,
                 "publish_manifest.json": publish_manifest,
+                "kling_scene_package.json": kling_scene_package,
             },
         }
 
