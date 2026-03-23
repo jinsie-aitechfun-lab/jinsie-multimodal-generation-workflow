@@ -1,0 +1,28 @@
+{
+  "provider": "kling",
+  "manifest_type": "real_samples",
+  "version": "v1",
+  "samples": [
+    {
+      "sample_id": "kling-scene-01-real-sample",
+      "scene_id": "scene-01",
+      "generated_scene_id": "scene_01",
+      "status": "archived",
+      "notes": "First real Kling scene sample archived for project render-package backfill.",
+      "assets": {
+        "notes": "assets/samples/kling/scene-01/docs/scene-01-kling-notes.md",
+        "clean_video": "assets/samples/kling/scene-01/scene-01-kling-clean.mp4",
+        "watermarked_video": "assets/samples/kling/scene-01/scene-01-kling-watermarked.mp4",
+        "input_screenshot": "assets/samples/kling/scene-01/screenshots/scene-01-kling-input.png",
+        "result_screenshots": [
+          "assets/samples/kling/scene-01/screenshots/scene-01-kling-result-01.png",
+          "assets/samples/kling/scene-01/screenshots/scene-01-kling-result-02.png",
+          "assets/samples/kling/scene-01/screenshots/scene-01-kling-result-03.png",
+          "assets/samples/kling/scene-01/screenshots/scene-01-kling-result-04.png",
+          "assets/samples/kling/scene-01/screenshots/scene-01-kling-result-05.png",
+          "assets/samples/kling/scene-01/screenshots/scene-01-kling-result-06.png"
+        ]
+      }
+    }
+  ]
+}
