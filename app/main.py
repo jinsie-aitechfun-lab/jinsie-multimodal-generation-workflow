@@ -25,6 +25,16 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/v1/samples/summary")
+def get_samples_summary():
+    return _runner.get_samples_summary()
+
+
+@app.get("/v1/samples/kling/real")
+def get_real_kling_samples():
+    return _runner.get_real_kling_samples_manifest()
+
+
 @app.post("/v1/workflow/run", response_model=WorkflowRunResponse)
 def run_workflow(req: WorkflowRunRequest):
     try:

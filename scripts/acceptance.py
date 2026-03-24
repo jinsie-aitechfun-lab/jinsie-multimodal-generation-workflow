@@ -71,7 +71,74 @@ def main() -> None:
         _fail(f"/health body.status != ok, body={body}")
     _ok("/health")
 
-    # 2) first run
+    # 2) /v1/samples/summary
+    r = requests.get(f"{base_url}/v1/samples/summary", timeout=5)
+    if r.status_code != 200:
+        _fail(f"/v1/samples/summary http_status={r.status_code}, body={r.text}")
+    summary_body = r.json()
+
+    providers = summary_body.get("providers") or []
+    if not isinstance(providers, list) or "kling" not in providers:
+        _fail(f"/v1/samples/summary providers invalid: {summary_body}")
+
+    if summary_body.get("total_sample_count") != 1:
+        _fail(f"/v1/samples/summary total_sample_count mismatch: {summary_body}")
+
+    provider_stats = summary_body.get("provider_stats") or {}
+    kling_stats = provider_stats.get("kling") or {}
+    if kling_stats.get("sample_count") != 1:
+        _fail(f"/v1/samples/summary kling sample_count mismatch: {summary_body}")
+    if kling_stats.get("latest_sample_id") != "kling-scene-01-real-sample":
+        _fail(f"/v1/samples/summary kling latest_sample_id mismatch: {summary_body}")
+
+    available_scene_ids = kling_stats.get("available_scene_ids") or []
+    if not isinstance(available_scene_ids, list) or "scene-01" not in available_scene_ids:
+        _fail(f"/v1/samples/summary kling available_scene_ids mismatch: {summary_body}")
+
+    _ok("/v1/samples/summary")
+
+    # 3) /v1/samples/kling/real
+    r = requests.get(f"{base_url}/v1/samples/kling/real", timeout=5)
+    if r.status_code != 200:
+        _fail(f"/v1/samples/kling/real http_status={r.status_code}, body={r.text}")
+    real_samples_body = r.json()
+
+    if real_samples_body.get("provider") != "kling":
+        _fail(f"/v1/samples/kling/real provider mismatch: {real_samples_body}")
+    if real_samples_body.get("manifest_type") != "real_samples":
+        _fail(f"/v1/samples/kling/real manifest_type mismatch: {real_samples_body}")
+
+    api_samples = real_samples_body.get("samples") or []
+    if not isinstance(api_samples, list) or len(api_samples) < 1:
+        _fail(f"/v1/samples/kling/real samples invalid: {real_samples_body}")
+
+    if real_samples_body.get("sample_count") != 1:
+        _fail(f"/v1/samples/kling/real sample_count mismatch: {real_samples_body}")
+    if real_samples_body.get("latest_sample_id") != "kling-scene-01-real-sample":
+        _fail(f"/v1/samples/kling/real latest_sample_id mismatch: {real_samples_body}")
+
+    api_available_scene_ids = real_samples_body.get("available_scene_ids") or []
+    if not isinstance(api_available_scene_ids, list) or "scene-01" not in api_available_scene_ids:
+        _fail(f"/v1/samples/kling/real available_scene_ids mismatch: {real_samples_body}")
+
+    api_sample_1 = api_samples[0]
+    if api_sample_1.get("sample_id") != "kling-scene-01-real-sample":
+        _fail(f"/v1/samples/kling/real sample_id mismatch: {api_sample_1}")
+    if api_sample_1.get("scene_id") != "scene-01":
+        _fail(f"/v1/samples/kling/real scene_id mismatch: {api_sample_1}")
+
+    api_assets = api_sample_1.get("assets") or {}
+    if api_assets.get("clean_video") != (
+        "assets/samples/kling/scene-01/scene-01-kling-clean.mp4"
+    ):
+        _fail(f"/v1/samples/kling/real clean_video mismatch: {api_assets}")
+    api_result_screenshots = api_assets.get("result_screenshots") or []
+    if not isinstance(api_result_screenshots, list) or len(api_result_screenshots) != 6:
+        _fail(f"/v1/samples/kling/real result_screenshots invalid: {api_assets}")
+
+    _ok("/v1/samples/kling/real")
+
+    # 4) first run
     resp1 = _run_request(base_url, session_id, "小兔子的一天")
 
     if resp1.get("workflow_id") != "storybook-demo":
@@ -178,7 +245,7 @@ def main() -> None:
             f"{kling_scene_package1}"
         )
 
-    # 3) second run with same session id
+    # 5) second run with same session id
     resp2 = _run_request(base_url, session_id, "小兔子的新冒险")
     memory2 = resp2.get("session_memory_summary") or {}
 

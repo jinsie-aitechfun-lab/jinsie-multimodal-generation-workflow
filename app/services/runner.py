@@ -66,6 +66,55 @@ class WorkflowRunner:
         }
         self._session_store: Dict[str, Dict[str, Any]] = {}
 
+    def get_real_kling_samples_manifest(self) -> Dict[str, Any]:
+        manifest = self._build_real_samples_manifest()
+        samples = manifest.get("samples") or []
+
+        available_scene_ids = [
+            str(sample.get("scene_id"))
+            for sample in samples
+            if sample.get("scene_id")
+        ]
+
+        latest_sample_id = None
+        if samples:
+            latest_sample_id = samples[-1].get("sample_id")
+
+        return {
+            **manifest,
+            "sample_count": len(samples),
+            "latest_sample_id": latest_sample_id,
+            "available_scene_ids": available_scene_ids,
+        }
+
+    def get_samples_summary(self) -> Dict[str, Any]:
+        kling_manifest = self.get_real_kling_samples_manifest()
+
+        provider_stats = {
+            "kling": {
+                "sample_count": kling_manifest.get("sample_count", 0),
+                "latest_sample_id": kling_manifest.get("latest_sample_id"),
+                "available_scene_ids": kling_manifest.get("available_scene_ids", []),
+            }
+        }
+
+        providers = [
+            provider
+            for provider, stats in provider_stats.items()
+            if stats.get("sample_count", 0) > 0
+        ]
+
+        total_sample_count = sum(
+            int(stats.get("sample_count", 0))
+            for stats in provider_stats.values()
+        )
+
+        return {
+            "providers": providers,
+            "total_sample_count": total_sample_count,
+            "provider_stats": provider_stats,
+        }
+
     def run(self, req: WorkflowRunRequest) -> WorkflowRunResponse:
         run_id = f"run_{uuid4().hex[:12]}"
         ctx = StepContext(
