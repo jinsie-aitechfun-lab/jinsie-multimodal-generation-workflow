@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 type StepName =
   | 'story'
@@ -25,6 +25,36 @@ type WorkflowRunResponse = {
   outputs?: Record<string, unknown>
   timestamp?: string
   [key: string]: unknown
+}
+
+type SampleAssetPaths = {
+  notes?: string
+  clean_video?: string
+  watermarked_video?: string
+  input_screenshot?: string
+  result_screenshots?: string[]
+}
+
+type KlingSample = {
+  sample_id?: string
+  scene_id?: string
+  generated_scene_id?: string
+  status?: string
+  notes?: string
+  assets?: SampleAssetPaths
+}
+
+type SamplesSummaryResponse = {
+  providers?: string[]
+  total_sample_count?: number
+  provider_stats?: Record<
+    string,
+    {
+      sample_count?: number
+      latest_sample_id?: string
+      available_scene_ids?: string[]
+    }
+  >
 }
 
 const STEP_OPTIONS: Array<{ label: string; value: StepName }> = [
@@ -56,6 +86,13 @@ const narrationText = ref('')
 const subtitlesText = ref('')
 const renderPlanText = ref('')
 
+const samplesLoading = ref(false)
+const samplesErrorMessage = ref('')
+const samplesSummary = ref<SamplesSummaryResponse | null>(null)
+const klingSamples = ref<KlingSample[]>([])
+const selectedSampleId = ref('')
+const selectedSampleDetail = ref<KlingSample | null>(null)
+
 const topic = ref('写一个关于小猫冒险的故事')
 const sessionId = ref('demo-session-001')
 const audience = ref('children')
@@ -81,6 +118,38 @@ const apiBaseUrl =
 const canSubmit = computed(() => {
   return topic.value.trim().length > 0 && selectedSteps.value.length > 0 && !loading.value
 })
+
+const selectedSample = computed(() => {
+  if (!selectedSampleId.value) {
+    return null
+  }
+  return (
+    klingSamples.value.find((item) => item.sample_id === selectedSampleId.value) || null
+  )
+})
+
+const providerStatsText = computed(() => {
+  if (!samplesSummary.value?.provider_stats) {
+    return ''
+  }
+  return stringifyPretty(samplesSummary.value.provider_stats)
+})
+
+function toAssetHref(path?: string): string {
+  if (!path) {
+    return ''
+  }
+
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return path
+  }
+
+  return `${apiBaseUrl}/${path}`
+}
+
+function hasAssetLink(path?: string): boolean {
+  return Boolean(path && path.trim())
+}
 
 function stringifyPretty(value: unknown): string {
   return JSON.stringify(value, null, 2)
@@ -190,6 +259,77 @@ function buildStepSummaries(data: WorkflowRunResponse): Array<{
   }))
 }
 
+async function fetchSamplesSummary() {
+  const response = await fetch(`${apiBaseUrl}/v1/samples/summary`)
+  if (!response.ok) {
+    throw new Error(`Samples summary HTTP ${response.status}`)
+  }
+  const data: SamplesSummaryResponse = await response.json()
+  samplesSummary.value = data
+}
+
+async function fetchKlingSamples() {
+  const response = await fetch(`${apiBaseUrl}/v1/samples/kling/real`)
+  if (!response.ok) {
+    throw new Error(`Kling samples HTTP ${response.status}`)
+  }
+
+  const data = (await response.json()) as { samples?: KlingSample[] }
+  klingSamples.value = Array.isArray(data.samples) ? data.samples : []
+
+  if (!selectedSampleId.value && klingSamples.value.length > 0) {
+    selectedSampleId.value = klingSamples.value[0].sample_id || ''
+  }
+}
+
+async function fetchSampleDetail(sampleId: string) {
+  if (!sampleId) {
+    selectedSampleDetail.value = null
+    return
+  }
+
+  const response = await fetch(`${apiBaseUrl}/v1/samples/kling/real/${sampleId}`)
+  if (!response.ok) {
+    throw new Error(`Sample detail HTTP ${response.status}`)
+  }
+
+  const data: KlingSample = await response.json()
+  selectedSampleDetail.value = data
+}
+
+async function loadSampleAssets() {
+  samplesLoading.value = true
+  samplesErrorMessage.value = ''
+
+  try {
+    await fetchSamplesSummary()
+    await fetchKlingSamples()
+
+    if (selectedSampleId.value) {
+      await fetchSampleDetail(selectedSampleId.value)
+    } else {
+      selectedSampleDetail.value = null
+    }
+  } catch (error) {
+    samplesErrorMessage.value =
+      error instanceof Error ? error.message : 'Failed to load sample assets'
+  } finally {
+    samplesLoading.value = false
+  }
+}
+
+async function selectSample(sampleId: string) {
+  selectedSampleId.value = sampleId
+  samplesErrorMessage.value = ''
+
+  try {
+    await fetchSampleDetail(sampleId)
+  } catch (error) {
+    samplesErrorMessage.value =
+      error instanceof Error ? error.message : 'Failed to load sample detail'
+  }
+}
+
 async function runWorkflow() {
   loading.value = true
   errorMessage.value = ''
@@ -251,6 +391,9 @@ async function runWorkflow() {
     loading.value = false
   }
 }
+onMounted(() => {
+  void loadSampleAssets()
+})
 </script>
 
 <template>
@@ -260,6 +403,163 @@ async function runWorkflow() {
       <p class="desc">
         输入一个主题，系统按默认参数或可选配置生成故事、分镜、旁白、字幕与视频渲染计划。
       </p>
+            <section class="samples-panel">
+        <div class="samples-panel-head">
+          <div>
+            <h2 class="section-title">Real Sample Assets</h2>
+            <p class="samples-desc">
+              展示项目四当前已归档的真实可灵样片，总览 / 列表 / 详情三层查询已接入。
+            </p>
+          </div>
+
+          <button class="secondary-btn" :disabled="samplesLoading" @click="loadSampleAssets">
+            {{ samplesLoading ? 'Loading...' : 'Refresh Samples' }}
+          </button>
+        </div>
+
+        <p v-if="samplesErrorMessage" class="error">
+          样例资产加载失败：{{ samplesErrorMessage }}
+        </p>
+
+        <div v-if="samplesSummary" class="samples-summary-grid">
+          <div class="samples-metric">
+            <span class="metric-label">Providers</span>
+            <strong class="metric-value">
+              {{ (samplesSummary.providers || []).join(', ') || '-' }}
+            </strong>
+          </div>
+
+          <div class="samples-metric">
+            <span class="metric-label">Total Samples</span>
+            <strong class="metric-value">
+              {{ samplesSummary.total_sample_count ?? 0 }}
+            </strong>
+          </div>
+
+          <div class="samples-metric samples-metric-wide">
+            <span class="metric-label">Provider Stats</span>
+            <pre class="light-result compact-result">{{ providerStatsText }}</pre>
+          </div>
+        </div>
+
+        <div class="samples-layout">
+          <section class="samples-list-panel">
+            <h3 class="subsection-title">Kling Sample List</h3>
+
+            <p v-if="klingSamples.length === 0" class="hint">
+              当前没有可展示的样片记录。
+            </p>
+
+            <button
+              v-for="sample in klingSamples"
+              :key="sample.sample_id || sample.scene_id"
+              class="sample-list-item"
+              :class="{ active: sample.sample_id === selectedSampleId }"
+              @click="selectSample(sample.sample_id || '')"
+            >
+              <strong>{{ sample.sample_id || 'unknown-sample' }}</strong>
+              <span>scene_id: {{ sample.scene_id || '-' }}</span>
+              <span>status: {{ sample.status || '-' }}</span>
+            </button>
+          </section>
+
+          <section class="sample-detail-panel">
+            <h3 class="subsection-title">Sample Detail</h3>
+
+            <div v-if="selectedSampleDetail" class="sample-detail-content">
+              <div class="detail-row">
+                <span class="detail-label">sample_id</span>
+                <code>{{ selectedSampleDetail.sample_id || '-' }}</code>
+              </div>
+
+              <div class="detail-row">
+                <span class="detail-label">scene_id</span>
+                <code>{{ selectedSampleDetail.scene_id || '-' }}</code>
+              </div>
+
+              <div class="detail-row">
+                <span class="detail-label">generated_scene_id</span>
+                <code>{{ selectedSampleDetail.generated_scene_id || '-' }}</code>
+              </div>
+
+              <div class="detail-row">
+                <span class="detail-label">status</span>
+                <code>{{ selectedSampleDetail.status || '-' }}</code>
+              </div>
+
+              <div class="detail-block">
+                <span class="detail-label">notes</span>
+                <p class="detail-text">{{ selectedSampleDetail.notes || '-' }}</p>
+                <a
+                  v-if="hasAssetLink(selectedSampleDetail.assets?.notes)"
+                  class="asset-link"
+                  :href="toAssetHref(selectedSampleDetail.assets?.notes)"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open notes file
+                </a>
+              </div>
+
+              <div class="detail-block">
+                <span class="detail-label">clean_video</span>
+                <code>{{ selectedSampleDetail.assets?.clean_video || '-' }}</code>
+                <a
+                  v-if="hasAssetLink(selectedSampleDetail.assets?.clean_video)"
+                  class="asset-link"
+                  :href="toAssetHref(selectedSampleDetail.assets?.clean_video)"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open clean video
+                </a>
+              </div>
+
+              <div class="detail-block">
+                <span class="detail-label">watermarked_video</span>
+                <code>{{ selectedSampleDetail.assets?.watermarked_video || '-' }}</code>
+                <a
+                  v-if="hasAssetLink(selectedSampleDetail.assets?.watermarked_video)"
+                  class="asset-link"
+                  :href="toAssetHref(selectedSampleDetail.assets?.watermarked_video)"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open watermarked video
+                </a>
+              </div>
+
+              <div class="detail-block">
+                <span class="detail-label">input_screenshot</span>
+                <code>{{ selectedSampleDetail.assets?.input_screenshot || '-' }}</code>
+              </div>
+
+              <div class="detail-block">
+                <span class="detail-label">result_screenshots</span>
+                <ul class="asset-list">
+                  <li
+                    v-for="path in selectedSampleDetail.assets?.result_screenshots || []"
+                    :key="path"
+                    class="asset-list-item"
+                  >
+                    <code>{{ path }}</code>
+                    <a
+                      class="asset-link"
+                      :href="toAssetHref(path)"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Open
+                    </a>
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            <p v-else class="hint">请选择左侧样片查看详情。</p>
+          </section>
+        </div>
+      </section>
 
       <label class="label" for="session-id">Session ID</label>
       <input
@@ -605,5 +905,190 @@ h1 {
   overflow: auto;
   font-size: 14px;
   line-height: 1.5;
+}
+
+.samples-panel {
+  margin: 24px 0;
+  padding: 20px;
+  border-radius: 16px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+}
+
+.samples-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.samples-desc {
+  color: #4b5563;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.secondary-btn {
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #111827;
+  border-radius: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.secondary-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.samples-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.samples-metric {
+  padding: 14px;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  text-align: left;
+}
+
+.samples-metric-wide {
+  grid-column: 1 / -1;
+}
+
+.metric-label {
+  display: block;
+  margin-bottom: 8px;
+  color: #6b7280;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.metric-value {
+  color: #111827;
+  font-size: 18px;
+}
+
+.samples-layout {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 16px;
+}
+
+.samples-list-panel,
+.sample-detail-panel {
+  padding: 16px;
+  border-radius: 14px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+}
+
+.subsection-title {
+  margin: 0 0 12px;
+  color: #111827;
+  font-size: 18px;
+  text-align: left;
+}
+
+.sample-list-item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  border: 1px solid #e5e7eb;
+  background: #f8fafc;
+  color: #111827;
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+
+.sample-list-item.active {
+  border-color: #111827;
+  background: #eef2ff;
+}
+
+.sample-detail-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: left;
+}
+
+.detail-row,
+.detail-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.detail-label {
+  color: #6b7280;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.detail-text {
+  color: #111827;
+  line-height: 1.6;
+}
+
+.asset-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.asset-list li {
+  margin-bottom: 8px;
+}
+
+.compact-result {
+  margin: 0;
+  max-height: 220px;
+}
+
+@media (max-width: 900px) {
+  .samples-panel-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .samples-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .samples-layout {
+    grid-template-columns: 1fr;
+  }
+}
+.asset-link {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin-top: 6px;
+  color: #2563eb;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.asset-link:hover {
+  text-decoration: underline;
+}
+
+.asset-list-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 </style>
