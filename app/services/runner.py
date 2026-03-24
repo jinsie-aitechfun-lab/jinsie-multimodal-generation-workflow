@@ -114,6 +114,15 @@ class WorkflowRunner:
             "total_sample_count": total_sample_count,
             "provider_stats": provider_stats,
         }
+    def get_real_kling_sample_by_id(self, sample_id: str) -> Optional[Dict[str, Any]]:
+        manifest = self.get_real_kling_samples_manifest()
+        samples = manifest.get("samples") or []
+
+        for sample in samples:
+            if str(sample.get("sample_id")) == sample_id:
+                return sample
+
+        return None
 
     def run(self, req: WorkflowRunRequest) -> WorkflowRunResponse:
         run_id = f"run_{uuid4().hex[:12]}"

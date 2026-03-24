@@ -35,6 +35,14 @@ def get_real_kling_samples():
     return _runner.get_real_kling_samples_manifest()
 
 
+@app.get("/v1/samples/kling/real/{sample_id}")
+def get_real_kling_sample(sample_id: str):
+    sample = _runner.get_real_kling_sample_by_id(sample_id)
+    if sample is None:
+        raise HTTPException(status_code=404, detail=f"sample not found: {sample_id}")
+    return sample
+
+
 @app.post("/v1/workflow/run", response_model=WorkflowRunResponse)
 def run_workflow(req: WorkflowRunRequest):
     try:
