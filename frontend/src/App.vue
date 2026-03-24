@@ -135,6 +135,22 @@ const providerStatsText = computed(() => {
   return stringifyPretty(samplesSummary.value.provider_stats)
 })
 
+function toAssetHref(path?: string): string {
+  if (!path) {
+    return ''
+  }
+
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return path
+  }
+
+  return `${apiBaseUrl}/${path}`
+}
+
+function hasAssetLink(path?: string): boolean {
+  return Boolean(path && path.trim())
+}
+
 function stringifyPretty(value: unknown): string {
   return JSON.stringify(value, null, 2)
 }
@@ -474,16 +490,43 @@ onMounted(() => {
               <div class="detail-block">
                 <span class="detail-label">notes</span>
                 <p class="detail-text">{{ selectedSampleDetail.notes || '-' }}</p>
+                <a
+                  v-if="hasAssetLink(selectedSampleDetail.assets?.notes)"
+                  class="asset-link"
+                  :href="toAssetHref(selectedSampleDetail.assets?.notes)"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open notes file
+                </a>
               </div>
 
               <div class="detail-block">
                 <span class="detail-label">clean_video</span>
                 <code>{{ selectedSampleDetail.assets?.clean_video || '-' }}</code>
+                <a
+                  v-if="hasAssetLink(selectedSampleDetail.assets?.clean_video)"
+                  class="asset-link"
+                  :href="toAssetHref(selectedSampleDetail.assets?.clean_video)"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open clean video
+                </a>
               </div>
 
               <div class="detail-block">
                 <span class="detail-label">watermarked_video</span>
                 <code>{{ selectedSampleDetail.assets?.watermarked_video || '-' }}</code>
+                <a
+                  v-if="hasAssetLink(selectedSampleDetail.assets?.watermarked_video)"
+                  class="asset-link"
+                  :href="toAssetHref(selectedSampleDetail.assets?.watermarked_video)"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open watermarked video
+                </a>
               </div>
 
               <div class="detail-block">
@@ -497,8 +540,17 @@ onMounted(() => {
                   <li
                     v-for="path in selectedSampleDetail.assets?.result_screenshots || []"
                     :key="path"
+                    class="asset-list-item"
                   >
                     <code>{{ path }}</code>
+                    <a
+                      class="asset-link"
+                      :href="toAssetHref(path)"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Open
+                    </a>
                   </li>
                 </ul>
               </div>
@@ -1018,5 +1070,25 @@ h1 {
   .samples-layout {
     grid-template-columns: 1fr;
   }
+}
+.asset-link {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin-top: 6px;
+  color: #2563eb;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.asset-link:hover {
+  text-decoration: underline;
+}
+
+.asset-list-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 </style>

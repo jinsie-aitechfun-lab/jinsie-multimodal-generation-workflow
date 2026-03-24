@@ -1,5 +1,8 @@
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.schemas.workflow import WorkflowRunRequest, WorkflowRunResponse
 from app.services.runner import UnknownStepError, WorkflowRunner
@@ -18,6 +21,12 @@ app.add_middleware(
 )
 
 _runner = WorkflowRunner()
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+ASSETS_DIR = PROJECT_ROOT / "assets"
+
+if ASSETS_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=str(ASSETS_DIR)), name="assets")
 
 
 @app.get("/health")
