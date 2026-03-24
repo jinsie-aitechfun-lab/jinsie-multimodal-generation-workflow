@@ -138,7 +138,48 @@ def main() -> None:
 
     _ok("/v1/samples/kling/real")
 
-    # 4) first run
+    # 4) /v1/samples/kling/real/{sample_id}
+    r = requests.get(
+        f"{base_url}/v1/samples/kling/real/kling-scene-01-real-sample",
+        timeout=5,
+    )
+    if r.status_code != 200:
+        _fail(
+            f"/v1/samples/kling/real/{{sample_id}} http_status={r.status_code}, "
+            f"body={r.text}"
+        )
+    detail_body = r.json()
+
+    if detail_body.get("sample_id") != "kling-scene-01-real-sample":
+        _fail(f"/v1/samples/kling/real/{{sample_id}} sample_id mismatch: {detail_body}")
+    if detail_body.get("scene_id") != "scene-01":
+        _fail(f"/v1/samples/kling/real/{{sample_id}} scene_id mismatch: {detail_body}")
+
+    detail_assets = detail_body.get("assets") or {}
+    if detail_assets.get("clean_video") != (
+        "assets/samples/kling/scene-01/scene-01-kling-clean.mp4"
+    ):
+        _fail(
+            f"/v1/samples/kling/real/{{sample_id}} clean_video mismatch: "
+            f"{detail_assets}"
+        )
+
+    r = requests.get(f"{base_url}/v1/samples/kling/real/not-exist", timeout=5)
+    if r.status_code != 404:
+        _fail(
+            f"/v1/samples/kling/real/not-exist http_status={r.status_code}, "
+            f"body={r.text}"
+        )
+    not_found_body = r.json()
+    if not_found_body.get("detail") != "sample not found: not-exist":
+        _fail(
+            f"/v1/samples/kling/real/not-exist detail mismatch: "
+            f"{not_found_body}"
+        )
+
+    _ok("/v1/samples/kling/real/{sample_id}")
+
+    # 5) first run
     resp1 = _run_request(base_url, session_id, "小兔子的一天")
 
     if resp1.get("workflow_id") != "storybook-demo":
@@ -245,7 +286,7 @@ def main() -> None:
             f"{kling_scene_package1}"
         )
 
-    # 5) second run with same session id
+    # 6) second run with same session id
     resp2 = _run_request(base_url, session_id, "小兔子的新冒险")
     memory2 = resp2.get("session_memory_summary") or {}
 
