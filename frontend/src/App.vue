@@ -6,6 +6,7 @@ type StepName =
   | 'storyboard'
   | 'image_prompts'
   | 'video_prompts'
+  | 'dialogue_script'
   | 'narration'
   | 'subtitles'
   | 'render_plan'
@@ -62,6 +63,7 @@ const STEP_OPTIONS: Array<{ label: string; value: StepName }> = [
   { label: 'Storyboard', value: 'storyboard' },
   { label: 'Image Prompts', value: 'image_prompts' },
   { label: 'Video Prompts', value: 'video_prompts' },
+  { label: 'Dialogue Script', value: 'dialogue_script' },
   { label: 'Narration', value: 'narration' },
   { label: 'Subtitles', value: 'subtitles' },
   { label: 'Render Plan', value: 'render_plan' },
@@ -72,6 +74,7 @@ const DEFAULT_STEPS: StepName[] = [
   'storyboard',
   'image_prompts',
   'video_prompts',
+  'dialogue_script',
   'narration',
   'subtitles',
   'render_plan',
@@ -102,6 +105,11 @@ const tone = ref('warm')
 const visualStyle = ref('storybook')
 const characterStyle = ref('animal')
 const voiceStyle = ref('warm_female')
+const voiceoverEnabled = ref(false)
+const voiceMode = ref('single')
+const narratorVoiceStyle = ref('warm_female')
+const motherVoiceStyle = ref('warm_female')
+const childVoiceStyle = ref('gentle_child')
 const durationSec = ref(60)
 const language = ref('zh-CN')
 const subtitleEnabled = ref(true)
@@ -404,6 +412,13 @@ async function runWorkflow() {
       visual_style: visualStyle.value,
       character_style: characterStyle.value,
       voice_style: voiceStyle.value,
+      voiceover_enabled: voiceoverEnabled.value,
+      voice_mode: voiceMode.value,
+      speaker_profiles: {
+        narrator: narratorVoiceStyle.value,
+        mother: motherVoiceStyle.value,
+        child: childVoiceStyle.value,
+      },
       duration_sec: durationSec.value,
       language: language.value,
       subtitle_enabled: subtitleEnabled.value,
@@ -687,9 +702,37 @@ onMounted(() => {
             <input v-model="characterStyle" class="input" type="text" />
           </label>
 
-          <label class="field">
+                    <label class="field">
             <span>Voice Style</span>
             <input v-model="voiceStyle" class="input" type="text" />
+          </label>
+
+          <label class="checkbox-field">
+            <input v-model="voiceoverEnabled" type="checkbox" />
+            <span>Enable Voiceover</span>
+          </label>
+
+          <label class="field">
+            <span>Voice Mode</span>
+            <select v-model="voiceMode" class="input">
+              <option value="single">single</option>
+              <option value="multi">multi</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Narrator Voice</span>
+            <input v-model="narratorVoiceStyle" class="input" type="text" />
+          </label>
+
+          <label v-if="voiceMode === 'multi'" class="field">
+            <span>Mother Voice</span>
+            <input v-model="motherVoiceStyle" class="input" type="text" />
+          </label>
+
+          <label v-if="voiceMode === 'multi'" class="field">
+            <span>Child Voice</span>
+            <input v-model="childVoiceStyle" class="input" type="text" />
           </label>
 
           <label class="field">
@@ -847,7 +890,8 @@ h1 {
 }
 
 .textarea:focus,
-.input:focus {
+.input:focus,
+.textarea:focus {
   outline: none;
   border-color: #111827;
 }
