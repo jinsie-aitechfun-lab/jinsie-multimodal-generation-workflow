@@ -151,6 +151,30 @@ function hasAssetLink(path?: string): boolean {
   return Boolean(path && path.trim())
 }
 
+function isImageAsset(path?: string): boolean {
+  if (!path) {
+    return false
+  }
+
+  const value = path.toLowerCase()
+  return (
+    value.endsWith('.png') ||
+    value.endsWith('.jpg') ||
+    value.endsWith('.jpeg') ||
+    value.endsWith('.webp') ||
+    value.endsWith('.gif')
+  )
+}
+
+function isVideoAsset(path?: string): boolean {
+  if (!path) {
+    return false
+  }
+
+  const value = path.toLowerCase()
+  return value.endsWith('.mp4') || value.endsWith('.webm') || value.endsWith('.mov')
+}
+
 function stringifyPretty(value: unknown): string {
   return JSON.stringify(value, null, 2)
 }
@@ -513,6 +537,13 @@ onMounted(() => {
                 >
                   Open clean video
                 </a>
+                <video
+                  v-if="isVideoAsset(selectedSampleDetail.assets?.clean_video)"
+                  class="asset-video"
+                  controls
+                  preload="metadata"
+                  :src="toAssetHref(selectedSampleDetail.assets?.clean_video)"
+                />
               </div>
 
               <div class="detail-block">
@@ -532,11 +563,24 @@ onMounted(() => {
               <div class="detail-block">
                 <span class="detail-label">input_screenshot</span>
                 <code>{{ selectedSampleDetail.assets?.input_screenshot || '-' }}</code>
+                <a
+                  v-if="isImageAsset(selectedSampleDetail.assets?.input_screenshot)"
+                  class="asset-image-link"
+                  :href="toAssetHref(selectedSampleDetail.assets?.input_screenshot)"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <img
+                    class="asset-image asset-image-thumbnail"
+                    :src="toAssetHref(selectedSampleDetail.assets?.input_screenshot)"
+                    alt="input screenshot preview"
+                  />
+                </a>
               </div>
 
               <div class="detail-block">
                 <span class="detail-label">result_screenshots</span>
-                <ul class="asset-list">
+                <ul class="asset-list asset-grid-list">
                   <li
                     v-for="path in selectedSampleDetail.assets?.result_screenshots || []"
                     :key="path"
@@ -544,12 +588,17 @@ onMounted(() => {
                   >
                     <code>{{ path }}</code>
                     <a
-                      class="asset-link"
+                      v-if="isImageAsset(path)"
+                      class="asset-image-link"
                       :href="toAssetHref(path)"
                       target="_blank"
                       rel="noreferrer"
                     >
-                      Open
+                      <img
+                        class="asset-image asset-image-thumbnail"
+                        :src="toAssetHref(path)"
+                        :alt="path"
+                      />
                     </a>
                   </li>
                 </ul>
@@ -1090,5 +1139,50 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+.asset-image {
+  display: block;
+  width: 100%;
+  max-width: 520px;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  margin-top: 8px;
+}
+
+.asset-video {
+  display: block;
+  width: 100%;
+  max-width: 520px;
+  border-radius: 10px;
+  margin-top: 8px;
+  background: #000000;
+}
+.asset-image-link {
+  display: inline-block;
+  width: fit-content;
+  margin-top: 8px;
+}
+
+.asset-image-thumbnail {
+  max-width: 240px;
+  max-height: 180px;
+  object-fit: cover;
+  cursor: pointer;
+}
+
+.asset-grid-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  padding-left: 0;
+  list-style: none;
+}
+
+.asset-grid-list .asset-list-item {
+  padding: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f8fafc;
 }
 </style>
