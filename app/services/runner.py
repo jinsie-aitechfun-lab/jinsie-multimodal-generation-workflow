@@ -61,6 +61,7 @@ class WorkflowRunner:
             "image_prompts": self._run_image_prompts,
             "video_prompts": self._run_video_prompts,
             "dialogue_script": self._run_dialogue_script,
+            "audio_segments": self._run_audio_segments,
             "narration": self._run_narration,
             "subtitles": self._run_subtitles,
             "render_plan": self._run_render_plan,
@@ -687,6 +688,7 @@ class WorkflowRunner:
         image_prompts = outputs.get("image_prompts") or {}
         video_prompts = outputs.get("video_prompts") or {}
         dialogue_script = outputs.get("dialogue_script") or {}
+        audio_segments = outputs.get("audio_segments") or {}
         narration = outputs.get("narration") or {}
         subtitles = outputs.get("subtitles") or {}
         render_plan = outputs.get("render_plan") or {}
@@ -721,6 +723,7 @@ class WorkflowRunner:
                 "image_prompts.json": image_prompts,
                 "video_prompts.json": video_prompts,
                 "dialogue_script.json": dialogue_script,
+                "audio_segments.json": audio_segments,
                 "narration.txt": narration.get("full_text", ""),
                 "subtitles.srt": subtitles.get("srt_preview", ""),
                 "render_plan.json": render_plan,
@@ -896,6 +899,50 @@ class WorkflowRunner:
             "lines": lines,
         }
 
+    def _run_audio_segments(
+        self, ctx: StepContext, outputs: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        dialogue_script = outputs.get("dialogue_script") or {}
+        lines = dialogue_script.get("lines") or []
+
+        if not dialogue_script.get("enabled") or not lines:
+            return {
+                "enabled": False,
+                "provider": "mock_tts",
+                "items": [],
+            }
+
+        items: List[Dict[str, Any]] = []
+        for index, line in enumerate(lines, start=1):
+            text = str(line.get("text", "")).strip()
+            speaker = str(line.get("speaker", "narrator"))
+            voice_style = str(line.get("voice_style", ctx.input.voice_style))
+            scene_id = line.get("scene_id")
+            word_count = max(1, len(text))
+            duration_estimate_sec = max(2, min(12, word_count // 8))
+
+            items.append(
+                {
+                    "segment_id": f"audio_{index:02d}",
+                    "scene_id": scene_id,
+                    "speaker": speaker,
+                    "text": text,
+                    "voice_style": voice_style,
+                    "target_audio_file": (
+                        f"artifacts/audio/{ctx.run_id}/{speaker}_{index:02d}.mp3"
+                    ),
+                    "duration_estimate_sec": duration_estimate_sec,
+                    "provider": "mock_tts",
+                    "status": "planned",
+                }
+            )
+
+        return {
+            "enabled": True,
+            "provider": "mock_tts",
+            "items": items,
+        }
+    
     def _run_narration(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
