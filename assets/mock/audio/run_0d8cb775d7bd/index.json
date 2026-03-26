@@ -1,0 +1,51 @@
+{
+  "manifest_type": "mock_audio_directory_index",
+  "run_id": "run_0d8cb775d7bd",
+  "asset_count": 7,
+  "run_directory": "assets/mock/audio/run_0d8cb775d7bd",
+  "public_base_url": "/assets/mock/audio/run_0d8cb775d7bd",
+  "assets": [
+    {
+      "asset_id": "audio_asset_01",
+      "file_name": "mother_01.mp3",
+      "metadata_file": "mother_01.mp3.json",
+      "metadata_public_url": "/assets/mock/audio/run_0d8cb775d7bd/mother_01.mp3.json"
+    },
+    {
+      "asset_id": "audio_asset_02",
+      "file_name": "child_02.mp3",
+      "metadata_file": "child_02.mp3.json",
+      "metadata_public_url": "/assets/mock/audio/run_0d8cb775d7bd/child_02.mp3.json"
+    },
+    {
+      "asset_id": "audio_asset_03",
+      "file_name": "mother_03.mp3",
+      "metadata_file": "mother_03.mp3.json",
+      "metadata_public_url": "/assets/mock/audio/run_0d8cb775d7bd/mother_03.mp3.json"
+    },
+    {
+      "asset_id": "audio_asset_04",
+      "file_name": "child_04.mp3",
+      "metadata_file": "child_04.mp3.json",
+      "metadata_public_url": "/assets/mock/audio/run_0d8cb775d7bd/child_04.mp3.json"
+    },
+    {
+      "asset_id": "audio_asset_05",
+      "file_name": "mother_05.mp3",
+      "metadata_file": "mother_05.mp3.json",
+      "metadata_public_url": "/assets/mock/audio/run_0d8cb775d7bd/mother_05.mp3.json"
+    },
+    {
+      "asset_id": "audio_asset_06",
+      "file_name": "mother_06.mp3",
+      "metadata_file": "mother_06.mp3.json",
+      "metadata_public_url": "/assets/mock/audio/run_0d8cb775d7bd/mother_06.mp3.json"
+    },
+    {
+      "asset_id": "audio_asset_07",
+      "file_name": "child_07.mp3",
+      "metadata_file": "child_07.mp3.json",
+      "metadata_public_url": "/assets/mock/audio/run_0d8cb775d7bd/child_07.mp3.json"
+    }
+  ]
+}
