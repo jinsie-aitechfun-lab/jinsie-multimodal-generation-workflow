@@ -28,6 +28,40 @@ type WorkflowRunResponse = {
   [key: string]: unknown
 }
 
+type AudioSceneAsset = {
+  asset_id?: string
+  segment_id?: string
+  speaker?: string
+  file_name?: string
+  public_url?: string
+  duration_estimate_sec?: number
+}
+
+type AudioSceneGroup = {
+  scene_id?: string
+  assets?: AudioSceneAsset[]
+}
+
+type AudioDirectoryAssetFile = {
+  asset_id?: string
+  file_name?: string
+  metadata_file?: string
+  metadata_public_url?: string
+}
+
+type AudioDirectoryManifest = {
+  run_directory?: string
+  public_base_url?: string
+  index_file?: string
+  index_public_url?: string
+  asset_files?: AudioDirectoryAssetFile[]
+}
+
+type AudioSegmentsOutput = {
+  directory_manifest?: AudioDirectoryManifest
+  scene_asset_map?: AudioSceneGroup[]
+}
+
 type SampleAssetPaths = {
   notes?: string
   clean_video?: string
@@ -88,6 +122,9 @@ const storyboardText = ref('')
 const narrationText = ref('')
 const subtitlesText = ref('')
 const renderPlanText = ref('')
+const mockAudioIndexUrl = ref('')
+const mockAudioSceneGroups = ref<AudioSceneGroup[]>([])
+const mockAudioDirectoryText = ref('')
 
 const samplesLoading = ref(false)
 const samplesErrorMessage = ref('')
@@ -127,15 +164,6 @@ const apiBaseUrl =
 
 const canSubmit = computed(() => {
   return topic.value.trim().length > 0 && selectedSteps.value.length > 0 && !loading.value
-})
-
-const selectedSample = computed(() => {
-  if (!selectedSampleId.value) {
-    return null
-  }
-  return (
-    klingSamples.value.find((item) => item.sample_id === selectedSampleId.value) || null
-  )
 })
 
 const providerStatsText = computed(() => {
@@ -247,6 +275,25 @@ function extractRenderPlanText(data: WorkflowRunResponse): string {
     return stringifyPretty(renderPlan)
   }
   return ''
+}
+
+function extractMockAudioOutput(data: WorkflowRunResponse): AudioSegmentsOutput | null {
+  const audioSegments = data.outputs?.audio_segments
+  if (!audioSegments || typeof audioSegments !== 'object') {
+    return null
+  }
+  return audioSegments as AudioSegmentsOutput
+}
+
+function extractMockAudioState(data: WorkflowRunResponse) {
+  const audioOutput = extractMockAudioOutput(data)
+
+  mockAudioIndexUrl.value = audioOutput?.directory_manifest?.index_public_url || ''
+  mockAudioSceneGroups.value = Array.isArray(audioOutput?.scene_asset_map)
+    ? audioOutput!.scene_asset_map || []
+    : []
+  mockAudioDirectoryText.value =
+    audioOutput?.directory_manifest ? stringifyPretty(audioOutput.directory_manifest) : ''
 }
 
 function formatPreview(output?: Record<string, unknown>): string {
@@ -392,14 +439,15 @@ async function selectSample(sampleId: string) {
 }
 
 async function runWorkflow() {
-  loading.value = true
-  errorMessage.value = ''
   resultText.value = ''
   storyText.value = ''
   storyboardText.value = ''
   narrationText.value = ''
   subtitlesText.value = ''
   renderPlanText.value = ''
+  mockAudioIndexUrl.value = ''
+  mockAudioSceneGroups.value = []
+  mockAudioDirectoryText.value = ''
   stepSummaries.value = []
 
   const payload = {
@@ -451,6 +499,7 @@ async function runWorkflow() {
     narrationText.value = extractNarrationText(data)
     subtitlesText.value = extractSubtitlesText(data)
     renderPlanText.value = extractRenderPlanText(data)
+    extractMockAudioState(data)
     stepSummaries.value = buildStepSummaries(data)
     resultText.value = stringifyPretty(data)
   } catch (error) {
@@ -802,6 +851,69 @@ onMounted(() => {
       <section v-if="renderPlanText" class="result-panel">
         <h2 class="section-title">Render Plan</h2>
         <pre class="light-result">{{ renderPlanText }}</pre>
+      </section>
+
+      <section
+        v-if="mockAudioIndexUrl || mockAudioSceneGroups.length > 0 || mockAudioDirectoryText"
+        class="result-panel"
+      >
+        <h2 class="section-title">Mock Audio Assets</h2>
+
+        <div v-if="mockAudioIndexUrl" class="mock-audio-link-row">
+          <span class="mock-audio-label">Directory Index</span>
+          <a
+            class="asset-link"
+            :href="`${apiBaseUrl}${mockAudioIndexUrl}`"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Open index.json
+          </a>
+          <code>{{ mockAudioIndexUrl }}</code>
+        </div>
+
+        <div v-if="mockAudioSceneGroups.length > 0" class="mock-audio-scenes">
+          <article
+            v-for="group in mockAudioSceneGroups"
+            :key="group.scene_id || 'unknown-scene'"
+            class="mock-audio-scene-card"
+          >
+            <div class="mock-audio-scene-head">
+              <strong>{{ group.scene_id || 'unknown-scene' }}</strong>
+              <span>{{ (group.assets || []).length }} asset(s)</span>
+            </div>
+
+            <ul class="mock-audio-asset-list">
+              <li
+                v-for="asset in group.assets || []"
+                :key="asset.asset_id || asset.segment_id || asset.file_name"
+                class="mock-audio-asset-item"
+              >
+                <div class="mock-audio-asset-main">
+                  <code>{{ asset.file_name || '-' }}</code>
+                  <span class="mock-audio-meta">
+                    {{ asset.speaker || '-' }} · {{ asset.duration_estimate_sec ?? 0 }}s
+                  </span>
+                </div>
+
+                <a
+                  v-if="asset.public_url"
+                  class="asset-link"
+                  :href="`${apiBaseUrl}${asset.public_url}`"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open asset path
+                </a>
+              </li>
+            </ul>
+          </article>
+        </div>
+
+        <details v-if="mockAudioDirectoryText" class="mock-audio-details">
+          <summary>Directory Manifest JSON</summary>
+          <pre class="light-result compact-result">{{ mockAudioDirectoryText }}</pre>
+        </details>
       </section>
 
       <section v-if="stepSummaries.length > 0" class="summary-panel">
@@ -1283,5 +1395,94 @@ h1 {
   max-height: 320px;
   overflow: auto;
   text-align: left;
+}
+.mock-audio-link-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #f9fafb;
+}
+
+.mock-audio-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.mock-audio-scenes {
+  display: grid;
+  gap: 14px;
+}
+
+.mock-audio-scene-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 16px;
+  background: #ffffff;
+}
+
+.mock-audio-scene-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  color: #111827;
+}
+
+.mock-audio-asset-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.mock-audio-asset-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+}
+
+.mock-audio-asset-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.mock-audio-meta {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.mock-audio-details {
+  margin-top: 16px;
+}
+
+.mock-audio-details summary {
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 10px;
+}
+
+@media (max-width: 768px) {
+  .mock-audio-asset-item,
+  .mock-audio-scene-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 </style>
