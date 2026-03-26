@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
@@ -26,7 +28,9 @@ class StepContext:
     session_id: Optional[str]
     run_id: str
     input: WorkflowInput
-
+    
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+MOCK_AUDIO_ROOT = PROJECT_ROOT / "assets" / "mock" / "audio"
 
 class WorkflowRunner:
     """
@@ -126,6 +130,100 @@ class WorkflowRunner:
 
         return None
 
+    def _ensure_mock_audio_assets(
+        self, run_id: str, assets: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        run_dir = MOCK_AUDIO_ROOT / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+        asset_files: List[Dict[str, Any]] = []
+
+        for asset in assets:
+            file_name = str(asset.get("file_name", "unknown.mp3"))
+            metadata_name = f"{file_name}.json"
+            metadata_path = run_dir / metadata_name
+
+            metadata_payload = {
+                "asset_id": asset.get("asset_id"),
+                "segment_id": asset.get("segment_id"),
+                "scene_id": asset.get("scene_id"),
+                "speaker": asset.get("speaker"),
+                "voice_style": asset.get("voice_style"),
+                "file_name": file_name,
+                "mock_audio_file_missing": True,
+                "note": "Phase 1 mock asset placeholder. No real audio binary generated yet.",
+                "public_url": asset.get("public_url"),
+                "mime_type": asset.get("mime_type"),
+                "duration_estimate_sec": asset.get("duration_estimate_sec"),
+                "asset_status": asset.get("asset_status"),
+                "generation_mode": asset.get("generation_mode"),
+                "waveform_preview": asset.get("waveform_preview", []),
+            }
+
+            metadata_path.write_text(
+                json.dumps(metadata_payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+
+            asset_files.append(
+                {
+                    "asset_id": asset.get("asset_id"),
+                    "file_name": file_name,
+                    "metadata_file": metadata_name,
+                    "metadata_public_url": f"/assets/mock/audio/{run_id}/{metadata_name}",
+                }
+            )
+
+        index_payload = {
+            "manifest_type": "mock_audio_directory_index",
+            "run_id": run_id,
+            "asset_count": len(assets),
+            "run_directory": f"assets/mock/audio/{run_id}",
+            "public_base_url": f"/assets/mock/audio/{run_id}",
+            "assets": asset_files,
+        }
+
+        index_path = run_dir / "index.json"
+        index_path.write_text(
+            json.dumps(index_payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+        return {
+            "run_directory": f"assets/mock/audio/{run_id}",
+            "public_base_url": f"/assets/mock/audio/{run_id}",
+            "index_file": "index.json",
+            "index_public_url": f"/assets/mock/audio/{run_id}/index.json",
+            "asset_files": asset_files,
+        }
+
+    def _group_audio_assets_by_scene(
+        self, assets: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        grouped: Dict[str, List[Dict[str, Any]]] = {}
+
+        for asset in assets:
+            scene_id = str(asset.get("scene_id") or "unknown_scene")
+            grouped.setdefault(scene_id, []).append(
+                {
+                    "asset_id": asset.get("asset_id"),
+                    "segment_id": asset.get("segment_id"),
+                    "speaker": asset.get("speaker"),
+                    "file_name": asset.get("file_name"),
+                    "public_url": asset.get("public_url"),
+                    "duration_estimate_sec": asset.get("duration_estimate_sec"),
+                }
+            )
+
+        return [
+            {
+                "scene_id": scene_id,
+                "assets": grouped[scene_id],
+            }
+            for scene_id in sorted(grouped.keys())
+        ]
+    
+    
     def run(self, req: WorkflowRunRequest) -> WorkflowRunResponse:
         run_id = f"run_{uuid4().hex[:12]}"
         ctx = StepContext(
@@ -713,6 +811,19 @@ class WorkflowRunner:
         }
 
         kling_scene_package = self._build_kling_scene_package(ctx, outputs)
+        audio_assets_manifest = audio_segments.get("asset_manifest") or {
+            "run_id": ctx.run_id,
+            "provider": "mock_tts",
+            "asset_count": 0,
+            "assets": [],
+        }
+        audio_directory_manifest = audio_segments.get("directory_manifest") or {
+            "run_directory": f"assets/mock/audio/{ctx.run_id}",
+            "public_base_url": f"/assets/mock/audio/{ctx.run_id}",
+            "index_file": "index.json",
+            "index_public_url": f"/assets/mock/audio/{ctx.run_id}/index.json",
+            "asset_files": [],
+        }
 
         return {
             "format": "render_package_v1",
@@ -724,6 +835,8 @@ class WorkflowRunner:
                 "video_prompts.json": video_prompts,
                 "dialogue_script.json": dialogue_script,
                 "audio_segments.json": audio_segments,
+                "audio_directory_manifest.json": audio_directory_manifest,
+                "audio_assets_manifest.json": audio_assets_manifest,
                 "narration.txt": narration.get("full_text", ""),
                 "subtitles.srt": subtitles.get("srt_preview", ""),
                 "render_plan.json": render_plan,
@@ -732,7 +845,6 @@ class WorkflowRunner:
                 "real_samples_manifest.json": real_samples_manifest,
             },
         }
-
     def _run_story(self, ctx: StepContext, outputs: Dict[str, Any]) -> Dict[str, Any]:
         topic = ctx.input.topic.strip() or "一个温暖的童话故事"
         paragraphs = self._build_story_paragraphs(ctx)
@@ -906,20 +1018,58 @@ class WorkflowRunner:
         lines = dialogue_script.get("lines") or []
 
         if not dialogue_script.get("enabled") or not lines:
+            empty_directory_manifest = self._ensure_mock_audio_assets(ctx.run_id, [])
             return {
                 "enabled": False,
                 "provider": "mock_tts",
                 "items": [],
+                "asset_manifest": {
+                    "run_id": ctx.run_id,
+                    "provider": "mock_tts",
+                    "asset_count": 0,
+                    "assets": [],
+                },
+                "directory_manifest": empty_directory_manifest,
+                "scene_asset_map": [],
             }
 
         items: List[Dict[str, Any]] = []
+        assets: List[Dict[str, Any]] = []
+
         for index, line in enumerate(lines, start=1):
             text = str(line.get("text", "")).strip()
             speaker = str(line.get("speaker", "narrator"))
             voice_style = str(line.get("voice_style", ctx.input.voice_style))
             scene_id = line.get("scene_id")
-            word_count = max(1, len(text))
-            duration_estimate_sec = max(2, min(12, word_count // 8))
+            char_count = max(1, len(text))
+            duration_estimate_sec = max(2, min(12, char_count // 8))
+
+            file_name = f"{speaker}_{index:02d}.mp3"
+            relative_path = f"assets/mock/audio/{ctx.run_id}/{file_name}"
+            public_url = f"/assets/mock/audio/{ctx.run_id}/{file_name}"
+            waveform_preview = [
+                max(0.12, round(duration_estimate_sec / 12, 2)),
+                0.48,
+                0.76,
+                0.35,
+                0.62,
+            ]
+
+            asset = {
+                "asset_id": f"audio_asset_{index:02d}",
+                "segment_id": f"audio_{index:02d}",
+                "scene_id": scene_id,
+                "speaker": speaker,
+                "voice_style": voice_style,
+                "file_name": file_name,
+                "relative_path": relative_path,
+                "public_url": public_url,
+                "mime_type": "audio/mpeg",
+                "duration_estimate_sec": duration_estimate_sec,
+                "asset_status": "mock_registered",
+                "generation_mode": "placeholder_manifest_only",
+                "waveform_preview": waveform_preview,
+            }
 
             items.append(
                 {
@@ -934,15 +1084,28 @@ class WorkflowRunner:
                     "duration_estimate_sec": duration_estimate_sec,
                     "provider": "mock_tts",
                     "status": "planned",
+                    "mock_asset": asset,
                 }
             )
+
+            assets.append(asset)
+
+        directory_manifest = self._ensure_mock_audio_assets(ctx.run_id, assets)
+        scene_asset_map = self._group_audio_assets_by_scene(assets)
 
         return {
             "enabled": True,
             "provider": "mock_tts",
             "items": items,
+            "asset_manifest": {
+                "run_id": ctx.run_id,
+                "provider": "mock_tts",
+                "asset_count": len(assets),
+                "assets": assets,
+            },
+            "directory_manifest": directory_manifest,
+            "scene_asset_map": scene_asset_map,
         }
-    
     def _run_narration(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
