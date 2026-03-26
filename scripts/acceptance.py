@@ -50,6 +50,7 @@ def _run_request(
             {"name": "image_prompts"},
             {"name": "video_prompts"},
             {"name": "dialogue_script"},
+            {"name": "audio_segments"},
             {"name": "narration"},
             {"name": "subtitles"},
             {"name": "render_plan"},
@@ -199,7 +200,7 @@ def main() -> None:
         _fail(f"status != COMPLETED: {resp1.get('status')}")
 
     steps = resp1.get("steps")
-    if not isinstance(steps, list) or len(steps) != 8:
+    if not isinstance(steps, list) or len(steps) != 9:
         _fail(f"steps invalid len: {steps}")
 
     expected_names = [
@@ -208,6 +209,7 @@ def main() -> None:
         "image_prompts",
         "video_prompts",
         "dialogue_script",
+        "audio_segments",
         "narration",
         "subtitles",
         "render_plan",
@@ -235,6 +237,7 @@ def main() -> None:
         "image_prompts.json",
         "video_prompts.json",
         "dialogue_script.json",
+        "audio_segments.json",
         "narration.txt",
         "subtitles.srt",
         "render_plan.json",
@@ -293,7 +296,23 @@ def main() -> None:
     narration_speakers1 = {segment.get("speaker") for segment in narration_segments1}
     if "mother" not in narration_speakers1 or "child" not in narration_speakers1:
         _fail(f"narration speakers invalid: {narration1}")
-        
+    
+    audio_segments1 = files1.get("audio_segments.json") or {}
+    if audio_segments1.get("enabled") is not True:
+        _fail(f"audio_segments enabled mismatch: {audio_segments1}")
+
+    audio_items1 = audio_segments1.get("items") or []
+    if not isinstance(audio_items1, list) or len(audio_items1) == 0:
+        _fail(f"audio_segments items invalid: {audio_segments1}")
+
+    first_audio_item1 = audio_items1[0]
+    if first_audio_item1.get("provider") != "mock_tts":
+        _fail(f"audio_segments provider mismatch: {audio_segments1}")
+    if first_audio_item1.get("status") != "planned":
+        _fail(f"audio_segments status mismatch: {audio_segments1}")
+    if not first_audio_item1.get("target_audio_file"):
+        _fail(f"audio_segments target_audio_file empty: {audio_segments1}")
+            
     sample1 = samples1[0]
     if sample1.get("scene_id") != "scene-01":
         _fail(f"real sample scene_id mismatch: {sample1}")
