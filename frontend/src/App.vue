@@ -92,6 +92,8 @@ const samplesSummary = ref<SamplesSummaryResponse | null>(null)
 const klingSamples = ref<KlingSample[]>([])
 const selectedSampleId = ref('')
 const selectedSampleDetail = ref<KlingSample | null>(null)
+const selectedSampleNotesText = ref('')
+const selectedSampleNotesLoading = ref(false)
 
 const topic = ref('写一个关于小猫冒险的故事')
 const sessionId = ref('demo-session-001')
@@ -321,6 +323,29 @@ async function fetchSampleDetail(sampleId: string) {
   selectedSampleDetail.value = data
 }
 
+async function fetchSampleNotesText(notesPath?: string) {
+  if (!notesPath) {
+    selectedSampleNotesText.value = ''
+    return
+  }
+
+  selectedSampleNotesLoading.value = true
+
+  try {
+    const response = await fetch(toAssetHref(notesPath))
+    if (!response.ok) {
+      throw new Error(`Sample notes HTTP ${response.status}`)
+    }
+
+    selectedSampleNotesText.value = await response.text()
+  } catch (error) {
+    selectedSampleNotesText.value =
+      error instanceof Error ? `Failed to load notes: ${error.message}` : 'Failed to load notes'
+  } finally {
+    selectedSampleNotesLoading.value = false
+  }
+}
+
 async function loadSampleAssets() {
   samplesLoading.value = true
   samplesErrorMessage.value = ''
@@ -331,9 +356,12 @@ async function loadSampleAssets() {
 
     if (selectedSampleId.value) {
       await fetchSampleDetail(selectedSampleId.value)
+      await fetchSampleNotesText(selectedSampleDetail.value?.assets?.notes)
     } else {
       selectedSampleDetail.value = null
+      selectedSampleNotesText.value = ''
     }
+
   } catch (error) {
     samplesErrorMessage.value =
       error instanceof Error ? error.message : 'Failed to load sample assets'
@@ -348,6 +376,7 @@ async function selectSample(sampleId: string) {
 
   try {
     await fetchSampleDetail(sampleId)
+    await fetchSampleNotesText(selectedSampleDetail.value?.assets?.notes)
   } catch (error) {
     samplesErrorMessage.value =
       error instanceof Error ? error.message : 'Failed to load sample detail'
@@ -523,6 +552,12 @@ onMounted(() => {
                 >
                   Open notes file
                 </a>
+
+                <div class="notes-preview-block">
+                  <span class="detail-label">notes preview</span>
+                  <p v-if="selectedSampleNotesLoading" class="detail-text">Loading notes...</p>
+                  <pre v-else class="notes-preview">{{ selectedSampleNotesText || '-' }}</pre>
+                </div>
               </div>
 
               <div class="detail-block">
@@ -1184,5 +1219,25 @@ h1 {
   border: 1px solid #e5e7eb;
   border-radius: 10px;
   background: #f8fafc;
+}
+
+.notes-preview-block {
+  margin-top: 10px;
+}
+
+.notes-preview {
+  margin: 0;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  background: #f8fafc;
+  color: #111827;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow: auto;
+  text-align: left;
 }
 </style>
