@@ -12,7 +12,7 @@ class StepSpec(BaseModel):
         description=(
             "Step name, e.g. "
             "story/storyboard/image_prompts/video_prompts/"
-            "narration/subtitles/render_plan"
+            "dialogue_script/narration/subtitles/render_plan"
         ),
     )
 
@@ -24,6 +24,15 @@ class WorkflowInput(BaseModel):
     visual_style: str = Field(default="storybook")
     character_style: str = Field(default="animal")
     voice_style: str = Field(default="warm_female")
+    voiceover_enabled: bool = Field(default=False)
+    voice_mode: str = Field(default="single")
+    speaker_profiles: Dict[str, str] = Field(
+        default_factory=lambda: {
+            "narrator": "warm_female",
+            "mother": "warm_female",
+            "child": "gentle_child",
+        }
+    )
     duration_sec: int = Field(default=60, ge=15, le=300)
     language: str = Field(default="zh-CN")
     subtitle_enabled: bool = Field(default=True)

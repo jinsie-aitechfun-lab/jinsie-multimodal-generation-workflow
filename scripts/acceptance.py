@@ -31,6 +31,13 @@ def _run_request(
             "visual_style": "storybook",
             "character_style": "animal",
             "voice_style": "warm_female",
+            "voiceover_enabled": True,
+            "voice_mode": "multi",
+            "speaker_profiles": {
+                "narrator": "warm_female",
+                "mother": "warm_female",
+                "child": "gentle_child",
+            },
             "duration_sec": 60,
             "language": "zh-CN",
             "subtitle_enabled": True,
@@ -42,12 +49,12 @@ def _run_request(
             {"name": "storyboard"},
             {"name": "image_prompts"},
             {"name": "video_prompts"},
+            {"name": "dialogue_script"},
             {"name": "narration"},
             {"name": "subtitles"},
             {"name": "render_plan"},
         ],
     }
-
     r = requests.post(f"{base_url}/v1/workflow/run", json=payload, timeout=15)
     if r.status_code != 200:
         _fail(f"/v1/workflow/run http_status={r.status_code}, body={r.text}")
@@ -192,7 +199,7 @@ def main() -> None:
         _fail(f"status != COMPLETED: {resp1.get('status')}")
 
     steps = resp1.get("steps")
-    if not isinstance(steps, list) or len(steps) != 7:
+    if not isinstance(steps, list) or len(steps) != 8:
         _fail(f"steps invalid len: {steps}")
 
     expected_names = [
@@ -200,6 +207,7 @@ def main() -> None:
         "storyboard",
         "image_prompts",
         "video_prompts",
+        "dialogue_script",
         "narration",
         "subtitles",
         "render_plan",
@@ -226,6 +234,7 @@ def main() -> None:
         "storyboard.json",
         "image_prompts.json",
         "video_prompts.json",
+        "dialogue_script.json",
         "narration.txt",
         "subtitles.srt",
         "render_plan.json",
@@ -259,6 +268,32 @@ def main() -> None:
     if not isinstance(samples1, list) or len(samples1) != 1:
         _fail(f"real_samples_manifest samples invalid: {real_manifest1}")
 
+    dialogue_script1 = files1.get("dialogue_script.json") or {}
+    if dialogue_script1.get("enabled") is not True:
+        _fail(f"dialogue_script enabled mismatch: {dialogue_script1}")
+    if dialogue_script1.get("voice_mode") != "multi":
+        _fail(f"dialogue_script voice_mode mismatch: {dialogue_script1}")
+
+    lines1 = dialogue_script1.get("lines") or []
+    if not isinstance(lines1, list) or len(lines1) == 0:
+        _fail(f"dialogue_script lines invalid: {dialogue_script1}")
+
+    speakers1 = {line.get("speaker") for line in lines1}
+    if "mother" not in speakers1 or "child" not in speakers1:
+        _fail(f"dialogue_script speakers invalid: {dialogue_script1}")
+
+    narration1 = outputs.get("narration") or {}
+    if narration1.get("voice_mode") != "multi":
+        _fail(f"narration voice_mode mismatch: {narration1}")
+
+    narration_segments1 = narration1.get("segments") or []
+    if not isinstance(narration_segments1, list) or len(narration_segments1) == 0:
+        _fail(f"narration segments invalid: {narration1}")
+
+    narration_speakers1 = {segment.get("speaker") for segment in narration_segments1}
+    if "mother" not in narration_speakers1 or "child" not in narration_speakers1:
+        _fail(f"narration speakers invalid: {narration1}")
+        
     sample1 = samples1[0]
     if sample1.get("scene_id") != "scene-01":
         _fail(f"real sample scene_id mismatch: {sample1}")

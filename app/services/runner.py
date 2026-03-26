@@ -60,6 +60,7 @@ class WorkflowRunner:
             "storyboard": self._run_storyboard,
             "image_prompts": self._run_image_prompts,
             "video_prompts": self._run_video_prompts,
+            "dialogue_script": self._run_dialogue_script,
             "narration": self._run_narration,
             "subtitles": self._run_subtitles,
             "render_plan": self._run_render_plan,
@@ -275,6 +276,20 @@ class WorkflowRunner:
             return "mock"
         return value
 
+    def _normalized_voice_mode(self, voice_mode: str) -> str:
+        value = voice_mode.strip().lower()
+        if value in {"single", "multi"}:
+            return value
+        return "single"
+
+    def _speaker_profiles(self, ctx: StepContext) -> Dict[str, str]:
+        profiles = dict(ctx.input.speaker_profiles or {})
+        return {
+            "narrator": profiles.get("narrator", ctx.input.voice_style),
+            "mother": profiles.get("mother", "warm_female"),
+            "child": profiles.get("child", "gentle_child"),
+        }
+        
     def _build_story_paragraphs(self, ctx: StepContext) -> List[str]:
         topic = ctx.input.topic.strip() or "一个温暖的童话故事"
         audience_label = self._audience_label(ctx.input.audience)
@@ -671,6 +686,7 @@ class WorkflowRunner:
         storyboard = outputs.get("storyboard") or {}
         image_prompts = outputs.get("image_prompts") or {}
         video_prompts = outputs.get("video_prompts") or {}
+        dialogue_script = outputs.get("dialogue_script") or {}
         narration = outputs.get("narration") or {}
         subtitles = outputs.get("subtitles") or {}
         render_plan = outputs.get("render_plan") or {}
@@ -704,6 +720,7 @@ class WorkflowRunner:
                 "storyboard.json": storyboard,
                 "image_prompts.json": image_prompts,
                 "video_prompts.json": video_prompts,
+                "dialogue_script.json": dialogue_script,
                 "narration.txt": narration.get("full_text", ""),
                 "subtitles.srt": subtitles.get("srt_preview", ""),
                 "render_plan.json": render_plan,
@@ -806,10 +823,114 @@ class WorkflowRunner:
         storyboard = outputs.get("storyboard") or {}
         scenes = storyboard.get("scenes") or []
         return self._build_video_provider_prompts(ctx, scenes)
+    
+    def _run_dialogue_script(
+        self, ctx: StepContext, outputs: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        storyboard = outputs.get("storyboard") or {}
+        scenes = storyboard.get("scenes") or []
+        voice_mode = self._normalized_voice_mode(ctx.input.voice_mode)
+        speaker_profiles = self._speaker_profiles(ctx)
+
+        if not ctx.input.voiceover_enabled:
+            return {
+                "enabled": False,
+                "voice_mode": voice_mode,
+                "speaker_profiles": speaker_profiles,
+                "lines": [],
+            }
+
+        lines: List[Dict[str, Any]] = []
+
+        if voice_mode == "single":
+            for index, scene in enumerate(scenes, start=1):
+                text = str(scene.get("narration", "")).strip()
+                if not text:
+                    continue
+
+                lines.append(
+                    {
+                        "line_id": f"line_{index:02d}",
+                        "scene_id": scene.get("scene_id"),
+                        "speaker": "narrator",
+                        "voice_style": speaker_profiles["narrator"],
+                        "text": text,
+                    }
+                )
+
+            return {
+                "enabled": True,
+                "voice_mode": "single",
+                "speaker_profiles": speaker_profiles,
+                "lines": lines,
+            }
+
+        alternating_speakers = ["mother", "child"]
+
+        for index, scene in enumerate(scenes, start=1):
+            text = str(scene.get("narration", "")).strip()
+            if not text:
+                continue
+
+            segments = [part.strip() for part in text.split("。") if part.strip()]
+            if not segments:
+                segments = [text]
+
+            for seg_index, segment in enumerate(segments, start=1):
+                speaker = alternating_speakers[(seg_index - 1) % len(alternating_speakers)]
+                final_text = f"{segment}。"
+                lines.append(
+                    {
+                        "line_id": f"line_{index:02d}_{seg_index:02d}",
+                        "scene_id": scene.get("scene_id"),
+                        "speaker": speaker,
+                        "voice_style": speaker_profiles[speaker],
+                        "text": final_text,
+                    }
+                )
+
+        return {
+            "enabled": True,
+            "voice_mode": "multi",
+            "speaker_profiles": speaker_profiles,
+            "lines": lines,
+        }
 
     def _run_narration(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
+        dialogue_script = outputs.get("dialogue_script") or {}
+        dialogue_lines = dialogue_script.get("lines") or []
+
+        if dialogue_script.get("enabled") and dialogue_lines:
+            segments: List[Dict[str, Any]] = []
+            full_text_parts: List[str] = []
+
+            for line in dialogue_lines:
+                text = str(line.get("text", ""))
+                speaker = str(line.get("speaker", "narrator"))
+                voice_style = str(line.get("voice_style", ctx.input.voice_style))
+                scene_id = line.get("scene_id")
+
+                full_text_parts.append(f"[{speaker}] {text}")
+                segments.append(
+                    {
+                        "scene_id": scene_id,
+                        "speaker": speaker,
+                        "text": text,
+                        "voice_style": voice_style,
+                    }
+                )
+
+            return {
+                "voice_style": ctx.input.voice_style,
+                "language": ctx.input.language,
+                "voiceover_enabled": True,
+                "voice_mode": dialogue_script.get("voice_mode", "single"),
+                "full_text": "\n".join(full_text_parts),
+                "segments": segments,
+            }
+
         storyboard = outputs.get("storyboard") or {}
         scenes = storyboard.get("scenes") or []
 
@@ -821,6 +942,7 @@ class WorkflowRunner:
             segments.append(
                 {
                     "scene_id": scene.get("scene_id"),
+                    "speaker": "narrator",
                     "text": text,
                     "voice_style": ctx.input.voice_style,
                 }
@@ -829,6 +951,8 @@ class WorkflowRunner:
         return {
             "voice_style": ctx.input.voice_style,
             "language": ctx.input.language,
+            "voiceover_enabled": False,
+            "voice_mode": "single",
             "full_text": "\n".join(full_text_parts),
             "segments": segments,
         }
