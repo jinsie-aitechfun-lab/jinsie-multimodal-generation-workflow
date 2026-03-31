@@ -1081,27 +1081,372 @@ class WorkflowRunner:
         return {"provider": "image_prompt_builder", "prompts": prompts}
 
     def _build_scene_ppm(self, ctx: StepContext, scene: Dict[str, Any], index: int) -> bytes:
+        import io
+        import textwrap
+        from pathlib import Path
+
         width = 1280
         height = 720
 
-        # 简单渐变背景
-        top = (247, 236, 255)
-        bottom = (255, 249, 239)
+        topic = str(getattr(ctx.input, "topic", "") or "Warm Story").strip()
+        scene_id = str(scene.get("scene_id") or f"scene_{index:02d}")
+        scene_title = str(scene.get("scene_title") or f"Scene {index}").strip()
+        visual_description = str(scene.get("visual_description", "")).strip()
+        narration = str(scene.get("narration", "")).strip()
+        duration_sec = int(scene.get("duration_sec") or 0)
 
-        data = bytearray()
-        header = f"P6\n{width} {height}\n255\n".encode("ascii")
-        data.extend(header)
+        body_text = narration or visual_description or "A warm and gentle story scene."
+        body_text = body_text.replace("\n", " ").strip()
 
-        for y in range(height):
-            ratio = y / max(1, height - 1)
-            r = int(top[0] * (1 - ratio) + bottom[0] * ratio)
-            g = int(top[1] * (1 - ratio) + bottom[1] * ratio)
-            b = int(top[2] * (1 - ratio) + bottom[2] * ratio)
-            row = bytes([r, g, b]) * width
-            data.extend(row)
+        themes = [
+            {
+                "top": (245, 238, 255),
+                "bottom": (255, 247, 239),
+                "accent": (120, 104, 255),
+                "accent_soft": (224, 218, 255),
+                "panel": (255, 255, 255),
+                "panel_border": (226, 221, 245),
+                "text_primary": (49, 42, 84),
+                "text_secondary": (97, 91, 130),
+                "shape_a": (255, 210, 218),
+                "shape_b": (196, 229, 255),
+                "shape_c": (216, 242, 220),
+            },
+            {
+                "top": (255, 244, 235),
+                "bottom": (255, 252, 244),
+                "accent": (244, 134, 92),
+                "accent_soft": (255, 220, 204),
+                "panel": (255, 255, 255),
+                "panel_border": (243, 225, 215),
+                "text_primary": (94, 57, 38),
+                "text_secondary": (138, 99, 80),
+                "shape_a": (255, 220, 178),
+                "shape_b": (255, 203, 213),
+                "shape_c": (201, 235, 246),
+            },
+            {
+                "top": (238, 249, 242),
+                "bottom": (247, 252, 255),
+                "accent": (77, 156, 113),
+                "accent_soft": (204, 235, 217),
+                "panel": (255, 255, 255),
+                "panel_border": (216, 232, 223),
+                "text_primary": (41, 77, 56),
+                "text_secondary": (91, 120, 103),
+                "shape_a": (255, 226, 186),
+                "shape_b": (189, 231, 214),
+                "shape_c": (207, 216, 245),
+            },
+        ]
+        theme = themes[(max(index, 1) - 1) % len(themes)]
 
-        return bytes(data)
-    
+        try:
+            from PIL import Image, ImageDraw, ImageFont
+
+            image = Image.new("RGB", (width, height), theme["bottom"])
+            draw = ImageDraw.Draw(image)
+
+            for y in range(height):
+                ratio = y / max(1, height - 1)
+                r = int(theme["top"][0] * (1 - ratio) + theme["bottom"][0] * ratio)
+                g = int(theme["top"][1] * (1 - ratio) + theme["bottom"][1] * ratio)
+                b = int(theme["top"][2] * (1 - ratio) + theme["bottom"][2] * ratio)
+                draw.line([(0, y), (width, y)], fill=(r, g, b))
+
+            font_candidates = [
+                "/System/Library/Fonts/PingFang.ttc",
+                "/System/Library/Fonts/Hiragino Sans GB.ttc",
+                "/System/Library/Fonts/STHeiti Light.ttc",
+                "/Library/Fonts/Arial Unicode.ttf",
+                "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+            ]
+
+            def load_font(size: int):
+                for p in font_candidates:
+                    if Path(p).exists():
+                        try:
+                            return ImageFont.truetype(p, size=size)
+                        except Exception:
+                            pass
+                return ImageFont.load_default()
+
+            title_font = load_font(40)
+            scene_font = load_font(30)
+            meta_font = load_font(20)
+            body_font = load_font(24)
+
+            top_bar_h = 88
+            left_panel_w = 320
+            card_x = 350
+            card_y = 150
+            card_w = 860
+            card_h = 400
+
+            draw.rounded_rectangle(
+                [(22, 22), (width - 22, top_bar_h)],
+                radius=24,
+                fill=theme["accent"],
+            )
+            draw.text((52, 38), topic[:28], font=title_font, fill=(255, 255, 255))
+
+            draw.rounded_rectangle(
+                [(38, 128), (left_panel_w, height - 54)],
+                radius=36,
+                fill=(255, 255, 255),
+                outline=theme["panel_border"],
+                width=3,
+            )
+            draw.ellipse((72, 178, 202, 308), fill=theme["shape_a"])
+            draw.ellipse((154, 272, 270, 388), fill=theme["shape_b"])
+            draw.polygon([(92, 520), (208, 600), (58, 628)], fill=theme["shape_c"])
+
+            draw.text((72, 418), f"SCENE {index:02d}", font=scene_font, fill=theme["accent"])
+            draw.text((72, 462), scene_id, font=meta_font, fill=theme["text_secondary"])
+            if duration_sec > 0:
+                draw.text(
+                    (72, 494),
+                    f"DURATION  {duration_sec}S",
+                    font=meta_font,
+                    fill=theme["text_secondary"],
+                )
+
+            draw.rounded_rectangle(
+                [(card_x, card_y), (card_x + card_w, card_y + card_h)],
+                radius=32,
+                fill=theme["panel"],
+                outline=theme["panel_border"],
+                width=3,
+            )
+
+            draw.text(
+                (card_x + 42, card_y + 38),
+                scene_title[:30] if scene_title else f"Scene {index}",
+                font=scene_font,
+                fill=theme["text_primary"],
+            )
+
+            draw.rounded_rectangle(
+                [(card_x + 42, card_y + 92), (card_x + card_w - 42, card_y + 102)],
+                radius=5,
+                fill=theme["accent_soft"],
+            )
+
+            wrapped_lines = textwrap.wrap(body_text, width=30)[:4]
+            if not wrapped_lines:
+                wrapped_lines = ["A warm and gentle story scene."]
+
+            current_y = card_y + 136
+            for line in wrapped_lines:
+                draw.text(
+                    (card_x + 42, current_y),
+                    line,
+                    font=body_font,
+                    fill=theme["text_secondary"],
+                )
+                current_y += 52
+
+            visual_label = visual_description[:48] if visual_description else "story visual"
+            draw.rounded_rectangle(
+                [(card_x + 42, card_y + card_h - 84), (card_x + 430, card_y + card_h - 34)],
+                radius=18,
+                fill=theme["accent_soft"],
+            )
+            draw.text(
+                (card_x + 58, card_y + card_h - 70),
+                visual_label,
+                font=meta_font,
+                fill=theme["text_primary"],
+            )
+
+            progress_x = card_x
+            progress_y = card_y + card_h + 42
+            progress_w = card_w
+            progress_h = 18
+
+            scene_count = max(1, int(self._scene_count(ctx.input.duration_sec)))
+            progress_ratio = min(1.0, max(0.0, index / scene_count))
+
+            draw.rounded_rectangle(
+                [(progress_x, progress_y), (progress_x + progress_w, progress_y + progress_h)],
+                radius=9,
+                fill=(238, 236, 244),
+            )
+            draw.rounded_rectangle(
+                [
+                    (progress_x, progress_y),
+                    (progress_x + int(progress_w * progress_ratio), progress_y + progress_h),
+                ],
+                radius=9,
+                fill=theme["accent"],
+            )
+
+            draw.text(
+                (progress_x + progress_w - 120, progress_y - 34),
+                f"{index}/{scene_count}",
+                font=meta_font,
+                fill=theme["text_secondary"],
+            )
+
+            buffer = io.BytesIO()
+            image.save(buffer, format="PPM")
+            return buffer.getvalue()
+
+        except Exception as e:
+            print("[scene_ppm_fallback]", repr(e))
+
+            safe_scene_label = f"SCENE {index:02d}"
+            safe_footer = f"{index}/{max(1, int(self._scene_count(ctx.input.duration_sec)))}"
+
+            def _ascii_text(value: str, default: str) -> str:
+                normalized = "".join(
+                    ch.upper() if 32 <= ord(ch) <= 126 else " "
+                    for ch in str(value or "")
+                )
+                normalized = " ".join(normalized.split())
+                return normalized or default
+
+            safe_headline = _ascii_text(scene_title, "STORY FRAME")
+            safe_body = _ascii_text(body_text, "WARM STORYBOARD FRAME")
+            safe_meta = _ascii_text(
+                f"{scene.get('shot_type', 'wide')} {scene.get('transition', 'fade')} {duration_sec}s",
+                "WIDE FADE 15S",
+            )
+            safe_topic = _ascii_text(topic, "STORY VIDEO")
+
+            pixels = bytearray(width * height * 3)
+
+            def _set_pixel(x: int, y: int, color: tuple[int, int, int]) -> None:
+                if x < 0 or y < 0 or x >= width or y >= height:
+                    return
+                i = (y * width + x) * 3
+                pixels[i] = color[0]
+                pixels[i + 1] = color[1]
+                pixels[i + 2] = color[2]
+
+            def _fill_rect(x: int, y: int, w: int, h: int, color: tuple[int, int, int]) -> None:
+                x0 = max(0, x)
+                y0 = max(0, y)
+                x1 = min(width, x + w)
+                y1 = min(height, y + h)
+                for yy in range(y0, y1):
+                    row = (yy * width + x0) * 3
+                    for _ in range(x0, x1):
+                        pixels[row] = color[0]
+                        pixels[row + 1] = color[1]
+                        pixels[row + 2] = color[2]
+                        row += 3
+
+            def _fill_circle(cx: int, cy: int, radius: int, color: tuple[int, int, int]) -> None:
+                r2 = radius * radius
+                for yy in range(max(0, cy - radius), min(height, cy + radius + 1)):
+                    for xx in range(max(0, cx - radius), min(width, cx + radius + 1)):
+                        dx = xx - cx
+                        dy = yy - cy
+                        if dx * dx + dy * dy <= r2:
+                            _set_pixel(xx, yy, color)
+
+            FONT = {
+                "A": ["01110", "10001", "10001", "11111", "10001", "10001", "10001"],
+                "B": ["11110", "10001", "10001", "11110", "10001", "10001", "11110"],
+                "C": ["01111", "10000", "10000", "10000", "10000", "10000", "01111"],
+                "D": ["11110", "10001", "10001", "10001", "10001", "10001", "11110"],
+                "E": ["11111", "10000", "10000", "11110", "10000", "10000", "11111"],
+                "F": ["11111", "10000", "10000", "11110", "10000", "10000", "10000"],
+                "G": ["01111", "10000", "10000", "10011", "10001", "10001", "01111"],
+                "H": ["10001", "10001", "10001", "11111", "10001", "10001", "10001"],
+                "I": ["11111", "00100", "00100", "00100", "00100", "00100", "11111"],
+                "J": ["00001", "00001", "00001", "00001", "10001", "10001", "01110"],
+                "K": ["10001", "10010", "10100", "11000", "10100", "10010", "10001"],
+                "L": ["10000", "10000", "10000", "10000", "10000", "10000", "11111"],
+                "M": ["10001", "11011", "10101", "10101", "10001", "10001", "10001"],
+                "N": ["10001", "11001", "10101", "10011", "10001", "10001", "10001"],
+                "O": ["01110", "10001", "10001", "10001", "10001", "10001", "01110"],
+                "P": ["11110", "10001", "10001", "11110", "10000", "10000", "10000"],
+                "Q": ["01110", "10001", "10001", "10001", "10101", "10010", "01101"],
+                "R": ["11110", "10001", "10001", "11110", "10100", "10010", "10001"],
+                "S": ["01111", "10000", "10000", "01110", "00001", "00001", "11110"],
+                "T": ["11111", "00100", "00100", "00100", "00100", "00100", "00100"],
+                "U": ["10001", "10001", "10001", "10001", "10001", "10001", "01110"],
+                "V": ["10001", "10001", "10001", "10001", "10001", "01010", "00100"],
+                "W": ["10001", "10001", "10001", "10101", "10101", "10101", "01010"],
+                "X": ["10001", "10001", "01010", "00100", "01010", "10001", "10001"],
+                "Y": ["10001", "10001", "01010", "00100", "00100", "00100", "00100"],
+                "Z": ["11111", "00001", "00010", "00100", "01000", "10000", "11111"],
+                "0": ["01110", "10001", "10011", "10101", "11001", "10001", "01110"],
+                "1": ["00100", "01100", "00100", "00100", "00100", "00100", "01110"],
+                "2": ["01110", "10001", "00001", "00010", "00100", "01000", "11111"],
+                "3": ["11110", "00001", "00001", "01110", "00001", "00001", "11110"],
+                "4": ["00010", "00110", "01010", "10010", "11111", "00010", "00010"],
+                "5": ["11111", "10000", "10000", "11110", "00001", "00001", "11110"],
+                "6": ["01110", "10000", "10000", "11110", "10001", "10001", "01110"],
+                "7": ["11111", "00001", "00010", "00100", "01000", "01000", "01000"],
+                "8": ["01110", "10001", "10001", "01110", "10001", "10001", "01110"],
+                "9": ["01110", "10001", "10001", "01111", "00001", "00001", "01110"],
+                " ": ["00000", "00000", "00000", "00000", "00000", "00000", "00000"],
+                "-": ["00000", "00000", "00000", "11111", "00000", "00000", "00000"],
+                "/": ["00001", "00010", "00100", "01000", "10000", "00000", "00000"],
+                ".": ["00000", "00000", "00000", "00000", "00000", "01100", "01100"],
+            }
+
+            def _draw_char(x: int, y: int, ch: str, scale: int, color: tuple[int, int, int]) -> int:
+                pattern = FONT.get(ch, FONT[" "])
+                for row_index, row_bits in enumerate(pattern):
+                    for col_index, bit in enumerate(row_bits):
+                        if bit == "1":
+                            _fill_rect(
+                                x + col_index * scale,
+                                y + row_index * scale,
+                                scale,
+                                scale,
+                                color,
+                            )
+                return 6 * scale
+
+            def _draw_text(x: int, y: int, text: str, scale: int, color: tuple[int, int, int]) -> None:
+                cursor_x = x
+                for ch in text:
+                    cursor_x += _draw_char(cursor_x, y, ch, scale, color)
+
+            for y in range(height):
+                ratio = y / max(1, height - 1)
+                r = int(theme["top"][0] * (1 - ratio) + theme["bottom"][0] * ratio)
+                g = int(theme["top"][1] * (1 - ratio) + theme["bottom"][1] * ratio)
+                b = int(theme["top"][2] * (1 - ratio) + theme["bottom"][2] * ratio)
+                _fill_rect(0, y, width, 1, (r, g, b))
+
+            progress_ratio = min(1.0, max(0.0, index / max(1, int(self._scene_count(ctx.input.duration_sec)))))
+
+            _fill_rect(22, 22, width - 44, 72, theme["accent"])
+            _fill_rect(38, 128, 280, height - 182, (255, 255, 255))
+            _fill_rect(350, 150, 860, 400, (255, 255, 255))
+            _fill_rect(350, 560, 860, 18, (232, 232, 238))
+            _fill_rect(350, 560, int(860 * progress_ratio), 18, theme["accent"])
+
+            _fill_circle(136, 242, 66, theme["shape_a"])
+            _fill_circle(222, 334, 58, theme["shape_b"])
+            _fill_rect(72, 540, 128, 64, theme["shape_c"])
+
+            _draw_text(52, 44, safe_topic[:22], 3, (255, 255, 255))
+            _draw_text(72, 420, safe_scene_label, 3, theme["accent"])
+            _draw_text(72, 464, safe_meta[:18], 2, theme["text_secondary"])
+            _draw_text(392, 192, safe_headline[:24], 3, theme["text_primary"])
+
+            body_lines = textwrap.wrap(safe_body, width=34)[:3]
+            if not body_lines:
+                body_lines = ["WARM STORYBOARD FRAME"]
+
+            text_y = 276
+            for line in body_lines:
+                _draw_text(392, text_y, line, 2, theme["text_secondary"])
+                text_y += 38
+
+            _draw_text(1100, 528, safe_footer, 2, theme["text_secondary"])
+
+            data = bytearray()
+            data.extend(f"P6\n{width} {height}\n255\n".encode("ascii"))
+            data.extend(pixels)
+            return bytes(data)
     def _run_image_assets(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
