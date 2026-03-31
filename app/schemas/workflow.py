@@ -11,8 +11,8 @@ class StepSpec(BaseModel):
         ...,
         description=(
             "Step name, e.g. "
-            "story/storyboard/image_prompts/video_prompts/"
-            "dialogue_script/audio_segments/narration/subtitles/render_plan"
+            "story/storyboard/image_prompts/image_assets/video_prompts/"
+            "dialogue_script/audio_segments/narration/subtitles/render_plan/final_video"
         ),
     )
 

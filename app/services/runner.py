@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 from uuid import uuid4
+from xml.sax.saxutils import escape as xml_escape
 
 from app.schemas.workflow import (
     StepResult,
@@ -15,6 +17,7 @@ from app.schemas.workflow import (
     WorkflowRunRequest,
     WorkflowRunResponse,
 )
+
 
 class UnknownStepError(Exception):
     pass
@@ -30,11 +33,16 @@ class StepContext:
     session_id: Optional[str]
     run_id: str
     input: WorkflowInput
-    
+
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 MOCK_AUDIO_ROOT = PROJECT_ROOT / "assets" / "mock" / "audio"
+MOCK_IMAGE_ROOT = PROJECT_ROOT / "assets" / "mock" / "image"
+MOCK_VIDEO_ROOT = PROJECT_ROOT / "assets" / "mock" / "video"
+
 DEFAULT_TTS_API_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_TTS_PROVIDER = "openai_compatible_tts"
+
 
 class WorkflowRunner:
     """
@@ -60,6 +68,10 @@ class WorkflowRunner:
 
     Phase 1 kling scene package:
     - export a manual scene-level package for Kling web generation
+
+    Phase 2 minimal product closure:
+    - generate image assets for each scene
+    - synthesize final playable mp4 using images + audio + subtitles
     """
 
     def __init__(self) -> None:
@@ -67,12 +79,14 @@ class WorkflowRunner:
             "story": self._run_story,
             "storyboard": self._run_storyboard,
             "image_prompts": self._run_image_prompts,
+            "image_assets": self._run_image_assets,
             "video_prompts": self._run_video_prompts,
             "dialogue_script": self._run_dialogue_script,
             "audio_segments": self._run_audio_segments,
             "narration": self._run_narration,
             "subtitles": self._run_subtitles,
             "render_plan": self._run_render_plan,
+            "final_video": self._run_final_video,
         }
         self._session_store: Dict[str, Dict[str, Any]] = {}
 
@@ -124,6 +138,7 @@ class WorkflowRunner:
             "total_sample_count": total_sample_count,
             "provider_stats": provider_stats,
         }
+
     def get_real_kling_sample_by_id(self, sample_id: str) -> Optional[Dict[str, Any]]:
         manifest = self.get_real_kling_samples_manifest()
         samples = manifest.get("samples") or []
@@ -134,111 +149,18 @@ class WorkflowRunner:
 
         return None
 
-    def _ensure_mock_audio_assets(
-        self, run_id: str, assets: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
-        run_dir = MOCK_AUDIO_ROOT / run_id
-        run_dir.mkdir(parents=True, exist_ok=True)
-
-        asset_files: List[Dict[str, Any]] = []
-
-        for asset in assets:
-            file_name = str(asset.get("file_name", "unknown.mp3"))
-            metadata_name = f"{file_name}.json"
-            metadata_path = run_dir / metadata_name
-
-            metadata_payload = {
-                "asset_id": asset.get("asset_id"),
-                "segment_id": asset.get("segment_id"),
-                "scene_id": asset.get("scene_id"),
-                "speaker": asset.get("speaker"),
-                "voice_style": asset.get("voice_style"),
-                "file_name": file_name,
-                "mock_audio_file_missing": True,
-                "note": "Phase 1 mock asset placeholder. No real audio binary generated yet.",
-                "public_url": asset.get("public_url"),
-                "mime_type": asset.get("mime_type"),
-                "duration_estimate_sec": asset.get("duration_estimate_sec"),
-                "asset_status": asset.get("asset_status"),
-                "generation_mode": asset.get("generation_mode"),
-                "waveform_preview": asset.get("waveform_preview", []),
-            }
-
-            metadata_path.write_text(
-                json.dumps(metadata_payload, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-
-            asset_files.append(
-                {
-                    "asset_id": asset.get("asset_id"),
-                    "file_name": file_name,
-                    "metadata_file": metadata_name,
-                    "metadata_public_url": f"/assets/mock/audio/{run_id}/{metadata_name}",
-                }
-            )
-
-        index_payload = {
-            "manifest_type": "mock_audio_directory_index",
-            "run_id": run_id,
-            "asset_count": len(assets),
-            "run_directory": f"assets/mock/audio/{run_id}",
-            "public_base_url": f"/assets/mock/audio/{run_id}",
-            "assets": asset_files,
-        }
-
-        index_path = run_dir / "index.json"
-        index_path.write_text(
-            json.dumps(index_payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-
-        return {
-            "run_directory": f"assets/mock/audio/{run_id}",
-            "public_base_url": f"/assets/mock/audio/{run_id}",
-            "index_file": "index.json",
-            "index_public_url": f"/assets/mock/audio/{run_id}/index.json",
-            "asset_files": asset_files,
-        }
-
-    def _group_audio_assets_by_scene(
-        self, assets: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-        grouped: Dict[str, List[Dict[str, Any]]] = {}
-
-        for asset in assets:
-            scene_id = str(asset.get("scene_id") or "unknown_scene")
-            grouped.setdefault(scene_id, []).append(
-                {
-                    "asset_id": asset.get("asset_id"),
-                    "segment_id": asset.get("segment_id"),
-                    "speaker": asset.get("speaker"),
-                    "file_name": asset.get("file_name"),
-                    "public_url": asset.get("public_url"),
-                    "duration_estimate_sec": asset.get("duration_estimate_sec"),
-                }
-            )
-
-        return [
-            {
-                "scene_id": scene_id,
-                "assets": grouped[scene_id],
-            }
-            for scene_id in sorted(grouped.keys())
-        ]
-        
-    def _env_bool(self, name: str, default: bool = False) -> bool:
-        value = os.getenv(name)
-        if value is None:
+    def _env_bool(self, name: str, default: bool) -> bool:
+        value = os.getenv(name, "").strip().lower()
+        if not value:
             return default
-        return value.strip().lower() in {"1", "true", "yes", "on"}
+        return value in {"1", "true", "yes", "y", "on"}
 
     def _env_float(self, name: str, default: float) -> float:
-        value = os.getenv(name)
-        if value is None or not value.strip():
+        value = os.getenv(name, "").strip()
+        if not value:
             return default
         try:
-            return float(value.strip())
+            return float(value)
         except ValueError:
             return default
 
@@ -254,7 +176,7 @@ class WorkflowRunner:
 
     def _tts_api_base_url(self) -> str:
         value = os.getenv("TTS_API_BASE_URL", DEFAULT_TTS_API_BASE_URL).strip()
-        return value.rstrip("/")
+        return value.rstrip("/") or DEFAULT_TTS_API_BASE_URL
 
     def _tts_api_key(self) -> str:
         tts_key = os.getenv("TTS_API_KEY", "").strip()
@@ -264,19 +186,21 @@ class WorkflowRunner:
 
     def _tts_model(self) -> str:
         value = os.getenv("TTS_MODEL", "").strip()
-        return value or "your-tts-model"
+        if value:
+            return value
+        raise RuntimeError("TTS_MODEL is missing")
 
     def _tts_timeout_seconds(self) -> float:
         return self._env_float("TTS_TIMEOUT_SECONDS", 120.0)
 
-    def _resolve_tts_voice(self, speaker: str, voice_style: str) -> str:
+    def _tts_voice_for(self, speaker: str, voice_style: str) -> str:
         speaker_key = speaker.strip().upper()
-
         speaker_specific = os.getenv(f"TTS_VOICE_{speaker_key}", "").strip()
         if speaker_specific:
             return speaker_specific
 
-        style_specific = os.getenv(f"TTS_VOICE_STYLE_{voice_style.strip().upper()}", "").strip()
+        style_key = voice_style.strip().upper()
+        style_specific = os.getenv(f"TTS_VOICE_STYLE_{style_key}", "").strip()
         if style_specific:
             return style_specific
 
@@ -284,10 +208,20 @@ class WorkflowRunner:
         if default_voice:
             return default_voice
 
-        return "default"
+        raise RuntimeError("TTS_VOICE is missing")
 
     def _ensure_audio_run_dir(self, run_id: str) -> Path:
         run_dir = MOCK_AUDIO_ROOT / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        return run_dir
+
+    def _ensure_image_run_dir(self, run_id: str) -> Path:
+        run_dir = MOCK_IMAGE_ROOT / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        return run_dir
+
+    def _ensure_video_run_dir(self, run_id: str) -> Path:
+        run_dir = MOCK_VIDEO_ROOT / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
         return run_dir
 
@@ -301,7 +235,6 @@ class WorkflowRunner:
             file_name = str(asset.get("file_name", "unknown.mp3"))
             metadata_name = f"{file_name}.json"
             metadata_path = run_dir / metadata_name
-            audio_path = run_dir / file_name
 
             metadata_payload = {
                 "asset_id": asset.get("asset_id"),
@@ -309,10 +242,7 @@ class WorkflowRunner:
                 "scene_id": asset.get("scene_id"),
                 "speaker": asset.get("speaker"),
                 "voice_style": asset.get("voice_style"),
-                "provider": asset.get("provider"),
                 "file_name": file_name,
-                "file_exists": audio_path.exists(),
-                "relative_path": asset.get("relative_path"),
                 "public_url": asset.get("public_url"),
                 "mime_type": asset.get("mime_type"),
                 "duration_estimate_sec": asset.get("duration_estimate_sec"),
@@ -360,10 +290,31 @@ class WorkflowRunner:
             "asset_files": asset_files,
         }
 
-    def _ensure_mock_audio_assets(
-        self, run_id: str, assets: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
-        return self._write_audio_directory_manifest(run_id, assets)
+    def _group_audio_assets_by_scene(
+        self, assets: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        grouped: Dict[str, List[Dict[str, Any]]] = {}
+
+        for asset in assets:
+            scene_id = str(asset.get("scene_id") or "unknown_scene")
+            grouped.setdefault(scene_id, []).append(
+                {
+                    "asset_id": asset.get("asset_id"),
+                    "segment_id": asset.get("segment_id"),
+                    "speaker": asset.get("speaker"),
+                    "file_name": asset.get("file_name"),
+                    "public_url": asset.get("public_url"),
+                    "duration_estimate_sec": asset.get("duration_estimate_sec"),
+                }
+            )
+
+        return [
+            {
+                "scene_id": scene_id,
+                "assets": grouped[scene_id],
+            }
+            for scene_id in sorted(grouped.keys())
+        ]
 
     def _generate_real_tts_audio(
         self,
@@ -377,9 +328,11 @@ class WorkflowRunner:
         if not api_key:
             raise RuntimeError("TTS_API_KEY is missing")
 
+        model = self._tts_model()
+        voice = self._tts_voice_for(speaker, voice_style)
         payload = {
-            "model": self._tts_model(),
-            "voice": self._resolve_tts_voice(speaker, voice_style),
+            "model": model,
+            "voice": voice,
             "input": text,
             "response_format": "mp3",
         }
@@ -395,32 +348,25 @@ class WorkflowRunner:
         )
 
         try:
-            with urllib_request.urlopen(
-                req, timeout=self._tts_timeout_seconds()
-            ) as resp:
-                audio_bytes = resp.read()
+            with urllib_request.urlopen(req, timeout=self._tts_timeout_seconds()) as resp:
+                data = resp.read()
         except urllib_error.HTTPError as e:
             detail = e.read().decode("utf-8", errors="ignore")
             raise RuntimeError(
                 f"TTS http error: status={e.code}, detail={detail}"
             ) from e
         except urllib_error.URLError as e:
-            raise RuntimeError(f"TTS network error: {e}") from e
+            raise RuntimeError(f"TTS request failed: {e.reason}") from e
 
-        if not audio_bytes:
-            raise RuntimeError("TTS returned empty audio body")
-
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_bytes(audio_bytes)
+        output_path.write_bytes(data)
 
         return {
             "provider": self._tts_provider_name(),
-            "model": payload["model"],
-            "voice": payload["voice"],
-            "output_bytes": len(audio_bytes),
+            "model": model,
+            "voice": voice,
+            "output_bytes": len(data),
         }
-    
-    
+
     def run(self, req: WorkflowRunRequest) -> WorkflowRunResponse:
         run_id = f"run_{uuid4().hex[:12]}"
         ctx = StepContext(
@@ -585,7 +531,7 @@ class WorkflowRunner:
             "mother": profiles.get("mother", "warm_female"),
             "child": profiles.get("child", "gentle_child"),
         }
-        
+
     def _build_story_paragraphs(self, ctx: StepContext) -> List[str]:
         topic = ctx.input.topic.strip() or "一个温暖的童话故事"
         audience_label = self._audience_label(ctx.input.audience)
@@ -981,12 +927,14 @@ class WorkflowRunner:
         story = outputs.get("story") or {}
         storyboard = outputs.get("storyboard") or {}
         image_prompts = outputs.get("image_prompts") or {}
+        image_assets = outputs.get("image_assets") or {}
         video_prompts = outputs.get("video_prompts") or {}
         dialogue_script = outputs.get("dialogue_script") or {}
         audio_segments = outputs.get("audio_segments") or {}
         narration = outputs.get("narration") or {}
         subtitles = outputs.get("subtitles") or {}
         render_plan = outputs.get("render_plan") or {}
+        final_video = outputs.get("final_video") or {}
 
         real_samples_manifest = self._build_real_samples_manifest()
 
@@ -1029,6 +977,7 @@ class WorkflowRunner:
                 "story.json": story,
                 "storyboard.json": storyboard,
                 "image_prompts.json": image_prompts,
+                "image_assets.json": image_assets,
                 "video_prompts.json": video_prompts,
                 "dialogue_script.json": dialogue_script,
                 "audio_segments.json": audio_segments,
@@ -1037,11 +986,13 @@ class WorkflowRunner:
                 "narration.txt": narration.get("full_text", ""),
                 "subtitles.srt": subtitles.get("srt_preview", ""),
                 "render_plan.json": render_plan,
+                "final_video.json": final_video,
                 "publish_manifest.json": publish_manifest,
                 "kling_scene_package.json": kling_scene_package,
                 "real_samples_manifest.json": real_samples_manifest,
             },
         }
+
     def _run_story(self, ctx: StepContext, outputs: Dict[str, Any]) -> Dict[str, Any]:
         topic = ctx.input.topic.strip() or "一个温暖的童话故事"
         paragraphs = self._build_story_paragraphs(ctx)
@@ -1129,13 +1080,72 @@ class WorkflowRunner:
 
         return {"provider": "image_prompt_builder", "prompts": prompts}
 
+    def _build_scene_ppm(self, ctx: StepContext, scene: Dict[str, Any], index: int) -> bytes:
+        width = 1280
+        height = 720
+
+        # 简单渐变背景
+        top = (247, 236, 255)
+        bottom = (255, 249, 239)
+
+        data = bytearray()
+        header = f"P6\n{width} {height}\n255\n".encode("ascii")
+        data.extend(header)
+
+        for y in range(height):
+            ratio = y / max(1, height - 1)
+            r = int(top[0] * (1 - ratio) + bottom[0] * ratio)
+            g = int(top[1] * (1 - ratio) + bottom[1] * ratio)
+            b = int(top[2] * (1 - ratio) + bottom[2] * ratio)
+            row = bytes([r, g, b]) * width
+            data.extend(row)
+
+        return bytes(data)
+    
+    def _run_image_assets(
+        self, ctx: StepContext, outputs: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        storyboard = outputs.get("storyboard") or {}
+        scenes = storyboard.get("scenes") or []
+
+        run_dir = self._ensure_image_run_dir(ctx.run_id)
+        assets: List[Dict[str, Any]] = []
+
+        for index, scene in enumerate(scenes, start=1):
+            scene_id = str(scene.get("scene_id") or f"scene_{index:02d}")
+            file_name = f"{scene_id}.ppm"
+            output_path = run_dir / file_name
+            output_path.write_bytes(
+                self._build_scene_ppm(ctx, scene, index)
+            )
+
+            assets.append(
+                {
+                    "scene_id": scene_id,
+                    "scene_title": scene.get("scene_title"),
+                    "file_name": file_name,
+                    "relative_path": f"assets/mock/image/{ctx.run_id}/{file_name}",
+                    "public_url": f"/assets/mock/image/{ctx.run_id}/{file_name}",
+                    "mime_type": "image/x-portable-pixmap",
+                    "status": "generated",
+                }
+            )
+
+        return {
+            "enabled": True,
+            "run_id": ctx.run_id,
+            "provider": "scene_svg_builder",
+            "asset_count": len(assets),
+            "assets": assets,
+        }
+
     def _run_video_prompts(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
         storyboard = outputs.get("storyboard") or {}
         scenes = storyboard.get("scenes") or []
         return self._build_video_provider_prompts(ctx, scenes)
-    
+
     def _run_dialogue_script(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -1273,7 +1283,9 @@ class WorkflowRunner:
                         voice_style=voice_style,
                         output_path=output_path,
                     )
-                    generation_provider = str(tts_result.get("provider", self._tts_provider_name()))
+                    generation_provider = str(
+                        tts_result.get("provider", self._tts_provider_name())
+                    )
                     generation_status = "generated"
                     asset_status = "generated"
                     generation_mode = "real_tts"
@@ -1361,6 +1373,7 @@ class WorkflowRunner:
             "directory_manifest": directory_manifest,
             "scene_asset_map": scene_asset_map,
         }
+
     def _run_narration(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -1475,3 +1488,153 @@ class WorkflowRunner:
         subtitles_enabled = bool(subtitles.get("enabled"))
 
         return self._build_render_plan_by_provider(ctx, scenes, subtitles_enabled)
+
+    def _build_video_concat_file(
+        self,
+        ctx: StepContext,
+        image_assets: Dict[str, Any],
+        audio_segments: Dict[str, Any],
+    ) -> Path:
+        image_assets_list = image_assets.get("assets") or []
+        audio_items = audio_segments.get("items") or []
+
+        image_by_scene = {
+            str(item.get("scene_id")): item
+            for item in image_assets_list
+            if item.get("scene_id")
+        }
+
+        concat_lines: List[str] = []
+        video_run_dir = self._ensure_video_run_dir(ctx.run_id)
+        concat_file = video_run_dir / "scene_concat.txt"
+
+        for item in audio_items:
+            scene_id = str(item.get("scene_id") or "")
+            image_asset = image_by_scene.get(scene_id)
+            if not image_asset:
+                continue
+
+            image_path = PROJECT_ROOT / str(image_asset.get("relative_path"))
+            duration_sec = max(1, int(item.get("duration_estimate_sec") or 3))
+            escaped_image_path = str(image_path).replace("'", "'\\''")
+
+            concat_lines.append(f"file '{escaped_image_path}'")
+            concat_lines.append(f"duration {duration_sec}")
+
+        if image_assets_list:
+            last_image_asset = image_assets_list[-1]
+            last_image_path = PROJECT_ROOT / str(last_image_asset.get("relative_path"))
+            escaped_last_image_path = str(last_image_path).replace("'", "'\\''")
+            concat_lines.append(f"file '{escaped_last_image_path}'")
+
+        concat_file.write_text("\n".join(concat_lines) + "\n", encoding="utf-8")
+        return concat_file
+
+    def _run_final_video(
+        self, ctx: StepContext, outputs: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        image_assets = outputs.get("image_assets") or {}
+        audio_segments = outputs.get("audio_segments") or {}
+        subtitles = outputs.get("subtitles") or {}
+
+        image_asset_list = image_assets.get("assets") or []
+        audio_item_list = audio_segments.get("items") or []
+
+        if not image_asset_list or not audio_item_list:
+            return {
+                "enabled": False,
+                "status": "skipped",
+                "reason": "missing image_assets or audio_segments",
+            }
+
+        video_run_dir = self._ensure_video_run_dir(ctx.run_id)
+        concat_file = self._build_video_concat_file(ctx, image_assets, audio_segments)
+
+        audio_manifest = audio_segments.get("asset_manifest") or {}
+        audio_assets = audio_manifest.get("assets") or []
+        audio_file_paths = [
+            str(PROJECT_ROOT / str(asset.get("relative_path")))
+            for asset in audio_assets
+            if asset.get("relative_path")
+        ]
+
+        merged_audio_path = video_run_dir / "merged_audio.mp3"
+        merged_audio_list_path = video_run_dir / "merged_audio_inputs.txt"
+        concat_audio_lines = []
+        for path in audio_file_paths:
+            escaped_path = path.replace("'", "'\\''")
+            concat_audio_lines.append(f"file '{escaped_path}'")
+
+        merged_audio_list_path.write_text(
+            "\n".join(concat_audio_lines) + "\n",
+            encoding="utf-8",
+        )
+
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-f",
+                "concat",
+                "-safe",
+                "0",
+                "-i",
+                str(merged_audio_list_path),
+                "-c",
+                "copy",
+                str(merged_audio_path),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        subtitle_path = video_run_dir / "subtitles.srt"
+        subtitle_path.write_text(
+            str(subtitles.get("srt_preview", "")).strip() + "\n",
+            encoding="utf-8",
+        )
+
+        final_video_path = video_run_dir / "final.mp4"
+
+        subtitle_filter = f"subtitles=filename=assets/mock/video/{ctx.run_id}/subtitles.srt"
+
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-f",
+                "concat",
+                "-safe",
+                "0",
+                "-i",
+                str(concat_file),
+                "-i",
+                str(merged_audio_path),
+                "-vf",
+                subtitle_filter,
+                "-pix_fmt",
+                "yuv420p",
+                "-c:v",
+                "libx264",
+                "-c:a",
+                "aac",
+                "-shortest",
+                str(final_video_path),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        return {
+            "enabled": True,
+            "status": "generated",
+            "run_id": ctx.run_id,
+            "file_name": "final.mp4",
+            "relative_path": f"assets/mock/video/{ctx.run_id}/final.mp4",
+            "public_url": f"/assets/mock/video/{ctx.run_id}/final.mp4",
+            "duration_sec": ctx.input.duration_sec,
+            "audio_track_path": f"assets/mock/video/{ctx.run_id}/merged_audio.mp3",
+            "subtitle_path": f"assets/mock/video/{ctx.run_id}/subtitles.srt",
+        }
