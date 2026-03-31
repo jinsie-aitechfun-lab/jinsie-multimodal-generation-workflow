@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 from uuid import uuid4
 
 from app.schemas.workflow import (
@@ -12,7 +15,6 @@ from app.schemas.workflow import (
     WorkflowRunRequest,
     WorkflowRunResponse,
 )
-
 
 class UnknownStepError(Exception):
     pass
@@ -31,6 +33,8 @@ class StepContext:
     
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 MOCK_AUDIO_ROOT = PROJECT_ROOT / "assets" / "mock" / "audio"
+DEFAULT_TTS_API_BASE_URL = "https://api.openai.com/v1"
+DEFAULT_TTS_PROVIDER = "openai_compatible_tts"
 
 class WorkflowRunner:
     """
@@ -222,6 +226,199 @@ class WorkflowRunner:
             }
             for scene_id in sorted(grouped.keys())
         ]
+        
+    def _env_bool(self, name: str, default: bool = False) -> bool:
+        value = os.getenv(name)
+        if value is None:
+            return default
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+
+    def _env_float(self, name: str, default: float) -> float:
+        value = os.getenv(name)
+        if value is None or not value.strip():
+            return default
+        try:
+            return float(value.strip())
+        except ValueError:
+            return default
+
+    def _tts_enabled(self) -> bool:
+        return self._env_bool("TTS_ENABLED", False)
+
+    def _tts_fallback_to_mock(self) -> bool:
+        return self._env_bool("TTS_FALLBACK_TO_MOCK", True)
+
+    def _tts_provider_name(self) -> str:
+        provider = os.getenv("TTS_PROVIDER", DEFAULT_TTS_PROVIDER).strip()
+        return provider or DEFAULT_TTS_PROVIDER
+
+    def _tts_api_base_url(self) -> str:
+        value = os.getenv("TTS_API_BASE_URL", DEFAULT_TTS_API_BASE_URL).strip()
+        return value.rstrip("/")
+
+    def _tts_api_key(self) -> str:
+        tts_key = os.getenv("TTS_API_KEY", "").strip()
+        if tts_key:
+            return tts_key
+        return os.getenv("OPENAI_API_KEY", "").strip()
+
+    def _tts_model(self) -> str:
+        value = os.getenv("TTS_MODEL", "").strip()
+        return value or "your-tts-model"
+
+    def _tts_timeout_seconds(self) -> float:
+        return self._env_float("TTS_TIMEOUT_SECONDS", 120.0)
+
+    def _resolve_tts_voice(self, speaker: str, voice_style: str) -> str:
+        speaker_key = speaker.strip().upper()
+
+        speaker_specific = os.getenv(f"TTS_VOICE_{speaker_key}", "").strip()
+        if speaker_specific:
+            return speaker_specific
+
+        style_specific = os.getenv(f"TTS_VOICE_STYLE_{voice_style.strip().upper()}", "").strip()
+        if style_specific:
+            return style_specific
+
+        default_voice = os.getenv("TTS_VOICE", "").strip()
+        if default_voice:
+            return default_voice
+
+        return "default"
+
+    def _ensure_audio_run_dir(self, run_id: str) -> Path:
+        run_dir = MOCK_AUDIO_ROOT / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        return run_dir
+
+    def _write_audio_directory_manifest(
+        self, run_id: str, assets: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        run_dir = self._ensure_audio_run_dir(run_id)
+        asset_files: List[Dict[str, Any]] = []
+
+        for asset in assets:
+            file_name = str(asset.get("file_name", "unknown.mp3"))
+            metadata_name = f"{file_name}.json"
+            metadata_path = run_dir / metadata_name
+            audio_path = run_dir / file_name
+
+            metadata_payload = {
+                "asset_id": asset.get("asset_id"),
+                "segment_id": asset.get("segment_id"),
+                "scene_id": asset.get("scene_id"),
+                "speaker": asset.get("speaker"),
+                "voice_style": asset.get("voice_style"),
+                "provider": asset.get("provider"),
+                "file_name": file_name,
+                "file_exists": audio_path.exists(),
+                "relative_path": asset.get("relative_path"),
+                "public_url": asset.get("public_url"),
+                "mime_type": asset.get("mime_type"),
+                "duration_estimate_sec": asset.get("duration_estimate_sec"),
+                "asset_status": asset.get("asset_status"),
+                "generation_mode": asset.get("generation_mode"),
+                "waveform_preview": asset.get("waveform_preview", []),
+                "metadata": asset.get("metadata", {}),
+            }
+
+            metadata_path.write_text(
+                json.dumps(metadata_payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+
+            asset_files.append(
+                {
+                    "asset_id": asset.get("asset_id"),
+                    "file_name": file_name,
+                    "audio_public_url": asset.get("public_url"),
+                    "metadata_file": metadata_name,
+                    "metadata_public_url": f"/assets/mock/audio/{run_id}/{metadata_name}",
+                }
+            )
+
+        index_payload = {
+            "manifest_type": "audio_directory_index",
+            "run_id": run_id,
+            "asset_count": len(assets),
+            "run_directory": f"assets/mock/audio/{run_id}",
+            "public_base_url": f"/assets/mock/audio/{run_id}",
+            "assets": asset_files,
+        }
+
+        index_path = run_dir / "index.json"
+        index_path.write_text(
+            json.dumps(index_payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+        return {
+            "run_directory": f"assets/mock/audio/{run_id}",
+            "public_base_url": f"/assets/mock/audio/{run_id}",
+            "index_file": "index.json",
+            "index_public_url": f"/assets/mock/audio/{run_id}/index.json",
+            "asset_files": asset_files,
+        }
+
+    def _ensure_mock_audio_assets(
+        self, run_id: str, assets: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        return self._write_audio_directory_manifest(run_id, assets)
+
+    def _generate_real_tts_audio(
+        self,
+        *,
+        text: str,
+        speaker: str,
+        voice_style: str,
+        output_path: Path,
+    ) -> Dict[str, Any]:
+        api_key = self._tts_api_key()
+        if not api_key:
+            raise RuntimeError("TTS_API_KEY is missing")
+
+        payload = {
+            "model": self._tts_model(),
+            "voice": self._resolve_tts_voice(speaker, voice_style),
+            "input": text,
+            "response_format": "mp3",
+        }
+
+        req = urllib_request.Request(
+            url=f"{self._tts_api_base_url()}/audio/speech",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+
+        try:
+            with urllib_request.urlopen(
+                req, timeout=self._tts_timeout_seconds()
+            ) as resp:
+                audio_bytes = resp.read()
+        except urllib_error.HTTPError as e:
+            detail = e.read().decode("utf-8", errors="ignore")
+            raise RuntimeError(
+                f"TTS http error: status={e.code}, detail={detail}"
+            ) from e
+        except urllib_error.URLError as e:
+            raise RuntimeError(f"TTS network error: {e}") from e
+
+        if not audio_bytes:
+            raise RuntimeError("TTS returned empty audio body")
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(audio_bytes)
+
+        return {
+            "provider": self._tts_provider_name(),
+            "model": payload["model"],
+            "voice": payload["voice"],
+            "output_bytes": len(audio_bytes),
+        }
     
     
     def run(self, req: WorkflowRunRequest) -> WorkflowRunResponse:
@@ -1018,7 +1215,7 @@ class WorkflowRunner:
         lines = dialogue_script.get("lines") or []
 
         if not dialogue_script.get("enabled") or not lines:
-            empty_directory_manifest = self._ensure_mock_audio_assets(ctx.run_id, [])
+            empty_directory_manifest = self._write_audio_directory_manifest(ctx.run_id, [])
             return {
                 "enabled": False,
                 "provider": "mock_tts",
@@ -1035,6 +1232,11 @@ class WorkflowRunner:
 
         items: List[Dict[str, Any]] = []
         assets: List[Dict[str, Any]] = []
+        run_dir = self._ensure_audio_run_dir(ctx.run_id)
+
+        tts_enabled = self._tts_enabled()
+        fallback_to_mock = self._tts_fallback_to_mock()
+        real_generation_count = 0
 
         for index, line in enumerate(lines, start=1):
             text = str(line.get("text", "")).strip()
@@ -1047,6 +1249,7 @@ class WorkflowRunner:
             file_name = f"{speaker}_{index:02d}.mp3"
             relative_path = f"assets/mock/audio/{ctx.run_id}/{file_name}"
             public_url = f"/assets/mock/audio/{ctx.run_id}/{file_name}"
+            output_path = run_dir / file_name
             waveform_preview = [
                 max(0.12, round(duration_estimate_sec / 12, 2)),
                 0.48,
@@ -1055,52 +1258,104 @@ class WorkflowRunner:
                 0.62,
             ]
 
+            generation_provider = "mock_tts"
+            generation_status = "planned"
+            asset_status = "mock_registered"
+            generation_mode = "placeholder_manifest_only"
+            asset_metadata: Dict[str, Any] = {}
+            error_message: Optional[str] = None
+
+            if tts_enabled:
+                try:
+                    tts_result = self._generate_real_tts_audio(
+                        text=text,
+                        speaker=speaker,
+                        voice_style=voice_style,
+                        output_path=output_path,
+                    )
+                    generation_provider = str(tts_result.get("provider", self._tts_provider_name()))
+                    generation_status = "generated"
+                    asset_status = "generated"
+                    generation_mode = "real_tts"
+                    asset_metadata = {
+                        "tts_model": tts_result.get("model"),
+                        "tts_voice": tts_result.get("voice"),
+                        "output_bytes": tts_result.get("output_bytes"),
+                    }
+                    real_generation_count += 1
+                except Exception as e:
+                    error_message = str(e)
+                    if not fallback_to_mock:
+                        raise RuntimeError(
+                            f"audio segment generation failed at line {index}: {error_message}"
+                        ) from e
+
+                    generation_provider = "mock_tts"
+                    generation_status = "planned"
+                    asset_status = "mock_registered"
+                    generation_mode = "placeholder_manifest_only"
+                    asset_metadata = {
+                        "fallback_reason": error_message,
+                    }
+            else:
+                asset_metadata = {
+                    "fallback_reason": "TTS_ENABLED is false",
+                }
+
             asset = {
                 "asset_id": f"audio_asset_{index:02d}",
                 "segment_id": f"audio_{index:02d}",
                 "scene_id": scene_id,
                 "speaker": speaker,
                 "voice_style": voice_style,
+                "provider": generation_provider,
                 "file_name": file_name,
                 "relative_path": relative_path,
                 "public_url": public_url,
                 "mime_type": "audio/mpeg",
                 "duration_estimate_sec": duration_estimate_sec,
-                "asset_status": "mock_registered",
-                "generation_mode": "placeholder_manifest_only",
+                "asset_status": asset_status,
+                "generation_mode": generation_mode,
                 "waveform_preview": waveform_preview,
+                "metadata": asset_metadata,
             }
 
-            items.append(
-                {
-                    "segment_id": f"audio_{index:02d}",
-                    "scene_id": scene_id,
-                    "speaker": speaker,
-                    "text": text,
-                    "voice_style": voice_style,
-                    "target_audio_file": (
-                        f"artifacts/audio/{ctx.run_id}/{speaker}_{index:02d}.mp3"
-                    ),
-                    "duration_estimate_sec": duration_estimate_sec,
-                    "provider": "mock_tts",
-                    "status": "planned",
-                    "mock_asset": asset,
-                }
-            )
+            item = {
+                "segment_id": f"audio_{index:02d}",
+                "scene_id": scene_id,
+                "speaker": speaker,
+                "text": text,
+                "voice_style": voice_style,
+                "target_audio_file": relative_path,
+                "duration_estimate_sec": duration_estimate_sec,
+                "provider": generation_provider,
+                "status": generation_status,
+                "asset_public_url": public_url,
+                "mock_asset": asset,
+            }
 
+            if error_message:
+                item["error"] = error_message
+
+            items.append(item)
             assets.append(asset)
 
-        directory_manifest = self._ensure_mock_audio_assets(ctx.run_id, assets)
+        directory_manifest = self._write_audio_directory_manifest(ctx.run_id, assets)
         scene_asset_map = self._group_audio_assets_by_scene(assets)
+
+        overall_provider = (
+            self._tts_provider_name() if real_generation_count > 0 else "mock_tts"
+        )
 
         return {
             "enabled": True,
-            "provider": "mock_tts",
+            "provider": overall_provider,
             "items": items,
             "asset_manifest": {
                 "run_id": ctx.run_id,
-                "provider": "mock_tts",
+                "provider": overall_provider,
                 "asset_count": len(assets),
+                "generated_count": real_generation_count,
                 "assets": assets,
             },
             "directory_manifest": directory_manifest,

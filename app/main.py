@@ -54,7 +54,14 @@ def get_real_kling_sample(sample_id: str):
 
 @app.post("/v1/workflow/run", response_model=WorkflowRunResponse)
 def run_workflow(req: WorkflowRunRequest):
+    print("[workflow] request received", req.workflow_id, req.session_id)
     try:
-        return _runner.run(req)
+        result = _runner.run(req)
+        print("[workflow] completed", result.run_id)
+        return result
     except UnknownStepError as e:
+        print("[workflow] unknown step error", str(e))
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        print("[workflow] runtime error", repr(e))
+        raise
