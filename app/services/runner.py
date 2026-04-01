@@ -558,7 +558,7 @@ class WorkflowRunner:
         return provider or DEFAULT_IMAGE_FALLBACK_PROVIDER
 
     def _api_image_enabled(self) -> bool:
-        value = os.getenv("KLING_IMAGE_ENABLED", "false").strip().lower()
+        value = os.getenv("API_IMAGE_ENABLED", "false").strip().lower()
         return value in {"1", "true", "yes", "on"}
 
     def _api_image_fallback_to_pillow(self) -> bool:
@@ -1647,20 +1647,142 @@ class WorkflowRunner:
         scene_index: int,
     ) -> bytes:
         """
-        Minimal Kling image generation hook.
+        Generate image bytes through SiliconFlow image generation API.
 
-        Current phase goal:
-        - keep output contract aligned with image_assets -> final_video
-        - reserve a single replacement point for real Kling HTTP integration
-
-        Replace this body later with real Kling image API call + download bytes.
+        Current implementation:
+        - text-to-image only
+        - request image URL from SiliconFlow
+        - immediately download bytes because the returned URL is temporary
         """
+        import json
+        import urllib.error
+        import urllib.request
+
         if not self._api_image_enabled():
             raise RuntimeError("API_IMAGE_ENABLED is false")
 
-        raise RuntimeError(
-            "api_image_generator not implemented yet: real image API integration is required"
+        api_key = os.getenv("SILICONFLOW_API_KEY", "").strip()
+        if not api_key:
+            raise RuntimeError("SILICONFLOW_API_KEY is not set")
+
+        base_url = os.getenv("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1").strip()
+        if not base_url:
+            base_url = "https://api.siliconflow.cn/v1"
+
+        model = os.getenv("SILICONFLOW_IMAGE_MODEL", "Kwai-Kolors/Kolors").strip()
+        if not model:
+            model = "Kwai-Kolors/Kolors"
+
+        image_size = os.getenv("SILICONFLOW_IMAGE_SIZE", "720x1280").strip()
+        if not image_size:
+            image_size = "720x1280"
+
+        negative_prompt = os.getenv(
+            "SILICONFLOW_IMAGE_NEGATIVE_PROMPT",
+            "low quality, blurry, distorted anatomy, broken composition, extra limbs, duplicated subject, unreadable details",
+        ).strip()
+
+        num_inference_steps_raw = os.getenv("SILICONFLOW_IMAGE_STEPS", "20").strip()
+        guidance_scale_raw = os.getenv("SILICONFLOW_IMAGE_GUIDANCE", "7.5").strip()
+
+        try:
+            num_inference_steps = int(num_inference_steps_raw)
+        except ValueError:
+            num_inference_steps = 20
+
+        try:
+            guidance_scale = float(guidance_scale_raw)
+        except ValueError:
+            guidance_scale = 7.5
+
+        payload: Dict[str, Any] = {
+            "model": model,
+            "prompt": prompt,
+            "image_size": image_size,
+        }
+
+        if negative_prompt:
+            payload["negative_prompt"] = negative_prompt
+
+        # SiliconFlow docs indicate these parameters are applicable to Kolors.
+        # Keep them for the default Kolors model and omit for other model families.
+        if "kolors" in model.lower():
+            payload["batch_size"] = 1
+            payload["num_inference_steps"] = num_inference_steps
+            payload["guidance_scale"] = guidance_scale
+
+        request_url = f"{base_url.rstrip('/')}/images/generations"
+        request_body = json.dumps(payload).encode("utf-8")
+
+        request = urllib.request.Request(
+            request_url,
+            data=request_body,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
         )
+
+        try:
+            with urllib.request.urlopen(request, timeout=120) as response:
+                response_text = response.read().decode("utf-8")
+        except urllib.error.HTTPError as e:
+            error_body = ""
+            try:
+                error_body = e.read().decode("utf-8")
+            except Exception:
+                error_body = repr(e)
+            raise RuntimeError(
+                f"SiliconFlow image generation failed with HTTP {e.code}: {error_body}"
+            ) from e
+        except urllib.error.URLError as e:
+            raise RuntimeError(f"SiliconFlow image generation request failed: {e}") from e
+
+        try:
+            result = json.loads(response_text)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(
+                f"SiliconFlow image generation returned invalid JSON: {response_text[:500]}"
+            ) from e
+
+        images = result.get("images") or []
+        if not images:
+            raise RuntimeError(
+                f"SiliconFlow image generation returned no images: {response_text[:500]}"
+            )
+
+        first_image = images[0] or {}
+        image_url = str(first_image.get("url") or "").strip()
+        if not image_url:
+            raise RuntimeError(
+                f"SiliconFlow image generation returned empty image url: {response_text[:500]}"
+            )
+
+        download_request = urllib.request.Request(
+            image_url,
+            headers={
+                "User-Agent": "Mozilla/5.0",
+            },
+            method="GET",
+        )
+
+        try:
+            with urllib.request.urlopen(download_request, timeout=120) as response:
+                image_bytes = response.read()
+        except urllib.error.HTTPError as e:
+            raise RuntimeError(
+                f"Generated image download failed with HTTP {e.code} for scene {scene_index}"
+            ) from e
+        except urllib.error.URLError as e:
+            raise RuntimeError(
+                f"Generated image download failed for scene {scene_index}: {e}"
+            ) from e
+
+        if not image_bytes:
+            raise RuntimeError(f"Generated image download returned empty bytes for scene {scene_index}")
+
+        return image_bytes
 
     def _run_api_image_assets(
         self, ctx: StepContext, outputs: Dict[str, Any]
