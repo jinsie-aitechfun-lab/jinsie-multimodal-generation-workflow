@@ -42,7 +42,8 @@ MOCK_VIDEO_ROOT = PROJECT_ROOT / "assets" / "mock" / "video"
 
 DEFAULT_TTS_API_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_TTS_PROVIDER = "openai_compatible_tts"
-
+DEFAULT_IMAGE_PROVIDER = "pillow_storybook_renderer"
+DEFAULT_IMAGE_FALLBACK_PROVIDER = "pillow_storybook_renderer"
 
 class WorkflowRunner:
     """
@@ -546,6 +547,24 @@ class WorkflowRunner:
         }
         return mapping.get(character_style.lower(), character_style)
 
+    def _image_provider_name(self) -> str:
+        provider = os.getenv("IMAGE_PROVIDER", DEFAULT_IMAGE_PROVIDER).strip()
+        return provider or DEFAULT_IMAGE_PROVIDER
+
+    def _image_fallback_provider_name(self) -> str:
+        provider = os.getenv(
+            "IMAGE_FALLBACK_PROVIDER", DEFAULT_IMAGE_FALLBACK_PROVIDER
+        ).strip()
+        return provider or DEFAULT_IMAGE_FALLBACK_PROVIDER
+
+    def _api_image_enabled(self) -> bool:
+        value = os.getenv("KLING_IMAGE_ENABLED", "false").strip().lower()
+        return value in {"1", "true", "yes", "on"}
+
+    def _api_image_fallback_to_pillow(self) -> bool:
+        value = os.getenv("KLING_IMAGE_FALLBACK_TO_PILLOW", "true").strip().lower()
+        return value in {"1", "true", "yes", "on"}
+    
     def _normalized_video_provider(self, provider: str) -> str:
         value = provider.strip().lower()
         if not value:
@@ -1556,6 +1575,38 @@ class WorkflowRunner:
     def _run_image_assets(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
+        provider = self._image_provider_name()
+
+        if provider == "pillow_storybook_renderer":
+            return self._run_pillow_image_assets(ctx, outputs)
+
+        if provider == "api_image_generator":
+            try:
+                return self._run_api_image_assets(ctx, outputs)
+            except Exception as e:
+                fallback_provider = self._image_fallback_provider_name()
+                fallback_enabled = self._api_image_fallback_to_pillow()
+
+                if (
+                    fallback_enabled
+                    and fallback_provider == "pillow_storybook_renderer"
+                ):
+                    fallback_result = self._run_pillow_image_assets(ctx, outputs)
+                    fallback_result["fallback"] = {
+                        "from_provider": "api_image_generator",
+                        "to_provider": "pillow_storybook_renderer",
+                        "reason": str(e),
+                    }
+                    return fallback_result
+
+                raise RuntimeError(
+                    f"image asset generation failed with provider={provider}: {e}"
+                ) from e
+
+        raise RuntimeError(f"unknown image provider: {provider}")
+    def _run_pillow_image_assets(
+        self, ctx: StepContext, outputs: Dict[str, Any]
+    ) -> Dict[str, Any]:
         storyboard = outputs.get("storyboard") or {}
         scenes = storyboard.get("scenes") or []
 
@@ -1587,7 +1638,88 @@ class WorkflowRunner:
             "asset_count": len(assets),
             "assets": assets,
         }
+    
+    def _generate_api_image_bytes(
+        self,
+        *,
+        prompt: str,
+        scene: Dict[str, Any],
+        scene_index: int,
+    ) -> bytes:
+        """
+        Minimal Kling image generation hook.
 
+        Current phase goal:
+        - keep output contract aligned with image_assets -> final_video
+        - reserve a single replacement point for real Kling HTTP integration
+
+        Replace this body later with real Kling image API call + download bytes.
+        """
+        if not self._api_image_enabled():
+            raise RuntimeError("API_IMAGE_ENABLED is false")
+
+        raise RuntimeError(
+            "api_image_generator not implemented yet: real image API integration is required"
+        )
+
+    def _run_api_image_assets(
+        self, ctx: StepContext, outputs: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        storyboard = outputs.get("storyboard") or {}
+        scenes = storyboard.get("scenes") or []
+
+        image_prompts = outputs.get("image_prompts") or {}
+        prompt_items = image_prompts.get("prompts") or []
+
+        prompt_by_scene_id = {
+            str(item.get("scene_id")): str(item.get("prompt") or "").strip()
+            for item in prompt_items
+            if item.get("scene_id")
+        }
+
+        run_dir = self._ensure_image_run_dir(ctx.run_id)
+        assets: List[Dict[str, Any]] = []
+
+        for index, scene in enumerate(scenes, start=1):
+            scene_id = str(scene.get("scene_id") or f"scene_{index:02d}")
+            prompt = prompt_by_scene_id.get(scene_id, "").strip()
+
+            if not prompt:
+                narration = str(scene.get("narration", "")).strip()
+                visual_description = str(scene.get("visual_description", "")).strip()
+                prompt = visual_description or narration or f"storybook scene {scene_id}"
+
+            file_name = f"{scene_id}.png"
+            output_path = run_dir / file_name
+
+            image_bytes = self._generate_api_image_bytes(
+                prompt=prompt,
+                scene=scene,
+                scene_index=index,
+            )
+            output_path.write_bytes(image_bytes)
+
+            assets.append(
+                {
+                    "scene_id": scene_id,
+                    "scene_title": scene.get("scene_title"),
+                    "file_name": file_name,
+                    "relative_path": f"assets/mock/image/{ctx.run_id}/{file_name}",
+                    "public_url": f"/assets/mock/image/{ctx.run_id}/{file_name}",
+                    "mime_type": "image/png",
+                    "status": "generated",
+                    "prompt": prompt,
+                }
+            )
+
+        return {
+            "enabled": True,
+            "run_id": ctx.run_id,
+            "provider": "api_image_generator",
+            "asset_count": len(assets),
+            "assets": assets,
+        }
+    
     def _run_video_prompts(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
