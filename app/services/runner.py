@@ -199,17 +199,16 @@ class WorkflowRunner:
         if speaker_specific:
             return speaker_specific
 
+        default_voice = os.getenv("TTS_VOICE", "").strip()
+        if default_voice:
+            return default_voice
+
         style_key = voice_style.strip().upper()
         style_specific = os.getenv(f"TTS_VOICE_STYLE_{style_key}", "").strip()
         if style_specific:
             return style_specific
 
-        default_voice = os.getenv("TTS_VOICE", "").strip()
-        if default_voice:
-            return default_voice
-
         raise RuntimeError("TTS_VOICE is missing")
-
     def _ensure_audio_run_dir(self, run_id: str) -> Path:
         run_dir = MOCK_AUDIO_ROOT / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -324,6 +323,10 @@ class WorkflowRunner:
         voice_style: str,
         output_path: Path,
     ) -> Dict[str, Any]:
+        import http.client
+        import ssl
+        import time
+
         api_key = self._tts_api_key()
         if not api_key:
             raise RuntimeError("TTS_API_KEY is missing")
@@ -347,26 +350,57 @@ class WorkflowRunner:
             method="POST",
         )
 
-        try:
-            with urllib_request.urlopen(req, timeout=self._tts_timeout_seconds()) as resp:
-                data = resp.read()
-        except urllib_error.HTTPError as e:
-            detail = e.read().decode("utf-8", errors="ignore")
-            raise RuntimeError(
-                f"TTS http error: status={e.code}, detail={detail}"
-            ) from e
-        except urllib_error.URLError as e:
-            raise RuntimeError(f"TTS request failed: {e.reason}") from e
+        attempts = 3
+        last_error: Exception | None = None
 
-        output_path.write_bytes(data)
+        for attempt in range(1, attempts + 1):
+            try:
+                with urllib_request.urlopen(req, timeout=self._tts_timeout_seconds()) as resp:
+                    data = resp.read()
 
-        return {
-            "provider": self._tts_provider_name(),
-            "model": model,
-            "voice": voice,
-            "output_bytes": len(data),
-        }
+                if not data:
+                    raise RuntimeError("TTS response is empty")
 
+                output_path.write_bytes(data)
+
+                return {
+                    "provider": self._tts_provider_name(),
+                    "model": model,
+                    "voice": voice,
+                    "output_bytes": len(data),
+                }
+
+            except urllib_error.HTTPError as e:
+                detail = e.read().decode("utf-8", errors="ignore")
+
+                # 4xx 基本属于请求本身有问题，不做重试，直接抛
+                if 400 <= e.code < 500:
+                    raise RuntimeError(
+                        f"TTS http error: status={e.code}, detail={detail}"
+                    ) from e
+
+                last_error = RuntimeError(
+                    f"TTS http error: status={e.code}, detail={detail}"
+                )
+
+            except http.client.IncompleteRead as e:
+                last_error = RuntimeError(
+                    f"TTS incomplete read: partial_bytes={len(e.partial or b'')}"
+                )
+
+            except urllib_error.URLError as e:
+                last_error = RuntimeError(f"TTS request failed: {e.reason}")
+
+            except ssl.SSLError as e:
+                last_error = RuntimeError(f"TTS ssl error: {e}")
+
+            except TimeoutError as e:
+                last_error = RuntimeError(f"TTS timeout: {e}")
+
+            if attempt < attempts:
+                time.sleep(attempt)
+
+        raise RuntimeError(str(last_error) if last_error else "TTS request failed")
     def run(self, req: WorkflowRunRequest) -> WorkflowRunResponse:
         run_id = f"run_{uuid4().hex[:12]}"
         ctx = StepContext(
