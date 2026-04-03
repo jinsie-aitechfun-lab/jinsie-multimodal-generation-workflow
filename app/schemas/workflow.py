@@ -23,6 +23,21 @@ class WorkflowInput(BaseModel):
     tone: str = Field(default="warm")
     visual_style: str = Field(default="storybook")
     character_style: str = Field(default="animal")
+    main_character: str = Field(
+        default="",
+        description="Concrete main character entity, free-form text",
+    )
+    main_character_display: str = Field(
+        default="",
+        description="Display name for story/subtitle rendering, e.g. 小兔子",
+    )
+    character_consistency_anchor: str = Field(
+        default="",
+        description=(
+            "Optional appearance anchor for consistent character rendering, "
+            "e.g. white rabbit, long ears, red scarf"
+        ),
+    )
     voice_style: str = Field(default="warm_female")
     voiceover_enabled: bool = Field(default=False)
     voice_mode: str = Field(default="single")
