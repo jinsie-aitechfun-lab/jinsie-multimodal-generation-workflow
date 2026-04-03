@@ -80,6 +80,7 @@ class WorkflowRunner:
         self._handlers = {
             "story": self._run_story,
             "storyboard": self._run_storyboard,
+            "sentence_shots": self._run_sentence_shots,
             "image_prompts": self._run_image_prompts,
             "image_assets": self._run_image_assets,
             "video_prompts": self._run_video_prompts,
@@ -1110,10 +1111,92 @@ class WorkflowRunner:
             "total_duration_sec": ctx.input.duration_sec,
             "scenes": scenes,
         }
+    def _run_sentence_shots(
+        self, ctx: StepContext, outputs: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        storyboard = outputs.get("storyboard") or {}
+        scenes = storyboard.get("scenes") or []
+
+        items: List[Dict[str, Any]] = []
+        shot_index = 1
+
+        for scene in scenes:
+            scene_id = str(scene.get("scene_id") or "").strip()
+            scene_title = str(scene.get("scene_title") or "").strip()
+            visual_description = str(scene.get("visual_description") or "").strip()
+            narration = str(scene.get("narration") or "").strip()
+            shot_type = str(scene.get("shot_type") or "medium").strip()
+            transition = str(scene.get("transition") or "fade").strip()
+
+            sentence_list = self._split_story_sentences(narration)
+            if not sentence_list and narration:
+                sentence_list = [narration]
+
+            for sentence in sentence_list:
+                shot_id = f"shot_{shot_index:02d}"
+                items.append(
+                    {
+                        "shot_id": shot_id,
+                        "scene_id": scene_id,
+                        "scene_title": scene_title,
+                        "visual_description": visual_description,
+                        "shot_type": shot_type,
+                        "transition": transition,
+                        "text": sentence,
+                        "subtitle_text": sentence,
+                        "audio_text": sentence,
+                    }
+                )
+                shot_index += 1
+
+        return {
+            "enabled": True,
+            "shot_count": len(items),
+            "items": items,
+        }
+    def _split_story_sentences(self, text: str) -> List[str]:
+        normalized = str(text or "").replace("\n", " ").strip()
+        if not normalized:
+            return []
+
+        sentences: List[str] = []
+        current: List[str] = []
+        hard_break_chars = {"。", "！", "？", "；", "!", "?", ";"}
+
+        for ch in normalized:
+            current.append(ch)
+            if ch in hard_break_chars:
+                sentence = "".join(current).strip()
+                if sentence:
+                    sentences.append(sentence)
+                current = []
+
+        tail = "".join(current).strip()
+        if tail:
+            sentences.append(tail)
+
+        merged: List[str] = []
+        for sentence in sentences:
+            compact = " ".join(sentence.split()).strip()
+            if not compact:
+                continue
+
+            if merged and len(compact) < 8:
+                merged[-1] = f"{merged[-1]}{compact}"
+            else:
+                merged.append(compact)
+
+        if not merged and normalized:
+            merged = [normalized]
+
+        return merged[:10]
 
     def _run_image_prompts(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
+        sentence_shots = outputs.get("sentence_shots") or {}
+        shot_items = sentence_shots.get("items") or []
+
         storyboard = outputs.get("storyboard") or {}
         scenes = storyboard.get("scenes") or []
 
@@ -1143,6 +1226,47 @@ class WorkflowRunner:
         )
 
         prompts: List[Dict[str, Any]] = []
+
+        if shot_items:
+            for shot in shot_items:
+                shot_id = str(shot.get("shot_id") or "").strip()
+                scene_id = str(shot.get("scene_id") or "").strip()
+                scene_title = str(shot.get("scene_title") or "").strip()
+                visual_description = str(shot.get("visual_description") or "").strip()
+                shot_type = str(shot.get("shot_type") or "medium").strip()
+                transition = str(shot.get("transition") or "fade").strip()
+                text = str(shot.get("text") or "").strip()
+
+                shot_anchor = (
+                    f"scene title: {scene_title}, "
+                    f"camera shot: {shot_type}, "
+                    f"transition feeling: {transition}, "
+                    f"visual focus: {visual_description}"
+                )
+
+                story_anchor = f"story context: {text}"
+
+                prompt = ", ".join(
+                    part
+                    for part in [
+                        global_style_anchor,
+                        character_anchor,
+                        shot_anchor,
+                        story_anchor,
+                    ]
+                    if part
+                )
+
+                prompts.append(
+                    {
+                        "shot_id": shot_id,
+                        "scene_id": scene_id,
+                        "prompt": prompt,
+                    }
+                )
+
+            return {"provider": "image_prompt_builder", "prompts": prompts}
+
         for scene in scenes:
             scene_id = str(scene.get("scene_id") or "")
             narration = str(scene.get("narration", "")).strip()
@@ -1179,7 +1303,6 @@ class WorkflowRunner:
             )
 
         return {"provider": "image_prompt_builder", "prompts": prompts}
-
     def _build_scene_ppm(
         self, ctx: StepContext, scene: Dict[str, Any], index: int
     ) -> bytes:
@@ -2122,8 +2245,12 @@ class WorkflowRunner:
     def _run_dialogue_script(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
+        sentence_shots = outputs.get("sentence_shots") or {}
+        shot_items = sentence_shots.get("items") or []
+
         storyboard = outputs.get("storyboard") or {}
         scenes = storyboard.get("scenes") or []
+
         voice_mode = self._normalized_voice_mode(ctx.input.voice_mode)
         speaker_profiles = self._speaker_profiles(ctx)
 
@@ -2136,6 +2263,59 @@ class WorkflowRunner:
             }
 
         lines: List[Dict[str, Any]] = []
+
+        if shot_items:
+            if voice_mode == "single":
+                for index, shot in enumerate(shot_items, start=1):
+                    text = str(shot.get("audio_text") or shot.get("text") or "").strip()
+                    if not text:
+                        continue
+
+                    lines.append(
+                        {
+                            "line_id": f"line_{index:02d}",
+                            "shot_id": shot.get("shot_id"),
+                            "scene_id": shot.get("scene_id"),
+                            "speaker": "narrator",
+                            "voice_style": speaker_profiles["narrator"],
+                            "text": text,
+                        }
+                    )
+
+                return {
+                    "enabled": True,
+                    "voice_mode": "single",
+                    "speaker_profiles": speaker_profiles,
+                    "lines": lines,
+                }
+
+            alternating_speakers = ["mother", "child"]
+
+            for index, shot in enumerate(shot_items, start=1):
+                text = str(shot.get("audio_text") or shot.get("text") or "").strip()
+                if not text:
+                    continue
+
+                speaker = alternating_speakers[
+                    (index - 1) % len(alternating_speakers)
+                ]
+                lines.append(
+                    {
+                        "line_id": f"line_{index:02d}",
+                        "shot_id": shot.get("shot_id"),
+                        "scene_id": shot.get("scene_id"),
+                        "speaker": speaker,
+                        "voice_style": speaker_profiles[speaker],
+                        "text": text,
+                    }
+                )
+
+            return {
+                "enabled": True,
+                "voice_mode": "multi",
+                "speaker_profiles": speaker_profiles,
+                "lines": lines,
+            }
 
         if voice_mode == "single":
             for index, scene in enumerate(scenes, start=1):
@@ -2192,7 +2372,6 @@ class WorkflowRunner:
             "speaker_profiles": speaker_profiles,
             "lines": lines,
         }
-
     def _run_audio_segments(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
