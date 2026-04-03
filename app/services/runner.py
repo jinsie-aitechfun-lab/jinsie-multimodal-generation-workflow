@@ -771,6 +771,33 @@ class WorkflowRunner:
 
         return self._character_style_label(ctx.input.character_style)
 
+    def _main_character_display_label(self, ctx: StepContext) -> str:
+        display_value = str(
+            getattr(ctx.input, "main_character_display", "") or ""
+        ).strip()
+        if display_value:
+            return display_value
+
+        main_value = str(getattr(ctx.input, "main_character", "") or "").strip()
+        if main_value:
+            return main_value
+
+        return self._character_style_label(ctx.input.character_style)
+    def _secondary_character_display_label(self, ctx: StepContext) -> str:
+        display_value = str(
+            getattr(ctx.input, "secondary_character_display", "") or ""
+        ).strip()
+        if display_value:
+            return display_value
+
+        secondary_value = str(getattr(ctx.input, "secondary_character", "") or "").strip()
+        if secondary_value:
+            return secondary_value
+
+        return ""
+
+    def _has_secondary_character(self, ctx: StepContext) -> bool:
+        return bool(self._secondary_character_display_label(ctx))
     def _main_character_label(self, ctx: StepContext) -> str:
         value = str(getattr(ctx.input, "main_character", "") or "").strip()
         if value:
@@ -824,6 +851,28 @@ class WorkflowRunner:
         tone_label = self._tone_label(ctx.input.tone)
         visual_label = self._visual_style_label(ctx.input.visual_style)
         main_character_display = self._main_character_display_label(ctx)
+        secondary_character_display = self._secondary_character_display_label(ctx)
+        has_secondary_character = self._has_secondary_character(ctx)
+
+        if has_secondary_character:
+            paragraph_1 = (
+                f"在一个安静又明亮的清晨，围绕“{topic}”展开了一段{tone_label}的小故事。"
+                f"故事的主角是可爱的{main_character_display}，它和朋友{secondary_character_display}一起踏上了新的旅程。"
+            )
+            paragraph_2 = (
+                f"起初，一切都很顺利，可没过多久，{main_character_display}遇到了一点小麻烦。"
+                f"{secondary_character_display}陪在它身边，一起观察周围的变化，也一起思考接下来该怎么办。"
+            )
+            paragraph_3 = (
+                f"在一路上的观察、尝试和彼此鼓励下，{main_character_display}慢慢鼓起勇气，"
+                f"{secondary_character_display}也主动帮忙，它们一点点找到了解决问题的方法。"
+            )
+            paragraph_4 = (
+                f"最后，{main_character_display}和{secondary_character_display}顺利完成了这段旅程，"
+                f"也一起收获了陪伴、勇气和成长。"
+                f"这是一个适合{audience_label}观看、适合用{visual_label}风格呈现的{tone_label}故事。"
+            )
+            return [paragraph_1, paragraph_2, paragraph_3, paragraph_4]
 
         paragraph_1 = (
             f"在一个安静又明亮的清晨，围绕“{topic}”展开了一段{tone_label}的小故事。"
@@ -908,22 +957,132 @@ class WorkflowRunner:
             },
         ]
         return base[:scene_count]
-    def _build_video_prompt_base(
-        self, ctx: StepContext, scene: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        return {
-            "scene_id": scene.get("scene_id"),
-            "scene_title": scene.get("scene_title"),
-            "visual_description": str(scene.get("visual_description", "")),
-            "narration": str(scene.get("narration", "")),
-            "duration_sec": scene.get("duration_sec"),
-            "shot_type": scene.get("shot_type"),
-            "transition": scene.get("transition"),
-            "visual_style": ctx.input.visual_style,
-            "tone": ctx.input.tone,
-            "character_style": ctx.input.character_style,
-            "provider": self._normalized_video_provider(ctx.input.video_provider),
-        }
+    
+    def _scene_blueprints(
+        self, ctx: StepContext, scene_count: int
+    ) -> List[Dict[str, str]]:
+        tone_label = self._tone_label(ctx.input.tone)
+        visual_label = self._visual_style_label(ctx.input.visual_style)
+        main_character_display = self._main_character_display_label(ctx)
+        secondary_character_display = self._secondary_character_display_label(ctx)
+        has_secondary_character = self._has_secondary_character(ctx)
+
+        if has_secondary_character:
+            base = [
+                {
+                    "scene_title": "故事开场",
+                    "visual_description": (
+                        f"{visual_label}风格画面，晨光柔和，主角{main_character_display}和朋友{secondary_character_display}第一次一起出场，"
+                        f"整体氛围{tone_label}、轻盈而有期待感。"
+                    ),
+                    "shot_type": "wide",
+                    "transition": "fade",
+                },
+                {
+                    "scene_title": "遇到问题",
+                    "visual_description": (
+                        f"{visual_label}风格画面，{main_character_display}停下脚步思考，"
+                        f"{secondary_character_display}陪在一旁一起观察环境变化，画面强调困惑与转折。"
+                    ),
+                    "shot_type": "medium",
+                    "transition": "cut",
+                },
+                {
+                    "scene_title": "行动推进",
+                    "visual_description": (
+                        f"{visual_label}风格画面，{main_character_display}与{secondary_character_display}一起尝试解决问题，"
+                        f"动作更明确，节奏变得积极，画面更有前进感。"
+                    ),
+                    "shot_type": "medium",
+                    "transition": "dissolve",
+                },
+                {
+                    "scene_title": "温暖收束",
+                    "visual_description": (
+                        f"{visual_label}风格画面，{main_character_display}和{secondary_character_display}完成旅程，表情放松，"
+                        f"画面回到温暖明亮的氛围，用来承接结尾情绪。"
+                    ),
+                    "shot_type": "close-up",
+                    "transition": "fade",
+                },
+                {
+                    "scene_title": "回味结尾",
+                    "visual_description": (
+                        f"{visual_label}风格画面，{main_character_display}和{secondary_character_display}回头望向来时的路，"
+                        f"环境安静舒展，用于强化余韵与成长感。"
+                    ),
+                    "shot_type": "wide",
+                    "transition": "fade",
+                },
+                {
+                    "scene_title": "片尾定格",
+                    "visual_description": (
+                        f"{visual_label}风格画面，{main_character_display}和{secondary_character_display}站在新的起点上，"
+                        f"适合作为片尾定格镜头，氛围柔和完整。"
+                    ),
+                    "shot_type": "close-up",
+                    "transition": "fade",
+                },
+            ]
+            return base[:scene_count]
+
+        base = [
+            {
+                "scene_title": "故事开场",
+                "visual_description": (
+                    f"{visual_label}风格画面，晨光柔和，主角{main_character_display}第一次出场，"
+                    f"整体氛围{tone_label}、轻盈而有期待感。"
+                ),
+                "shot_type": "wide",
+                "transition": "fade",
+            },
+            {
+                "scene_title": "遇到问题",
+                "visual_description": (
+                    f"{visual_label}风格画面，主角{main_character_display}停下脚步思考，"
+                    f"周围环境出现小小变化，画面强调困惑与转折。"
+                ),
+                "shot_type": "medium",
+                "transition": "cut",
+            },
+            {
+                "scene_title": "行动推进",
+                "visual_description": (
+                    f"{visual_label}风格画面，主角{main_character_display}主动尝试解决问题，"
+                    f"动作更明确，节奏变得积极，画面更有前进感。"
+                ),
+                "shot_type": "medium",
+                "transition": "dissolve",
+            },
+            {
+                "scene_title": "温暖收束",
+                "visual_description": (
+                    f"{visual_label}风格画面，主角{main_character_display}完成旅程，表情放松，"
+                    f"画面回到温暖明亮的氛围，用来承接结尾情绪。"
+                ),
+                "shot_type": "close-up",
+                "transition": "fade",
+            },
+            {
+                "scene_title": "回味结尾",
+                "visual_description": (
+                    f"{visual_label}风格画面，主角{main_character_display}回头望向来时的路，"
+                    f"环境安静舒展，用于强化余韵与成长感。"
+                ),
+                "shot_type": "wide",
+                "transition": "fade",
+            },
+            {
+                "scene_title": "片尾定格",
+                "visual_description": (
+                    f"{visual_label}风格画面，主角{main_character_display}站在新的起点上，"
+                    f"适合作为片尾定格镜头，氛围柔和完整。"
+                ),
+                "shot_type": "close-up",
+                "transition": "fade",
+            },
+        ]
+        return base[:scene_count]
 
     def _build_video_provider_prompts(
         self, ctx: StepContext, scenes: List[Dict[str, Any]]
