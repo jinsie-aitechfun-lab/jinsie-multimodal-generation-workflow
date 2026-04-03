@@ -80,6 +80,7 @@ class WorkflowRunner:
         self._handlers = {
             "story": self._run_story,
             "storyboard": self._run_storyboard,
+            "sentence_shots": self._run_sentence_shots,
             "image_prompts": self._run_image_prompts,
             "image_assets": self._run_image_assets,
             "video_prompts": self._run_video_prompts,
@@ -1110,10 +1111,92 @@ class WorkflowRunner:
             "total_duration_sec": ctx.input.duration_sec,
             "scenes": scenes,
         }
+    def _run_sentence_shots(
+        self, ctx: StepContext, outputs: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        storyboard = outputs.get("storyboard") or {}
+        scenes = storyboard.get("scenes") or []
+
+        items: List[Dict[str, Any]] = []
+        shot_index = 1
+
+        for scene in scenes:
+            scene_id = str(scene.get("scene_id") or "").strip()
+            scene_title = str(scene.get("scene_title") or "").strip()
+            visual_description = str(scene.get("visual_description") or "").strip()
+            narration = str(scene.get("narration") or "").strip()
+            shot_type = str(scene.get("shot_type") or "medium").strip()
+            transition = str(scene.get("transition") or "fade").strip()
+
+            sentence_list = self._split_story_sentences(narration)
+            if not sentence_list and narration:
+                sentence_list = [narration]
+
+            for sentence in sentence_list:
+                shot_id = f"shot_{shot_index:02d}"
+                items.append(
+                    {
+                        "shot_id": shot_id,
+                        "scene_id": scene_id,
+                        "scene_title": scene_title,
+                        "visual_description": visual_description,
+                        "shot_type": shot_type,
+                        "transition": transition,
+                        "text": sentence,
+                        "subtitle_text": sentence,
+                        "audio_text": sentence,
+                    }
+                )
+                shot_index += 1
+
+        return {
+            "enabled": True,
+            "shot_count": len(items),
+            "items": items,
+        }
+    def _split_story_sentences(self, text: str) -> List[str]:
+        normalized = str(text or "").replace("\n", " ").strip()
+        if not normalized:
+            return []
+
+        sentences: List[str] = []
+        current: List[str] = []
+        hard_break_chars = {"。", "！", "？", "；", "!", "?", ";"}
+
+        for ch in normalized:
+            current.append(ch)
+            if ch in hard_break_chars:
+                sentence = "".join(current).strip()
+                if sentence:
+                    sentences.append(sentence)
+                current = []
+
+        tail = "".join(current).strip()
+        if tail:
+            sentences.append(tail)
+
+        merged: List[str] = []
+        for sentence in sentences:
+            compact = " ".join(sentence.split()).strip()
+            if not compact:
+                continue
+
+            if merged and len(compact) < 8:
+                merged[-1] = f"{merged[-1]}{compact}"
+            else:
+                merged.append(compact)
+
+        if not merged and normalized:
+            merged = [normalized]
+
+        return merged[:10]
 
     def _run_image_prompts(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
+        sentence_shots = outputs.get("sentence_shots") or {}
+        shot_items = sentence_shots.get("items") or []
+
         storyboard = outputs.get("storyboard") or {}
         scenes = storyboard.get("scenes") or []
 
@@ -1143,6 +1226,47 @@ class WorkflowRunner:
         )
 
         prompts: List[Dict[str, Any]] = []
+
+        if shot_items:
+            for shot in shot_items:
+                shot_id = str(shot.get("shot_id") or "").strip()
+                scene_id = str(shot.get("scene_id") or "").strip()
+                scene_title = str(shot.get("scene_title") or "").strip()
+                visual_description = str(shot.get("visual_description") or "").strip()
+                shot_type = str(shot.get("shot_type") or "medium").strip()
+                transition = str(shot.get("transition") or "fade").strip()
+                text = str(shot.get("text") or "").strip()
+
+                shot_anchor = (
+                    f"scene title: {scene_title}, "
+                    f"camera shot: {shot_type}, "
+                    f"transition feeling: {transition}, "
+                    f"visual focus: {visual_description}"
+                )
+
+                story_anchor = f"story context: {text}"
+
+                prompt = ", ".join(
+                    part
+                    for part in [
+                        global_style_anchor,
+                        character_anchor,
+                        shot_anchor,
+                        story_anchor,
+                    ]
+                    if part
+                )
+
+                prompts.append(
+                    {
+                        "shot_id": shot_id,
+                        "scene_id": scene_id,
+                        "prompt": prompt,
+                    }
+                )
+
+            return {"provider": "image_prompt_builder", "prompts": prompts}
+
         for scene in scenes:
             scene_id = str(scene.get("scene_id") or "")
             narration = str(scene.get("narration", "")).strip()
@@ -1179,7 +1303,6 @@ class WorkflowRunner:
             )
 
         return {"provider": "image_prompt_builder", "prompts": prompts}
-
     def _build_scene_ppm(
         self, ctx: StepContext, scene: Dict[str, Any], index: int
     ) -> bytes:
@@ -1869,11 +1992,64 @@ class WorkflowRunner:
     def _run_pillow_image_assets(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
+        sentence_shots = outputs.get("sentence_shots") or {}
+        shot_items = sentence_shots.get("items") or []
+
         storyboard = outputs.get("storyboard") or {}
         scenes = storyboard.get("scenes") or []
+        scene_by_id = {
+            str(scene.get("scene_id")): scene
+            for scene in scenes
+            if scene.get("scene_id")
+        }
 
         run_dir = self._ensure_image_run_dir(ctx.run_id)
         assets: List[Dict[str, Any]] = []
+
+        if shot_items:
+            for index, shot in enumerate(shot_items, start=1):
+                shot_id = str(shot.get("shot_id") or f"shot_{index:02d}")
+                scene_id = str(shot.get("scene_id") or "")
+                scene_title = str(shot.get("scene_title") or f"Shot {index}")
+                visual_description = str(shot.get("visual_description") or "").strip()
+                shot_text = str(shot.get("text") or "").strip()
+                shot_type = str(shot.get("shot_type") or "medium").strip()
+                transition = str(shot.get("transition") or "fade").strip()
+
+                pseudo_scene = {
+                    "scene_id": shot_id,
+                    "scene_title": scene_title,
+                    "visual_description": visual_description,
+                    "narration": shot_text,
+                    "duration_sec": 0,
+                    "shot_type": shot_type,
+                    "transition": transition,
+                }
+
+                file_name = f"{shot_id}.ppm"
+                output_path = run_dir / file_name
+                output_path.write_bytes(self._build_scene_ppm(ctx, pseudo_scene, index))
+
+                assets.append(
+                    {
+                        "shot_id": shot_id,
+                        "scene_id": scene_id,
+                        "scene_title": scene_title,
+                        "file_name": file_name,
+                        "relative_path": f"assets/mock/image/{ctx.run_id}/{file_name}",
+                        "public_url": f"/assets/mock/image/{ctx.run_id}/{file_name}",
+                        "mime_type": "image/x-portable-pixmap",
+                        "status": "generated",
+                    }
+                )
+
+            return {
+                "enabled": True,
+                "run_id": ctx.run_id,
+                "provider": "pillow_storybook_renderer",
+                "asset_count": len(assets),
+                "assets": assets,
+            }
 
         for index, scene in enumerate(scenes, start=1):
             scene_id = str(scene.get("scene_id") or f"scene_{index:02d}")
@@ -1900,7 +2076,6 @@ class WorkflowRunner:
             "asset_count": len(assets),
             "assets": assets,
         }
-
     def _generate_api_image_bytes(
         self,
         *,
@@ -2055,12 +2230,20 @@ class WorkflowRunner:
     def _run_api_image_assets(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
+        sentence_shots = outputs.get("sentence_shots") or {}
+        shot_items = sentence_shots.get("items") or []
+
         storyboard = outputs.get("storyboard") or {}
         scenes = storyboard.get("scenes") or []
 
         image_prompts = outputs.get("image_prompts") or {}
         prompt_items = image_prompts.get("prompts") or []
 
+        prompt_by_shot_id = {
+            str(item.get("shot_id")): str(item.get("prompt") or "").strip()
+            for item in prompt_items
+            if item.get("shot_id")
+        }
         prompt_by_scene_id = {
             str(item.get("scene_id")): str(item.get("prompt") or "").strip()
             for item in prompt_items
@@ -2069,6 +2252,59 @@ class WorkflowRunner:
 
         run_dir = self._ensure_image_run_dir(ctx.run_id)
         assets: List[Dict[str, Any]] = []
+
+        if shot_items:
+            for index, shot in enumerate(shot_items, start=1):
+                shot_id = str(shot.get("shot_id") or f"shot_{index:02d}")
+                scene_id = str(shot.get("scene_id") or "")
+                scene_title = str(shot.get("scene_title") or f"Shot {index}")
+                prompt = prompt_by_shot_id.get(shot_id, "").strip()
+
+                if not prompt:
+                    text = str(shot.get("text", "")).strip()
+                    visual_description = str(shot.get("visual_description", "")).strip()
+                    prompt = visual_description or text or f"storybook shot {shot_id}"
+
+                file_name = f"{shot_id}.png"
+                output_path = run_dir / file_name
+
+                pseudo_scene = {
+                    "scene_id": shot_id,
+                    "scene_title": scene_title,
+                    "visual_description": shot.get("visual_description"),
+                    "narration": shot.get("text"),
+                    "shot_type": shot.get("shot_type"),
+                    "transition": shot.get("transition"),
+                }
+
+                image_bytes = self._generate_api_image_bytes(
+                    prompt=prompt,
+                    scene=pseudo_scene,
+                    scene_index=index,
+                )
+                output_path.write_bytes(image_bytes)
+
+                assets.append(
+                    {
+                        "shot_id": shot_id,
+                        "scene_id": scene_id,
+                        "scene_title": scene_title,
+                        "file_name": file_name,
+                        "relative_path": f"assets/mock/image/{ctx.run_id}/{file_name}",
+                        "public_url": f"/assets/mock/image/{ctx.run_id}/{file_name}",
+                        "mime_type": "image/png",
+                        "status": "generated",
+                        "prompt": prompt,
+                    }
+                )
+
+            return {
+                "enabled": True,
+                "run_id": ctx.run_id,
+                "provider": "api_image_generator",
+                "asset_count": len(assets),
+                "assets": assets,
+            }
 
         for index, scene in enumerate(scenes, start=1):
             scene_id = str(scene.get("scene_id") or f"scene_{index:02d}")
@@ -2111,7 +2347,6 @@ class WorkflowRunner:
             "asset_count": len(assets),
             "assets": assets,
         }
-
     def _run_video_prompts(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -2122,8 +2357,12 @@ class WorkflowRunner:
     def _run_dialogue_script(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
+        sentence_shots = outputs.get("sentence_shots") or {}
+        shot_items = sentence_shots.get("items") or []
+
         storyboard = outputs.get("storyboard") or {}
         scenes = storyboard.get("scenes") or []
+
         voice_mode = self._normalized_voice_mode(ctx.input.voice_mode)
         speaker_profiles = self._speaker_profiles(ctx)
 
@@ -2136,6 +2375,59 @@ class WorkflowRunner:
             }
 
         lines: List[Dict[str, Any]] = []
+
+        if shot_items:
+            if voice_mode == "single":
+                for index, shot in enumerate(shot_items, start=1):
+                    text = str(shot.get("audio_text") or shot.get("text") or "").strip()
+                    if not text:
+                        continue
+
+                    lines.append(
+                        {
+                            "line_id": f"line_{index:02d}",
+                            "shot_id": shot.get("shot_id"),
+                            "scene_id": shot.get("scene_id"),
+                            "speaker": "narrator",
+                            "voice_style": speaker_profiles["narrator"],
+                            "text": text,
+                        }
+                    )
+
+                return {
+                    "enabled": True,
+                    "voice_mode": "single",
+                    "speaker_profiles": speaker_profiles,
+                    "lines": lines,
+                }
+
+            alternating_speakers = ["mother", "child"]
+
+            for index, shot in enumerate(shot_items, start=1):
+                text = str(shot.get("audio_text") or shot.get("text") or "").strip()
+                if not text:
+                    continue
+
+                speaker = alternating_speakers[
+                    (index - 1) % len(alternating_speakers)
+                ]
+                lines.append(
+                    {
+                        "line_id": f"line_{index:02d}",
+                        "shot_id": shot.get("shot_id"),
+                        "scene_id": shot.get("scene_id"),
+                        "speaker": speaker,
+                        "voice_style": speaker_profiles[speaker],
+                        "text": text,
+                    }
+                )
+
+            return {
+                "enabled": True,
+                "voice_mode": "multi",
+                "speaker_profiles": speaker_profiles,
+                "lines": lines,
+            }
 
         if voice_mode == "single":
             for index, scene in enumerate(scenes, start=1):
@@ -2192,7 +2484,6 @@ class WorkflowRunner:
             "speaker_profiles": speaker_profiles,
             "lines": lines,
         }
-
     def _run_audio_segments(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -2230,15 +2521,18 @@ class WorkflowRunner:
             speaker = str(line.get("speaker", "narrator"))
             voice_style = str(line.get("voice_style", ctx.input.voice_style))
             scene_id = line.get("scene_id")
+            shot_id = line.get("shot_id")
+
             char_count = max(1, len(text))
             duration_estimate_sec = max(2, min(12, char_count // 8))
+            duration_sec = float(duration_estimate_sec)
 
             file_name = f"{speaker}_{index:02d}.mp3"
             relative_path = f"assets/mock/audio/{ctx.run_id}/{file_name}"
             public_url = f"/assets/mock/audio/{ctx.run_id}/{file_name}"
             output_path = run_dir / file_name
             waveform_preview = [
-                max(0.12, round(duration_estimate_sec / 12, 2)),
+                max(0.12, round(duration_sec / 12, 2)),
                 0.48,
                 0.76,
                 0.35,
@@ -2294,6 +2588,7 @@ class WorkflowRunner:
             asset = {
                 "asset_id": f"audio_asset_{index:02d}",
                 "segment_id": f"audio_{index:02d}",
+                "shot_id": shot_id,
                 "scene_id": scene_id,
                 "speaker": speaker,
                 "voice_style": voice_style,
@@ -2303,6 +2598,7 @@ class WorkflowRunner:
                 "public_url": public_url,
                 "mime_type": "audio/mpeg",
                 "duration_estimate_sec": duration_estimate_sec,
+                "duration_sec": duration_sec,
                 "asset_status": asset_status,
                 "generation_mode": generation_mode,
                 "waveform_preview": waveform_preview,
@@ -2311,12 +2607,14 @@ class WorkflowRunner:
 
             item = {
                 "segment_id": f"audio_{index:02d}",
+                "shot_id": shot_id,
                 "scene_id": scene_id,
                 "speaker": speaker,
                 "text": text,
                 "voice_style": voice_style,
                 "target_audio_file": relative_path,
                 "duration_estimate_sec": duration_estimate_sec,
+                "duration_sec": duration_sec,
                 "provider": generation_provider,
                 "status": generation_status,
                 "asset_public_url": public_url,
@@ -2350,7 +2648,6 @@ class WorkflowRunner:
             "directory_manifest": directory_manifest,
             "scene_asset_map": scene_asset_map,
         }
-
     def _run_narration(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -2418,22 +2715,41 @@ class WorkflowRunner:
         if not ctx.input.subtitle_enabled:
             return {"enabled": False, "items": [], "srt_preview": ""}
 
-        narration = outputs.get("narration") or {}
-        segments = narration.get("segments") or []
+        audio_segments = outputs.get("audio_segments") or {}
+        items_source = audio_segments.get("items") or []
 
         items: List[Dict[str, Any]] = []
-        current_start = 0
+        current_start = 0.0
         srt_lines: List[str] = []
 
-        for index, segment in enumerate(segments, start=1):
-            text = str(segment.get("text", ""))
-            duration = max(3, ctx.input.duration_sec // max(1, len(segments)))
+        def _format_srt_time(total_seconds: float) -> str:
+            millis = int(round(total_seconds * 1000))
+            hours = millis // 3600000
+            millis %= 3600000
+            minutes = millis // 60000
+            millis %= 60000
+            seconds = millis // 1000
+            millis %= 1000
+            return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
+
+        for index, segment in enumerate(items_source, start=1):
+            text = str(segment.get("text", "")).strip()
+            if not text:
+                continue
+
+            duration_sec = float(segment.get("duration_sec") or 0.0)
+            if duration_sec <= 0:
+                duration_sec = float(segment.get("duration_estimate_sec") or 3.0)
+            if duration_sec <= 0:
+                duration_sec = 3.0
+
             start_sec = current_start
-            end_sec = current_start + duration
+            end_sec = current_start + duration_sec
             current_start = end_sec
 
             item = {
                 "index": index,
+                "shot_id": segment.get("shot_id"),
                 "scene_id": segment.get("scene_id"),
                 "start_sec": start_sec,
                 "end_sec": end_sec,
@@ -2444,7 +2760,7 @@ class WorkflowRunner:
             srt_lines.extend(
                 [
                     str(index),
-                    f"00:00:{start_sec:02d},000 --> 00:00:{end_sec:02d},000",
+                    f"{_format_srt_time(start_sec)} --> {_format_srt_time(end_sec)}",
                     text,
                     "",
                 ]
@@ -2455,7 +2771,6 @@ class WorkflowRunner:
             "items": items,
             "srt_preview": "\n".join(srt_lines).strip(),
         }
-
     def _run_render_plan(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -2475,6 +2790,11 @@ class WorkflowRunner:
         image_assets_list = image_assets.get("assets") or []
         audio_items = audio_segments.get("items") or []
 
+        image_by_shot = {
+            str(item.get("shot_id")): item
+            for item in image_assets_list
+            if item.get("shot_id")
+        }
         image_by_scene = {
             str(item.get("scene_id")): item
             for item in image_assets_list
@@ -2484,29 +2804,38 @@ class WorkflowRunner:
         concat_lines: List[str] = []
         video_run_dir = self._ensure_video_run_dir(ctx.run_id)
         concat_file = video_run_dir / "scene_concat.txt"
+        last_image_path: Optional[Path] = None
 
         for item in audio_items:
+            shot_id = str(item.get("shot_id") or "")
             scene_id = str(item.get("scene_id") or "")
-            image_asset = image_by_scene.get(scene_id)
-            if not image_asset:
+
+            image_asset = None
+            if shot_id:
+                image_asset = image_by_shot.get(shot_id)
+            if image_asset is None and scene_id:
+                image_asset = image_by_scene.get(scene_id)
+            if image_asset is None:
                 continue
 
             image_path = PROJECT_ROOT / str(image_asset.get("relative_path"))
-            duration_sec = max(1, int(item.get("duration_estimate_sec") or 3))
+            duration_sec = float(item.get("duration_sec") or 0.0)
+            if duration_sec <= 0:
+                duration_sec = float(item.get("duration_estimate_sec") or 3.0)
+            if duration_sec <= 0:
+                duration_sec = 3.0
+
             escaped_image_path = str(image_path).replace("'", "'\\''")
-
             concat_lines.append(f"file '{escaped_image_path}'")
-            concat_lines.append(f"duration {duration_sec}")
+            concat_lines.append(f"duration {duration_sec:.3f}")
+            last_image_path = image_path
 
-        if image_assets_list:
-            last_image_asset = image_assets_list[-1]
-            last_image_path = PROJECT_ROOT / str(last_image_asset.get("relative_path"))
+        if last_image_path is not None:
             escaped_last_image_path = str(last_image_path).replace("'", "'\\''")
             concat_lines.append(f"file '{escaped_last_image_path}'")
 
         concat_file.write_text("\n".join(concat_lines) + "\n", encoding="utf-8")
         return concat_file
-
     def _run_final_video(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -2524,6 +2853,13 @@ class WorkflowRunner:
                 "reason": "missing image_assets or audio_segments",
             }
 
+        total_duration_sec = 0.0
+        for item in audio_item_list:
+            duration_sec = float(item.get("duration_sec") or 0.0)
+            if duration_sec <= 0:
+                duration_sec = float(item.get("duration_estimate_sec") or 0.0)
+            total_duration_sec += max(duration_sec, 0.0)
+
         video_run_dir = self._ensure_video_run_dir(ctx.run_id)
         concat_file = self._build_video_concat_file(ctx, image_assets, audio_segments)
 
@@ -2534,6 +2870,13 @@ class WorkflowRunner:
             for asset in audio_assets
             if asset.get("relative_path")
         ]
+
+        if not audio_file_paths:
+            return {
+                "enabled": False,
+                "status": "skipped",
+                "reason": "no audio files available",
+            }
 
         merged_audio_path = video_run_dir / "merged_audio.mp3"
         merged_audio_list_path = video_run_dir / "merged_audio_inputs.txt"
@@ -2613,7 +2956,7 @@ class WorkflowRunner:
             "file_name": "final.mp4",
             "relative_path": f"assets/mock/video/{ctx.run_id}/final.mp4",
             "public_url": f"/assets/mock/video/{ctx.run_id}/final.mp4",
-            "duration_sec": ctx.input.duration_sec,
+            "duration_sec": round(total_duration_sec, 3),
             "audio_track_path": f"assets/mock/video/{ctx.run_id}/merged_audio.mp3",
             "subtitle_path": f"assets/mock/video/{ctx.run_id}/subtitles.srt",
         }
