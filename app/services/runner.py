@@ -1992,11 +1992,64 @@ class WorkflowRunner:
     def _run_pillow_image_assets(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
+        sentence_shots = outputs.get("sentence_shots") or {}
+        shot_items = sentence_shots.get("items") or []
+
         storyboard = outputs.get("storyboard") or {}
         scenes = storyboard.get("scenes") or []
+        scene_by_id = {
+            str(scene.get("scene_id")): scene
+            for scene in scenes
+            if scene.get("scene_id")
+        }
 
         run_dir = self._ensure_image_run_dir(ctx.run_id)
         assets: List[Dict[str, Any]] = []
+
+        if shot_items:
+            for index, shot in enumerate(shot_items, start=1):
+                shot_id = str(shot.get("shot_id") or f"shot_{index:02d}")
+                scene_id = str(shot.get("scene_id") or "")
+                scene_title = str(shot.get("scene_title") or f"Shot {index}")
+                visual_description = str(shot.get("visual_description") or "").strip()
+                shot_text = str(shot.get("text") or "").strip()
+                shot_type = str(shot.get("shot_type") or "medium").strip()
+                transition = str(shot.get("transition") or "fade").strip()
+
+                pseudo_scene = {
+                    "scene_id": shot_id,
+                    "scene_title": scene_title,
+                    "visual_description": visual_description,
+                    "narration": shot_text,
+                    "duration_sec": 0,
+                    "shot_type": shot_type,
+                    "transition": transition,
+                }
+
+                file_name = f"{shot_id}.ppm"
+                output_path = run_dir / file_name
+                output_path.write_bytes(self._build_scene_ppm(ctx, pseudo_scene, index))
+
+                assets.append(
+                    {
+                        "shot_id": shot_id,
+                        "scene_id": scene_id,
+                        "scene_title": scene_title,
+                        "file_name": file_name,
+                        "relative_path": f"assets/mock/image/{ctx.run_id}/{file_name}",
+                        "public_url": f"/assets/mock/image/{ctx.run_id}/{file_name}",
+                        "mime_type": "image/x-portable-pixmap",
+                        "status": "generated",
+                    }
+                )
+
+            return {
+                "enabled": True,
+                "run_id": ctx.run_id,
+                "provider": "pillow_storybook_renderer",
+                "asset_count": len(assets),
+                "assets": assets,
+            }
 
         for index, scene in enumerate(scenes, start=1):
             scene_id = str(scene.get("scene_id") or f"scene_{index:02d}")
@@ -2023,7 +2076,6 @@ class WorkflowRunner:
             "asset_count": len(assets),
             "assets": assets,
         }
-
     def _generate_api_image_bytes(
         self,
         *,
@@ -2178,12 +2230,20 @@ class WorkflowRunner:
     def _run_api_image_assets(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
+        sentence_shots = outputs.get("sentence_shots") or {}
+        shot_items = sentence_shots.get("items") or []
+
         storyboard = outputs.get("storyboard") or {}
         scenes = storyboard.get("scenes") or []
 
         image_prompts = outputs.get("image_prompts") or {}
         prompt_items = image_prompts.get("prompts") or []
 
+        prompt_by_shot_id = {
+            str(item.get("shot_id")): str(item.get("prompt") or "").strip()
+            for item in prompt_items
+            if item.get("shot_id")
+        }
         prompt_by_scene_id = {
             str(item.get("scene_id")): str(item.get("prompt") or "").strip()
             for item in prompt_items
@@ -2192,6 +2252,59 @@ class WorkflowRunner:
 
         run_dir = self._ensure_image_run_dir(ctx.run_id)
         assets: List[Dict[str, Any]] = []
+
+        if shot_items:
+            for index, shot in enumerate(shot_items, start=1):
+                shot_id = str(shot.get("shot_id") or f"shot_{index:02d}")
+                scene_id = str(shot.get("scene_id") or "")
+                scene_title = str(shot.get("scene_title") or f"Shot {index}")
+                prompt = prompt_by_shot_id.get(shot_id, "").strip()
+
+                if not prompt:
+                    text = str(shot.get("text", "")).strip()
+                    visual_description = str(shot.get("visual_description", "")).strip()
+                    prompt = visual_description or text or f"storybook shot {shot_id}"
+
+                file_name = f"{shot_id}.png"
+                output_path = run_dir / file_name
+
+                pseudo_scene = {
+                    "scene_id": shot_id,
+                    "scene_title": scene_title,
+                    "visual_description": shot.get("visual_description"),
+                    "narration": shot.get("text"),
+                    "shot_type": shot.get("shot_type"),
+                    "transition": shot.get("transition"),
+                }
+
+                image_bytes = self._generate_api_image_bytes(
+                    prompt=prompt,
+                    scene=pseudo_scene,
+                    scene_index=index,
+                )
+                output_path.write_bytes(image_bytes)
+
+                assets.append(
+                    {
+                        "shot_id": shot_id,
+                        "scene_id": scene_id,
+                        "scene_title": scene_title,
+                        "file_name": file_name,
+                        "relative_path": f"assets/mock/image/{ctx.run_id}/{file_name}",
+                        "public_url": f"/assets/mock/image/{ctx.run_id}/{file_name}",
+                        "mime_type": "image/png",
+                        "status": "generated",
+                        "prompt": prompt,
+                    }
+                )
+
+            return {
+                "enabled": True,
+                "run_id": ctx.run_id,
+                "provider": "api_image_generator",
+                "asset_count": len(assets),
+                "assets": assets,
+            }
 
         for index, scene in enumerate(scenes, start=1):
             scene_id = str(scene.get("scene_id") or f"scene_{index:02d}")
@@ -2234,7 +2347,6 @@ class WorkflowRunner:
             "asset_count": len(assets),
             "assets": assets,
         }
-
     def _run_video_prompts(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
