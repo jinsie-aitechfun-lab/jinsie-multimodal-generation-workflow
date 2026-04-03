@@ -220,6 +220,42 @@ class WorkflowRunner:
         run_dir.mkdir(parents=True, exist_ok=True)
         return run_dir
 
+    def _probe_audio_duration_seconds(self, audio_path: Path) -> Optional[float]:
+        if not audio_path.exists():
+            return None
+
+        try:
+            result = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "default=noprint_wrappers=1:nokey=1",
+                    str(audio_path),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except Exception:
+            return None
+
+        raw_value = (result.stdout or "").strip()
+        if not raw_value:
+            return None
+
+        try:
+            duration = float(raw_value)
+        except ValueError:
+            return None
+
+        if duration <= 0:
+            return None
+
+        return round(duration, 3)
     def _ensure_video_run_dir(self, run_id: str) -> Path:
         run_dir = MOCK_VIDEO_ROOT / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -588,27 +624,87 @@ class WorkflowRunner:
             "child": profiles.get("child", "gentle_child"),
         }
 
+    def _main_character_display_label(self, ctx: StepContext) -> str:
+        display_value = str(
+            getattr(ctx.input, "main_character_display", "") or ""
+        ).strip()
+        if display_value:
+            return display_value
+
+        main_value = str(getattr(ctx.input, "main_character", "") or "").strip()
+        if main_value:
+            return main_value
+
+        return self._character_style_label(ctx.input.character_style)
+
+    def _main_character_label(self, ctx: StepContext) -> str:
+        value = str(getattr(ctx.input, "main_character", "") or "").strip()
+        if value:
+            return value
+        return self._character_style_label(ctx.input.character_style)
+
+    def _main_character_subject(self, ctx: StepContext) -> str:
+        value = str(getattr(ctx.input, "main_character", "") or "").strip()
+        if value:
+            return value
+        return f"{ctx.input.character_style} protagonist"
+
+    def _character_consistency_anchor(self, ctx: StepContext) -> str:
+        explicit_anchor = str(
+            getattr(ctx.input, "character_consistency_anchor", "") or ""
+        ).strip()
+        if explicit_anchor:
+            return explicit_anchor
+
+        main_character = str(getattr(ctx.input, "main_character", "") or "").strip()
+        if main_character:
+            return (
+                f"{main_character}, "
+                "same character across all scenes, "
+                "consistent facial features, "
+                "consistent body shape, "
+                "consistent outfit and visual identity, "
+                "cute expressive face, "
+                "storybook details"
+            )
+
+        return (
+            f"{ctx.input.character_style} protagonist, "
+            "same character across all scenes, "
+            "consistent facial features, "
+            "consistent body shape, "
+            "consistent outfit and visual identity, "
+            "cute expressive face, "
+            "storybook details"
+        )
+
+    def _character_prompt_phrase(self, ctx: StepContext) -> str:
+        main_character = str(getattr(ctx.input, "main_character", "") or "").strip()
+        if main_character:
+            return main_character
+        return f"{ctx.input.character_style} protagonist"
+    
     def _build_story_paragraphs(self, ctx: StepContext) -> List[str]:
         topic = ctx.input.topic.strip() or "一个温暖的童话故事"
         audience_label = self._audience_label(ctx.input.audience)
         tone_label = self._tone_label(ctx.input.tone)
         visual_label = self._visual_style_label(ctx.input.visual_style)
-        character_label = self._character_style_label(ctx.input.character_style)
+        main_character_display = self._main_character_display_label(ctx)
 
         paragraph_1 = (
             f"在一个安静又明亮的清晨，围绕“{topic}”展开了一段{tone_label}的小故事。"
-            f"故事的主角是一位可爱的{character_label}朋友，它带着好奇心走进了新的旅程。"
+            f"故事的主角是一位可爱的{main_character_display}，它带着好奇心走进了新的旅程。"
         )
         paragraph_2 = (
-            f"起初，一切都很顺利，可没过多久，主角就遇到了一点小麻烦。"
+            f"起初，一切都很顺利，可没过多久，这位{main_character_display}就遇到了一点小麻烦。"
             f"它有些紧张，也有些犹豫，不知道该不该继续往前走。"
         )
         paragraph_3 = (
-            f"但在一路上的观察、尝试和他人的帮助下，主角慢慢鼓起勇气，"
+            f"但在一路上的观察、尝试和他人的帮助下，这位{main_character_display}慢慢鼓起勇气，"
             f"一点点找到了解决问题的方法，也学会了相信自己。"
         )
         paragraph_4 = (
-            f"最后，主角顺利完成了这段旅程，也收获了陪伴、勇气和成长。"
+            f"最后，这位{main_character_display}顺利完成了这段旅程，也收获了陪伴、勇气和成长。"
             f"这是一个适合{audience_label}观看、适合用{visual_label}风格呈现的{tone_label}故事。"
         )
 
@@ -619,13 +715,13 @@ class WorkflowRunner:
     ) -> List[Dict[str, str]]:
         tone_label = self._tone_label(ctx.input.tone)
         visual_label = self._visual_style_label(ctx.input.visual_style)
-        character_label = self._character_style_label(ctx.input.character_style)
+        main_character_display = self._main_character_display_label(ctx)
 
         base = [
             {
                 "scene_title": "故事开场",
                 "visual_description": (
-                    f"{visual_label}风格画面，晨光柔和，{character_label}主角第一次出场，"
+                    f"{visual_label}风格画面，晨光柔和，主角{main_character_display}第一次出场，"
                     f"整体氛围{tone_label}、轻盈而有期待感。"
                 ),
                 "shot_type": "wide",
@@ -634,8 +730,8 @@ class WorkflowRunner:
             {
                 "scene_title": "遇到问题",
                 "visual_description": (
-                    f"{visual_label}风格画面，主角停下脚步思考，周围环境出现小小变化，"
-                    f"画面强调困惑与转折。"
+                    f"{visual_label}风格画面，主角{main_character_display}停下脚步思考，"
+                    f"周围环境出现小小变化，画面强调困惑与转折。"
                 ),
                 "shot_type": "medium",
                 "transition": "cut",
@@ -643,8 +739,8 @@ class WorkflowRunner:
             {
                 "scene_title": "行动推进",
                 "visual_description": (
-                    f"{visual_label}风格画面，主角主动尝试解决问题，动作更明确，"
-                    f"节奏变得积极，画面更有前进感。"
+                    f"{visual_label}风格画面，主角{main_character_display}主动尝试解决问题，"
+                    f"动作更明确，节奏变得积极，画面更有前进感。"
                 ),
                 "shot_type": "medium",
                 "transition": "dissolve",
@@ -652,7 +748,7 @@ class WorkflowRunner:
             {
                 "scene_title": "温暖收束",
                 "visual_description": (
-                    f"{visual_label}风格画面，主角完成旅程，表情放松，"
+                    f"{visual_label}风格画面，主角{main_character_display}完成旅程，表情放松，"
                     f"画面回到温暖明亮的氛围，用来承接结尾情绪。"
                 ),
                 "shot_type": "close-up",
@@ -661,7 +757,7 @@ class WorkflowRunner:
             {
                 "scene_title": "回味结尾",
                 "visual_description": (
-                    f"{visual_label}风格画面，主角回头望向来时的路，"
+                    f"{visual_label}风格画面，主角{main_character_display}回头望向来时的路，"
                     f"环境安静舒展，用于强化余韵与成长感。"
                 ),
                 "shot_type": "wide",
@@ -670,7 +766,7 @@ class WorkflowRunner:
             {
                 "scene_title": "片尾定格",
                 "visual_description": (
-                    f"{visual_label}风格画面，主角站在新的起点上，"
+                    f"{visual_label}风格画面，主角{main_character_display}站在新的起点上，"
                     f"适合作为片尾定格镜头，氛围柔和完整。"
                 ),
                 "shot_type": "close-up",
@@ -678,7 +774,6 @@ class WorkflowRunner:
             },
         ]
         return base[:scene_count]
-
     def _build_video_prompt_base(
         self, ctx: StepContext, scene: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -714,11 +809,13 @@ class WorkflowRunner:
         self, ctx: StepContext, scenes: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
         prompts: List[Dict[str, Any]] = []
+        character_phrase = self._character_prompt_phrase(ctx)
+
         for scene in scenes:
             base = self._build_video_prompt_base(ctx, scene)
             prompt = (
                 f"Create a short animated video shot in {ctx.input.visual_style} style, "
-                f"{ctx.input.tone} atmosphere, with {ctx.input.character_style} characters. "
+                f"{ctx.input.tone} atmosphere, with {character_phrase}. "
                 f"Scene description: {base['visual_description']}. "
                 f"Narration context: {base['narration']}"
             )
@@ -745,6 +842,8 @@ class WorkflowRunner:
         self, ctx: StepContext, scenes: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
         prompts: List[Dict[str, Any]] = []
+        character_phrase = self._character_prompt_phrase(ctx)
+
         for scene in scenes:
             base = self._build_video_prompt_base(ctx, scene)
             prompts.append(
@@ -754,7 +853,7 @@ class WorkflowRunner:
                     "provider": "kling",
                     "prompt": (
                         f"[KLING] style={ctx.input.visual_style}; tone={ctx.input.tone}; "
-                        f"character={ctx.input.character_style}; shot={base['shot_type']}; "
+                        f"character={character_phrase}; shot={base['shot_type']}; "
                         f"scene={base['visual_description']}; narration={base['narration']}"
                     ),
                     "duration_sec": base["duration_sec"],
@@ -775,6 +874,8 @@ class WorkflowRunner:
         self, ctx: StepContext, scenes: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
         prompts: List[Dict[str, Any]] = []
+        character_phrase = self._character_prompt_phrase(ctx)
+
         for scene in scenes:
             base = self._build_video_prompt_base(ctx, scene)
             prompts.append(
@@ -784,7 +885,7 @@ class WorkflowRunner:
                     "provider": "jimeng",
                     "prompt": (
                         f"[JIMENG] visual={ctx.input.visual_style}; atmosphere={ctx.input.tone}; "
-                        f"role={ctx.input.character_style}; transition={base['transition']}; "
+                        f"role={character_phrase}; transition={base['transition']}; "
                         f"scene={base['visual_description']}; narration={base['narration']}"
                     ),
                     "duration_sec": base["duration_sec"],
@@ -1068,6 +1169,9 @@ class WorkflowRunner:
                 "tone": ctx.input.tone,
                 "visual_style": ctx.input.visual_style,
                 "character_style": ctx.input.character_style,
+                "main_character": ctx.input.main_character,
+                "main_character_display": ctx.input.main_character_display,
+                "character_consistency_anchor": ctx.input.character_consistency_anchor,
                 "language": ctx.input.language,
             },
         }
@@ -1211,19 +1315,7 @@ class WorkflowRunner:
             "vertical 9:16 framing"
         )
 
-        character_anchor = (
-            f"{ctx.input.character_style} protagonist, "
-            "same character across all scenes, "
-            "small golden-orange kitten, "
-            "round face, big bright eyes, "
-            "soft fluffy fur, "
-            "pink inner ears, "
-            "wearing the same light blue scarf in every scene, "
-            "cute expressive face, "
-            "small child-friendly proportions, "
-            "storybook details, "
-            "consistent outfit and visual identity"
-        )
+        character_anchor = self._character_consistency_anchor(ctx)
 
         prompts: List[Dict[str, Any]] = []
 
@@ -2526,6 +2618,7 @@ class WorkflowRunner:
             char_count = max(1, len(text))
             duration_estimate_sec = max(2, min(12, char_count // 8))
             duration_sec = float(duration_estimate_sec)
+            duration_source = "estimate"
 
             file_name = f"{speaker}_{index:02d}.mp3"
             relative_path = f"assets/mock/audio/{ctx.run_id}/{file_name}"
@@ -2560,10 +2653,17 @@ class WorkflowRunner:
                     generation_status = "generated"
                     asset_status = "generated"
                     generation_mode = "real_tts"
+
+                    actual_duration_sec = self._probe_audio_duration_seconds(output_path)
+                    if actual_duration_sec is not None:
+                        duration_sec = actual_duration_sec
+                        duration_source = "ffprobe"
+
                     asset_metadata = {
                         "tts_model": tts_result.get("model"),
                         "tts_voice": tts_result.get("voice"),
                         "output_bytes": tts_result.get("output_bytes"),
+                        "duration_source": duration_source,
                     }
                     real_generation_count += 1
                 except Exception as e:
@@ -2599,6 +2699,7 @@ class WorkflowRunner:
                 "mime_type": "audio/mpeg",
                 "duration_estimate_sec": duration_estimate_sec,
                 "duration_sec": duration_sec,
+                "duration_source": duration_source,
                 "asset_status": asset_status,
                 "generation_mode": generation_mode,
                 "waveform_preview": waveform_preview,
@@ -2615,6 +2716,7 @@ class WorkflowRunner:
                 "target_audio_file": relative_path,
                 "duration_estimate_sec": duration_estimate_sec,
                 "duration_sec": duration_sec,
+                "duration_source": duration_source,
                 "provider": generation_provider,
                 "status": generation_status,
                 "asset_public_url": public_url,
@@ -2915,11 +3017,7 @@ class WorkflowRunner:
             encoding="utf-8",
         )
 
-        final_video_path = video_run_dir / "final.mp4"
-
-        subtitle_filter = (
-            f"subtitles=filename=assets/mock/video/{ctx.run_id}/subtitles.srt"
-        )
+        base_video_path = video_run_dir / "base_video.mp4"
 
         subprocess.run(
             [
@@ -2931,14 +3029,37 @@ class WorkflowRunner:
                 "0",
                 "-i",
                 str(concat_file),
-                "-i",
-                str(merged_audio_path),
-                "-vf",
-                subtitle_filter,
+                "-vsync",
+                "cfr",
+                "-r",
+                "25",
                 "-pix_fmt",
                 "yuv420p",
                 "-c:v",
                 "libx264",
+                str(base_video_path),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        final_video_path = video_run_dir / "final.mp4"
+
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(base_video_path),
+                "-i",
+                str(merged_audio_path),
+                "-vf",
+                f"subtitles={subtitle_path}",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
                 "-c:a",
                 "aac",
                 "-shortest",
