@@ -220,6 +220,42 @@ class WorkflowRunner:
         run_dir.mkdir(parents=True, exist_ok=True)
         return run_dir
 
+    def _probe_audio_duration_seconds(self, audio_path: Path) -> Optional[float]:
+        if not audio_path.exists():
+            return None
+
+        try:
+            result = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "default=noprint_wrappers=1:nokey=1",
+                    str(audio_path),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except Exception:
+            return None
+
+        raw_value = (result.stdout or "").strip()
+        if not raw_value:
+            return None
+
+        try:
+            duration = float(raw_value)
+        except ValueError:
+            return None
+
+        if duration <= 0:
+            return None
+
+        return round(duration, 3)
     def _ensure_video_run_dir(self, run_id: str) -> Path:
         run_dir = MOCK_VIDEO_ROOT / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -2526,6 +2562,7 @@ class WorkflowRunner:
             char_count = max(1, len(text))
             duration_estimate_sec = max(2, min(12, char_count // 8))
             duration_sec = float(duration_estimate_sec)
+            duration_source = "estimate"
 
             file_name = f"{speaker}_{index:02d}.mp3"
             relative_path = f"assets/mock/audio/{ctx.run_id}/{file_name}"
@@ -2560,10 +2597,17 @@ class WorkflowRunner:
                     generation_status = "generated"
                     asset_status = "generated"
                     generation_mode = "real_tts"
+
+                    actual_duration_sec = self._probe_audio_duration_seconds(output_path)
+                    if actual_duration_sec is not None:
+                        duration_sec = actual_duration_sec
+                        duration_source = "ffprobe"
+
                     asset_metadata = {
                         "tts_model": tts_result.get("model"),
                         "tts_voice": tts_result.get("voice"),
                         "output_bytes": tts_result.get("output_bytes"),
+                        "duration_source": duration_source,
                     }
                     real_generation_count += 1
                 except Exception as e:
@@ -2599,6 +2643,7 @@ class WorkflowRunner:
                 "mime_type": "audio/mpeg",
                 "duration_estimate_sec": duration_estimate_sec,
                 "duration_sec": duration_sec,
+                "duration_source": duration_source,
                 "asset_status": asset_status,
                 "generation_mode": generation_mode,
                 "waveform_preview": waveform_preview,
@@ -2615,6 +2660,7 @@ class WorkflowRunner:
                 "target_audio_file": relative_path,
                 "duration_estimate_sec": duration_estimate_sec,
                 "duration_sec": duration_sec,
+                "duration_source": duration_source,
                 "provider": generation_provider,
                 "status": generation_status,
                 "asset_public_url": public_url,
@@ -2915,11 +2961,7 @@ class WorkflowRunner:
             encoding="utf-8",
         )
 
-        final_video_path = video_run_dir / "final.mp4"
-
-        subtitle_filter = (
-            f"subtitles=filename=assets/mock/video/{ctx.run_id}/subtitles.srt"
-        )
+        base_video_path = video_run_dir / "base_video.mp4"
 
         subprocess.run(
             [
@@ -2931,14 +2973,37 @@ class WorkflowRunner:
                 "0",
                 "-i",
                 str(concat_file),
-                "-i",
-                str(merged_audio_path),
-                "-vf",
-                subtitle_filter,
+                "-vsync",
+                "cfr",
+                "-r",
+                "25",
                 "-pix_fmt",
                 "yuv420p",
                 "-c:v",
                 "libx264",
+                str(base_video_path),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        final_video_path = video_run_dir / "final.mp4"
+
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(base_video_path),
+                "-i",
+                str(merged_audio_path),
+                "-vf",
+                f"subtitles={subtitle_path}",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
                 "-c:a",
                 "aac",
                 "-shortest",
