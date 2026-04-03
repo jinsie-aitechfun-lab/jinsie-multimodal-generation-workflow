@@ -612,7 +612,7 @@ class WorkflowRunner:
 
     def _normalized_voice_mode(self, voice_mode: str) -> str:
         value = voice_mode.strip().lower()
-        if value in {"single", "multi"}:
+        if value in {"single", "multi", "character"}:
             return value
         return "single"
 
@@ -624,6 +624,140 @@ class WorkflowRunner:
             "child": profiles.get("child", "gentle_child"),
         }
 
+    def _character_speaker_profiles(self, ctx: StepContext) -> Dict[str, str]:
+        profiles = dict(getattr(ctx.input, "character_speaker_profiles", {}) or {})
+        return {
+            "narrator": profiles.get("narrator", ctx.input.voice_style),
+            "main_character": profiles.get("main_character", "gentle_child"),
+            "secondary_character": profiles.get("secondary_character", "warm_male"),
+        }
+
+    def _character_speaker_name(self, ctx: StepContext) -> str:
+        main_character = str(getattr(ctx.input, "main_character", "") or "").strip()
+        if main_character:
+            normalized = main_character.lower().replace(" ", "_")
+            return normalized
+        return "main_character"
+    
+    def _secondary_character_speaker_name(self, ctx: StepContext) -> str:
+        secondary_character = str(
+            getattr(ctx.input, "secondary_character", "") or ""
+        ).strip()
+        if secondary_character:
+            normalized = secondary_character.lower().replace(" ", "_")
+            return normalized
+        return "secondary_character"
+
+    def _detect_character_speaker(self, ctx: StepContext, text: str) -> str:
+        normalized = str(text or "").strip()
+        if not normalized:
+            return "narrator"
+
+        main_display = str(
+            getattr(ctx.input, "main_character_display", "") or ""
+        ).strip()
+        main_character = str(getattr(ctx.input, "main_character", "") or "").strip()
+
+        secondary_display = str(
+            getattr(ctx.input, "secondary_character_display", "") or ""
+        ).strip()
+        secondary_character = str(
+            getattr(ctx.input, "secondary_character", "") or ""
+        ).strip()
+
+        narrator_markers = [
+            "在一个",
+            "这是一个",
+            "最后，",
+            "最后，",
+            "整体上",
+            "这个故事",
+            "画面里",
+            "故事的主角",
+        ]
+        if any(marker in normalized for marker in narrator_markers):
+            if main_display and main_display in normalized:
+                return "main_character"
+            return "narrator"
+
+        if secondary_display and secondary_display in normalized:
+            return "secondary_character"
+
+        if secondary_character and secondary_character.lower() in normalized.lower():
+            return "secondary_character"
+
+        if main_display and main_display in normalized:
+            return "main_character"
+
+        if main_character and main_character.lower() in normalized.lower():
+            return "main_character"
+
+        trigger_words = [
+            "说",
+            "问",
+            "回答",
+            "喊",
+            "叫",
+            "小声说",
+            "大声说",
+            "轻声说",
+            "嘀咕",
+        ]
+        if any(word in normalized for word in trigger_words):
+            return "main_character"
+
+        return "narrator"
+    
+    def _resolve_character_speaker(
+        self, ctx: StepContext, text: str
+    ) -> Dict[str, str]:
+        character_profiles = self._character_speaker_profiles(ctx)
+        main_character_speaker = self._character_speaker_name(ctx)
+        secondary_character_speaker = self._secondary_character_speaker_name(ctx)
+
+        detected_role = self._detect_character_speaker(ctx, text)
+
+        if detected_role == "main_character":
+            return {
+                "speaker": main_character_speaker,
+                "voice_style": character_profiles["main_character"],
+            }
+
+        if detected_role == "secondary_character":
+            return {
+                "speaker": secondary_character_speaker,
+                "voice_style": character_profiles["secondary_character"],
+            }
+
+        return {
+            "speaker": "narrator",
+            "voice_style": character_profiles["narrator"],
+        }
+
+    def _build_dialogue_line(
+        self,
+        *,
+        line_id: str,
+        text: str,
+        scene_id: Any = None,
+        shot_id: Any = None,
+        speaker: str,
+        voice_style: str,
+    ) -> Dict[str, Any]:
+        line: Dict[str, Any] = {
+            "line_id": line_id,
+            "speaker": speaker,
+            "voice_style": voice_style,
+            "text": text,
+        }
+
+        if scene_id is not None:
+            line["scene_id"] = scene_id
+
+        if shot_id is not None:
+            line["shot_id"] = shot_id
+
+        return line
     def _main_character_display_label(self, ctx: StepContext) -> str:
         display_value = str(
             getattr(ctx.input, "main_character_display", "") or ""
@@ -2493,34 +2627,68 @@ class WorkflowRunner:
                     "lines": lines,
                 }
 
-            alternating_speakers = ["mother", "child"]
+            if voice_mode == "multi":
+                alternating_speakers = ["mother", "child"]
+
+                for index, shot in enumerate(shot_items, start=1):
+                    text = str(shot.get("audio_text") or shot.get("text") or "").strip()
+                    if not text:
+                        continue
+
+                    speaker = alternating_speakers[
+                        (index - 1) % len(alternating_speakers)
+                    ]
+                    lines.append(
+                        {
+                            "line_id": f"line_{index:02d}",
+                            "shot_id": shot.get("shot_id"),
+                            "scene_id": shot.get("scene_id"),
+                            "speaker": speaker,
+                            "voice_style": speaker_profiles[speaker],
+                            "text": text,
+                        }
+                    )
+
+                return {
+                    "enabled": True,
+                    "voice_mode": "multi",
+                    "speaker_profiles": speaker_profiles,
+                    "lines": lines,
+                }
+
+            character_profiles = self._character_speaker_profiles(ctx)
+            main_character_speaker = self._character_speaker_name(ctx)
+            secondary_character_speaker = self._secondary_character_speaker_name(ctx)
 
             for index, shot in enumerate(shot_items, start=1):
                 text = str(shot.get("audio_text") or shot.get("text") or "").strip()
                 if not text:
                     continue
 
-                speaker = alternating_speakers[
-                    (index - 1) % len(alternating_speakers)
-                ]
+                resolved = self._resolve_character_speaker(ctx, text)
+
                 lines.append(
-                    {
-                        "line_id": f"line_{index:02d}",
-                        "shot_id": shot.get("shot_id"),
-                        "scene_id": shot.get("scene_id"),
-                        "speaker": speaker,
-                        "voice_style": speaker_profiles[speaker],
-                        "text": text,
-                    }
+                    self._build_dialogue_line(
+                        line_id=f"line_{index:02d}",
+                        shot_id=shot.get("shot_id"),
+                        scene_id=shot.get("scene_id"),
+                        speaker=resolved["speaker"],
+                        voice_style=resolved["voice_style"],
+                        text=text,
+                    )
                 )
 
             return {
                 "enabled": True,
-                "voice_mode": "multi",
-                "speaker_profiles": speaker_profiles,
+                "voice_mode": "character",
+                "speaker_profiles": {
+                    "narrator": character_profiles["narrator"],
+                    main_character_speaker: character_profiles["main_character"],
+                    secondary_character_speaker: character_profiles["secondary_character"],
+                },
                 "lines": lines,
             }
-
+            
         if voice_mode == "single":
             for index, scene in enumerate(scenes, start=1):
                 text = str(scene.get("narration", "")).strip()
@@ -2544,7 +2712,43 @@ class WorkflowRunner:
                 "lines": lines,
             }
 
-        alternating_speakers = ["mother", "child"]
+        if voice_mode == "multi":
+            alternating_speakers = ["mother", "child"]
+
+            for index, scene in enumerate(scenes, start=1):
+                text = str(scene.get("narration", "")).strip()
+                if not text:
+                    continue
+
+                segments = [part.strip() for part in text.split("。") if part.strip()]
+                if not segments:
+                    segments = [text]
+
+                for seg_index, segment in enumerate(segments, start=1):
+                    speaker = alternating_speakers[
+                        (seg_index - 1) % len(alternating_speakers)
+                    ]
+                    final_text = f"{segment}。"
+                    lines.append(
+                        {
+                            "line_id": f"line_{index:02d}_{seg_index:02d}",
+                            "scene_id": scene.get("scene_id"),
+                            "speaker": speaker,
+                            "voice_style": speaker_profiles[speaker],
+                            "text": final_text,
+                        }
+                    )
+
+            return {
+                "enabled": True,
+                "voice_mode": "multi",
+                "speaker_profiles": speaker_profiles,
+                "lines": lines,
+            }
+
+        character_profiles = self._character_speaker_profiles(ctx)
+        main_character_speaker = self._character_speaker_name(ctx)
+        secondary_character_speaker = self._secondary_character_speaker_name(ctx)
 
         for index, scene in enumerate(scenes, start=1):
             text = str(scene.get("narration", "")).strip()
@@ -2556,24 +2760,27 @@ class WorkflowRunner:
                 segments = [text]
 
             for seg_index, segment in enumerate(segments, start=1):
-                speaker = alternating_speakers[
-                    (seg_index - 1) % len(alternating_speakers)
-                ]
                 final_text = f"{segment}。"
+                resolved = self._resolve_character_speaker(ctx, final_text)
+
                 lines.append(
-                    {
-                        "line_id": f"line_{index:02d}_{seg_index:02d}",
-                        "scene_id": scene.get("scene_id"),
-                        "speaker": speaker,
-                        "voice_style": speaker_profiles[speaker],
-                        "text": final_text,
-                    }
+                    self._build_dialogue_line(
+                        line_id=f"line_{index:02d}_{seg_index:02d}",
+                        scene_id=scene.get("scene_id"),
+                        speaker=resolved["speaker"],
+                        voice_style=resolved["voice_style"],
+                        text=final_text,
+                    )
                 )
 
         return {
             "enabled": True,
-            "voice_mode": "multi",
-            "speaker_profiles": speaker_profiles,
+            "voice_mode": "character",
+            "speaker_profiles": {
+                "narrator": character_profiles["narrator"],
+                main_character_speaker: character_profiles["main_character"],
+                secondary_character_speaker: character_profiles["secondary_character"],
+            },
             "lines": lines,
         }
     def _run_audio_segments(

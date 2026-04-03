@@ -31,6 +31,14 @@ class WorkflowInput(BaseModel):
         default="",
         description="Display name for story/subtitle rendering, e.g. 小兔子",
     )
+    secondary_character: str = Field(
+        default="",
+        description="Optional secondary character entity, free-form text",
+    )
+    secondary_character_display: str = Field(
+        default="",
+        description="Optional display name for secondary character, e.g. 小乌龟",
+    )
     character_consistency_anchor: str = Field(
         default="",
         description=(
@@ -47,6 +55,14 @@ class WorkflowInput(BaseModel):
             "mother": "warm_female",
             "child": "gentle_child",
         }
+    )
+    character_speaker_profiles: Dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Optional voice profiles for character speaker mode, "
+            "e.g. {'main_character': 'gentle_child', "
+            "'secondary_character': 'warm_male', 'narrator': 'warm_female'}"
+        ),
     )
     duration_sec: int = Field(default=60, ge=15, le=300)
     language: str = Field(default="zh-CN")
