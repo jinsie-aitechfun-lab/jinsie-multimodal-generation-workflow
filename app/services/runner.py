@@ -2409,15 +2409,18 @@ class WorkflowRunner:
             speaker = str(line.get("speaker", "narrator"))
             voice_style = str(line.get("voice_style", ctx.input.voice_style))
             scene_id = line.get("scene_id")
+            shot_id = line.get("shot_id")
+
             char_count = max(1, len(text))
             duration_estimate_sec = max(2, min(12, char_count // 8))
+            duration_sec = float(duration_estimate_sec)
 
             file_name = f"{speaker}_{index:02d}.mp3"
             relative_path = f"assets/mock/audio/{ctx.run_id}/{file_name}"
             public_url = f"/assets/mock/audio/{ctx.run_id}/{file_name}"
             output_path = run_dir / file_name
             waveform_preview = [
-                max(0.12, round(duration_estimate_sec / 12, 2)),
+                max(0.12, round(duration_sec / 12, 2)),
                 0.48,
                 0.76,
                 0.35,
@@ -2473,6 +2476,7 @@ class WorkflowRunner:
             asset = {
                 "asset_id": f"audio_asset_{index:02d}",
                 "segment_id": f"audio_{index:02d}",
+                "shot_id": shot_id,
                 "scene_id": scene_id,
                 "speaker": speaker,
                 "voice_style": voice_style,
@@ -2482,6 +2486,7 @@ class WorkflowRunner:
                 "public_url": public_url,
                 "mime_type": "audio/mpeg",
                 "duration_estimate_sec": duration_estimate_sec,
+                "duration_sec": duration_sec,
                 "asset_status": asset_status,
                 "generation_mode": generation_mode,
                 "waveform_preview": waveform_preview,
@@ -2490,12 +2495,14 @@ class WorkflowRunner:
 
             item = {
                 "segment_id": f"audio_{index:02d}",
+                "shot_id": shot_id,
                 "scene_id": scene_id,
                 "speaker": speaker,
                 "text": text,
                 "voice_style": voice_style,
                 "target_audio_file": relative_path,
                 "duration_estimate_sec": duration_estimate_sec,
+                "duration_sec": duration_sec,
                 "provider": generation_provider,
                 "status": generation_status,
                 "asset_public_url": public_url,
@@ -2529,7 +2536,6 @@ class WorkflowRunner:
             "directory_manifest": directory_manifest,
             "scene_asset_map": scene_asset_map,
         }
-
     def _run_narration(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -2597,22 +2603,41 @@ class WorkflowRunner:
         if not ctx.input.subtitle_enabled:
             return {"enabled": False, "items": [], "srt_preview": ""}
 
-        narration = outputs.get("narration") or {}
-        segments = narration.get("segments") or []
+        audio_segments = outputs.get("audio_segments") or {}
+        items_source = audio_segments.get("items") or []
 
         items: List[Dict[str, Any]] = []
-        current_start = 0
+        current_start = 0.0
         srt_lines: List[str] = []
 
-        for index, segment in enumerate(segments, start=1):
-            text = str(segment.get("text", ""))
-            duration = max(3, ctx.input.duration_sec // max(1, len(segments)))
+        def _format_srt_time(total_seconds: float) -> str:
+            millis = int(round(total_seconds * 1000))
+            hours = millis // 3600000
+            millis %= 3600000
+            minutes = millis // 60000
+            millis %= 60000
+            seconds = millis // 1000
+            millis %= 1000
+            return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
+
+        for index, segment in enumerate(items_source, start=1):
+            text = str(segment.get("text", "")).strip()
+            if not text:
+                continue
+
+            duration_sec = float(segment.get("duration_sec") or 0.0)
+            if duration_sec <= 0:
+                duration_sec = float(segment.get("duration_estimate_sec") or 3.0)
+            if duration_sec <= 0:
+                duration_sec = 3.0
+
             start_sec = current_start
-            end_sec = current_start + duration
+            end_sec = current_start + duration_sec
             current_start = end_sec
 
             item = {
                 "index": index,
+                "shot_id": segment.get("shot_id"),
                 "scene_id": segment.get("scene_id"),
                 "start_sec": start_sec,
                 "end_sec": end_sec,
@@ -2623,7 +2648,7 @@ class WorkflowRunner:
             srt_lines.extend(
                 [
                     str(index),
-                    f"00:00:{start_sec:02d},000 --> 00:00:{end_sec:02d},000",
+                    f"{_format_srt_time(start_sec)} --> {_format_srt_time(end_sec)}",
                     text,
                     "",
                 ]
@@ -2634,7 +2659,6 @@ class WorkflowRunner:
             "items": items,
             "srt_preview": "\n".join(srt_lines).strip(),
         }
-
     def _run_render_plan(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -2654,6 +2678,11 @@ class WorkflowRunner:
         image_assets_list = image_assets.get("assets") or []
         audio_items = audio_segments.get("items") or []
 
+        image_by_shot = {
+            str(item.get("shot_id")): item
+            for item in image_assets_list
+            if item.get("shot_id")
+        }
         image_by_scene = {
             str(item.get("scene_id")): item
             for item in image_assets_list
@@ -2663,29 +2692,38 @@ class WorkflowRunner:
         concat_lines: List[str] = []
         video_run_dir = self._ensure_video_run_dir(ctx.run_id)
         concat_file = video_run_dir / "scene_concat.txt"
+        last_image_path: Optional[Path] = None
 
         for item in audio_items:
+            shot_id = str(item.get("shot_id") or "")
             scene_id = str(item.get("scene_id") or "")
-            image_asset = image_by_scene.get(scene_id)
-            if not image_asset:
+
+            image_asset = None
+            if shot_id:
+                image_asset = image_by_shot.get(shot_id)
+            if image_asset is None and scene_id:
+                image_asset = image_by_scene.get(scene_id)
+            if image_asset is None:
                 continue
 
             image_path = PROJECT_ROOT / str(image_asset.get("relative_path"))
-            duration_sec = max(1, int(item.get("duration_estimate_sec") or 3))
+            duration_sec = float(item.get("duration_sec") or 0.0)
+            if duration_sec <= 0:
+                duration_sec = float(item.get("duration_estimate_sec") or 3.0)
+            if duration_sec <= 0:
+                duration_sec = 3.0
+
             escaped_image_path = str(image_path).replace("'", "'\\''")
-
             concat_lines.append(f"file '{escaped_image_path}'")
-            concat_lines.append(f"duration {duration_sec}")
+            concat_lines.append(f"duration {duration_sec:.3f}")
+            last_image_path = image_path
 
-        if image_assets_list:
-            last_image_asset = image_assets_list[-1]
-            last_image_path = PROJECT_ROOT / str(last_image_asset.get("relative_path"))
+        if last_image_path is not None:
             escaped_last_image_path = str(last_image_path).replace("'", "'\\''")
             concat_lines.append(f"file '{escaped_last_image_path}'")
 
         concat_file.write_text("\n".join(concat_lines) + "\n", encoding="utf-8")
         return concat_file
-
     def _run_final_video(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -2703,6 +2741,13 @@ class WorkflowRunner:
                 "reason": "missing image_assets or audio_segments",
             }
 
+        total_duration_sec = 0.0
+        for item in audio_item_list:
+            duration_sec = float(item.get("duration_sec") or 0.0)
+            if duration_sec <= 0:
+                duration_sec = float(item.get("duration_estimate_sec") or 0.0)
+            total_duration_sec += max(duration_sec, 0.0)
+
         video_run_dir = self._ensure_video_run_dir(ctx.run_id)
         concat_file = self._build_video_concat_file(ctx, image_assets, audio_segments)
 
@@ -2713,6 +2758,13 @@ class WorkflowRunner:
             for asset in audio_assets
             if asset.get("relative_path")
         ]
+
+        if not audio_file_paths:
+            return {
+                "enabled": False,
+                "status": "skipped",
+                "reason": "no audio files available",
+            }
 
         merged_audio_path = video_run_dir / "merged_audio.mp3"
         merged_audio_list_path = video_run_dir / "merged_audio_inputs.txt"
@@ -2792,7 +2844,7 @@ class WorkflowRunner:
             "file_name": "final.mp4",
             "relative_path": f"assets/mock/video/{ctx.run_id}/final.mp4",
             "public_url": f"/assets/mock/video/{ctx.run_id}/final.mp4",
-            "duration_sec": ctx.input.duration_sec,
+            "duration_sec": round(total_duration_sec, 3),
             "audio_track_path": f"assets/mock/video/{ctx.run_id}/merged_audio.mp3",
             "subtitle_path": f"assets/mock/video/{ctx.run_id}/subtitles.srt",
         }
