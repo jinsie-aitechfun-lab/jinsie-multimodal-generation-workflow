@@ -668,28 +668,40 @@ class WorkflowRunner:
         narrator_markers = [
             "在一个",
             "这是一个",
-            "最后，",
-            "最后，",
             "整体上",
             "这个故事",
             "画面里",
-            "故事的主角",
+            "适合小朋友观看",
+            "适合用",
+            "展开了一段",
         ]
         if any(marker in normalized for marker in narrator_markers):
-            if main_display and main_display in normalized:
-                return "main_character"
             return "narrator"
 
-        if secondary_display and secondary_display in normalized:
+        if "故事的主角" in normalized:
+            return "narrator"
+
+        has_main_display = bool(main_display and main_display in normalized)
+        has_main_character = bool(
+            main_character and main_character.lower() in normalized.lower()
+        )
+        has_secondary_display = bool(
+            secondary_display and secondary_display in normalized
+        )
+        has_secondary_character = bool(
+            secondary_character and secondary_character.lower() in normalized.lower()
+        )
+
+        has_main = has_main_display or has_main_character
+        has_secondary = has_secondary_display or has_secondary_character
+
+        if has_main and has_secondary:
+            return "narrator"
+
+        if has_secondary:
             return "secondary_character"
 
-        if secondary_character and secondary_character.lower() in normalized.lower():
-            return "secondary_character"
-
-        if main_display and main_display in normalized:
-            return "main_character"
-
-        if main_character and main_character.lower() in normalized.lower():
+        if has_main:
             return "main_character"
 
         trigger_words = [
@@ -1464,6 +1476,8 @@ class WorkflowRunner:
                 "character_style": ctx.input.character_style,
                 "main_character": ctx.input.main_character,
                 "main_character_display": ctx.input.main_character_display,
+                "secondary_character": ctx.input.secondary_character,
+                "secondary_character_display": ctx.input.secondary_character_display,
                 "character_consistency_anchor": ctx.input.character_consistency_anchor,
                 "language": ctx.input.language,
             },
