@@ -45,6 +45,7 @@ DEFAULT_TTS_PROVIDER = "openai_compatible_tts"
 DEFAULT_IMAGE_PROVIDER = "pillow_storybook_renderer"
 DEFAULT_IMAGE_FALLBACK_PROVIDER = "pillow_storybook_renderer"
 
+
 class WorkflowRunner:
     """
     Phase 1 upgrade:
@@ -96,9 +97,7 @@ class WorkflowRunner:
         samples = manifest.get("samples") or []
 
         available_scene_ids = [
-            str(sample.get("scene_id"))
-            for sample in samples
-            if sample.get("scene_id")
+            str(sample.get("scene_id")) for sample in samples if sample.get("scene_id")
         ]
 
         latest_sample_id = None
@@ -130,8 +129,7 @@ class WorkflowRunner:
         ]
 
         total_sample_count = sum(
-            int(stats.get("sample_count", 0))
-            for stats in provider_stats.values()
+            int(stats.get("sample_count", 0)) for stats in provider_stats.values()
         )
 
         return {
@@ -210,6 +208,7 @@ class WorkflowRunner:
             return style_specific
 
         raise RuntimeError("TTS_VOICE is missing")
+
     def _ensure_audio_run_dir(self, run_id: str) -> Path:
         run_dir = MOCK_AUDIO_ROOT / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -356,7 +355,9 @@ class WorkflowRunner:
 
         for attempt in range(1, attempts + 1):
             try:
-                with urllib_request.urlopen(req, timeout=self._tts_timeout_seconds()) as resp:
+                with urllib_request.urlopen(
+                    req, timeout=self._tts_timeout_seconds()
+                ) as resp:
                     data = resp.read()
 
                 if not data:
@@ -402,6 +403,7 @@ class WorkflowRunner:
                 time.sleep(attempt)
 
         raise RuntimeError(str(last_error) if last_error else "TTS request failed")
+
     def run(self, req: WorkflowRunRequest) -> WorkflowRunResponse:
         run_id = f"run_{uuid4().hex[:12]}"
         ctx = StepContext(
@@ -564,7 +566,7 @@ class WorkflowRunner:
     def _api_image_fallback_to_pillow(self) -> bool:
         value = os.getenv("KLING_IMAGE_FALLBACK_TO_PILLOW", "true").strip().lower()
         return value in {"1", "true", "yes", "on"}
-    
+
     def _normalized_video_provider(self, provider: str) -> str:
         value = provider.strip().lower()
         if not value:
@@ -1115,26 +1117,72 @@ class WorkflowRunner:
         storyboard = outputs.get("storyboard") or {}
         scenes = storyboard.get("scenes") or []
 
+        global_style_anchor = (
+            f"{ctx.input.visual_style} illustration, "
+            f"{ctx.input.tone} mood, "
+            "children's storybook art, "
+            "soft pastel palette, "
+            "warm gentle lighting, "
+            "clean composition, "
+            "consistent character design, "
+            "vertical 9:16 framing"
+        )
+
+        character_anchor = (
+            f"{ctx.input.character_style} protagonist, "
+            "same character across all scenes, "
+            "small golden-orange kitten, "
+            "round face, big bright eyes, "
+            "soft fluffy fur, "
+            "pink inner ears, "
+            "wearing the same light blue scarf in every scene, "
+            "cute expressive face, "
+            "small child-friendly proportions, "
+            "storybook details, "
+            "consistent outfit and visual identity"
+        )
+
         prompts: List[Dict[str, Any]] = []
         for scene in scenes:
-            narration = str(scene.get("narration", ""))
-            visual_description = str(scene.get("visual_description", ""))
-            prompt = (
-                f"{ctx.input.visual_style} illustration, {ctx.input.tone} mood, "
-                f"{ctx.input.character_style} protagonist, {visual_description}, "
-                f"story scene based on: {narration}"
+            scene_id = str(scene.get("scene_id") or "")
+            narration = str(scene.get("narration", "")).strip()
+            visual_description = str(scene.get("visual_description", "")).strip()
+            shot_type = str(scene.get("shot_type", "medium")).strip()
+            transition = str(scene.get("transition", "fade")).strip()
+            scene_title = str(scene.get("scene_title", "")).strip()
+
+            scene_anchor = (
+                f"scene title: {scene_title}, "
+                f"camera shot: {shot_type}, "
+                f"transition feeling: {transition}, "
+                f"visual focus: {visual_description}"
             )
+
+            story_anchor = f"story context: {narration}"
+
+            prompt = ", ".join(
+                part
+                for part in [
+                    global_style_anchor,
+                    character_anchor,
+                    scene_anchor,
+                    story_anchor,
+                ]
+                if part
+            )
+
             prompts.append(
                 {
-                    "scene_id": scene.get("scene_id"),
+                    "scene_id": scene_id,
                     "prompt": prompt,
                 }
             )
 
         return {"provider": "image_prompt_builder", "prompts": prompts}
 
-
-    def _build_scene_ppm(self, ctx: StepContext, scene: Dict[str, Any], index: int) -> bytes:
+    def _build_scene_ppm(
+        self, ctx: StepContext, scene: Dict[str, Any], index: int
+    ) -> bytes:
         import io
         import math
         import textwrap
@@ -1259,9 +1307,16 @@ class WorkflowRunner:
 
             def draw_cloud(x: int, y: int, scale: float = 1.0):
                 c = theme["cloud"]
-                draw.ellipse((x, y + 16 * scale, x + 90 * scale, y + 74 * scale), fill=c)
-                draw.ellipse((x + 42 * scale, y, x + 132 * scale, y + 70 * scale), fill=c)
-                draw.ellipse((x + 96 * scale, y + 18 * scale, x + 176 * scale, y + 78 * scale), fill=c)
+                draw.ellipse(
+                    (x, y + 16 * scale, x + 90 * scale, y + 74 * scale), fill=c
+                )
+                draw.ellipse(
+                    (x + 42 * scale, y, x + 132 * scale, y + 70 * scale), fill=c
+                )
+                draw.ellipse(
+                    (x + 96 * scale, y + 18 * scale, x + 176 * scale, y + 78 * scale),
+                    fill=c,
+                )
                 draw.rounded_rectangle(
                     (x + 28 * scale, y + 34 * scale, x + 142 * scale, y + 82 * scale),
                     radius=int(18 * scale),
@@ -1288,38 +1343,148 @@ class WorkflowRunner:
                 cloth = theme["rabbit_cloth"]
                 outline = (170, 154, 152)
 
-                draw.ellipse((x + 18 * scale, y - 44 * scale, x + 42 * scale, y + 28 * scale), fill=body, outline=outline, width=2)
-                draw.ellipse((x + 48 * scale, y - 52 * scale, x + 72 * scale, y + 24 * scale), fill=body, outline=outline, width=2)
-                draw.ellipse((x + 25 * scale, y - 32 * scale, x + 35 * scale, y + 16 * scale), fill=ear)
-                draw.ellipse((x + 55 * scale, y - 38 * scale, x + 65 * scale, y + 10 * scale), fill=ear)
+                draw.ellipse(
+                    (x + 18 * scale, y - 44 * scale, x + 42 * scale, y + 28 * scale),
+                    fill=body,
+                    outline=outline,
+                    width=2,
+                )
+                draw.ellipse(
+                    (x + 48 * scale, y - 52 * scale, x + 72 * scale, y + 24 * scale),
+                    fill=body,
+                    outline=outline,
+                    width=2,
+                )
+                draw.ellipse(
+                    (x + 25 * scale, y - 32 * scale, x + 35 * scale, y + 16 * scale),
+                    fill=ear,
+                )
+                draw.ellipse(
+                    (x + 55 * scale, y - 38 * scale, x + 65 * scale, y + 10 * scale),
+                    fill=ear,
+                )
 
-                draw.ellipse((x, y, x + 86 * scale, y + 78 * scale), fill=body, outline=outline, width=2)
+                draw.ellipse(
+                    (x, y, x + 86 * scale, y + 78 * scale),
+                    fill=body,
+                    outline=outline,
+                    width=2,
+                )
 
-                draw.ellipse((x + 26 * scale, y + 28 * scale, x + 32 * scale, y + 34 * scale), fill=(68, 58, 58))
-                draw.ellipse((x + 52 * scale, y + 28 * scale, x + 58 * scale, y + 34 * scale), fill=(68, 58, 58))
-                draw.ellipse((x + 38 * scale, y + 40 * scale, x + 48 * scale, y + 48 * scale), fill=(255, 172, 180))
-                draw.arc((x + 32 * scale, y + 44 * scale, x + 54 * scale, y + 58 * scale), start=10, end=170, fill=(120, 104, 110), width=2)
+                draw.ellipse(
+                    (x + 26 * scale, y + 28 * scale, x + 32 * scale, y + 34 * scale),
+                    fill=(68, 58, 58),
+                )
+                draw.ellipse(
+                    (x + 52 * scale, y + 28 * scale, x + 58 * scale, y + 34 * scale),
+                    fill=(68, 58, 58),
+                )
+                draw.ellipse(
+                    (x + 38 * scale, y + 40 * scale, x + 48 * scale, y + 48 * scale),
+                    fill=(255, 172, 180),
+                )
+                draw.arc(
+                    (x + 32 * scale, y + 44 * scale, x + 54 * scale, y + 58 * scale),
+                    start=10,
+                    end=170,
+                    fill=(120, 104, 110),
+                    width=2,
+                )
 
                 body_y = y + 62 * scale
-                draw.ellipse((x + 4 * scale, body_y, x + 96 * scale, body_y + 98 * scale), fill=body, outline=outline, width=2)
+                draw.ellipse(
+                    (x + 4 * scale, body_y, x + 96 * scale, body_y + 98 * scale),
+                    fill=body,
+                    outline=outline,
+                    width=2,
+                )
 
                 draw.rounded_rectangle(
-                    (x + 18 * scale, body_y + 30 * scale, x + 82 * scale, body_y + 88 * scale),
+                    (
+                        x + 18 * scale,
+                        body_y + 30 * scale,
+                        x + 82 * scale,
+                        body_y + 88 * scale,
+                    ),
                     radius=int(18 * scale),
                     fill=cloth,
                 )
 
-                draw.line((x + 18 * scale, body_y + 46 * scale, x - 12 * scale, body_y + 70 * scale), fill=outline, width=6)
-                draw.line((x + 80 * scale, body_y + 46 * scale, x + 112 * scale, body_y + 66 * scale), fill=outline, width=6)
+                draw.line(
+                    (
+                        x + 18 * scale,
+                        body_y + 46 * scale,
+                        x - 12 * scale,
+                        body_y + 70 * scale,
+                    ),
+                    fill=outline,
+                    width=6,
+                )
+                draw.line(
+                    (
+                        x + 80 * scale,
+                        body_y + 46 * scale,
+                        x + 112 * scale,
+                        body_y + 66 * scale,
+                    ),
+                    fill=outline,
+                    width=6,
+                )
 
                 if pose == "walk":
-                    draw.line((x + 36 * scale, body_y + 94 * scale, x + 20 * scale, body_y + 134 * scale), fill=outline, width=6)
-                    draw.line((x + 62 * scale, body_y + 94 * scale, x + 78 * scale, body_y + 132 * scale), fill=outline, width=6)
+                    draw.line(
+                        (
+                            x + 36 * scale,
+                            body_y + 94 * scale,
+                            x + 20 * scale,
+                            body_y + 134 * scale,
+                        ),
+                        fill=outline,
+                        width=6,
+                    )
+                    draw.line(
+                        (
+                            x + 62 * scale,
+                            body_y + 94 * scale,
+                            x + 78 * scale,
+                            body_y + 132 * scale,
+                        ),
+                        fill=outline,
+                        width=6,
+                    )
                 else:
-                    draw.line((x + 36 * scale, body_y + 94 * scale, x + 30 * scale, body_y + 132 * scale), fill=outline, width=6)
-                    draw.line((x + 62 * scale, body_y + 94 * scale, x + 68 * scale, body_y + 132 * scale), fill=outline, width=6)
+                    draw.line(
+                        (
+                            x + 36 * scale,
+                            body_y + 94 * scale,
+                            x + 30 * scale,
+                            body_y + 132 * scale,
+                        ),
+                        fill=outline,
+                        width=6,
+                    )
+                    draw.line(
+                        (
+                            x + 62 * scale,
+                            body_y + 94 * scale,
+                            x + 68 * scale,
+                            body_y + 132 * scale,
+                        ),
+                        fill=outline,
+                        width=6,
+                    )
 
-                draw.ellipse((x + 78 * scale, body_y + 52 * scale, x + 100 * scale, body_y + 74 * scale), fill=body, outline=outline, width=2)
+                draw.ellipse(
+                    (
+                        x + 78 * scale,
+                        body_y + 52 * scale,
+                        x + 100 * scale,
+                        body_y + 74 * scale,
+                    ),
+                    fill=body,
+                    outline=outline,
+                    width=2,
+                )
 
             def draw_question_mark(x: int, y: int, color):
                 draw.arc((x, y, x + 42, y + 42), start=200, end=20, fill=color, width=6)
@@ -1328,13 +1493,23 @@ class WorkflowRunner:
 
             def draw_arrow(x: int, y: int, color):
                 draw.line((x, y, x + 80, y), fill=color, width=10)
-                draw.polygon([(x + 80, y), (x + 52, y - 18), (x + 52, y + 18)], fill=color)
+                draw.polygon(
+                    [(x + 80, y), (x + 52, y - 18), (x + 52, y + 18)], fill=color
+                )
 
-            draw_vertical_gradient(0, int(height * 0.76), theme["sky_top"], theme["sky_bottom"])
+            draw_vertical_gradient(
+                0, int(height * 0.76), theme["sky_top"], theme["sky_bottom"]
+            )
             draw.rectangle((0, int(height * 0.72), width, height), fill=theme["ground"])
 
             draw_hill(-120, 430, 500, 820, theme["hill"])
-            draw_hill(330, 470, 930, 860, (theme["hill"][0] - 10, theme["hill"][1] - 8, theme["hill"][2] - 6))
+            draw_hill(
+                330,
+                470,
+                930,
+                860,
+                (theme["hill"][0] - 10, theme["hill"][1] - 8, theme["hill"][2] - 6),
+            )
             draw_hill(760, 420, 1400, 850, theme["hill"])
 
             draw_path(
@@ -1344,9 +1519,17 @@ class WorkflowRunner:
 
             moon_x = 980 if index == 1 else 1060 if index == 2 else 930
             moon_y = 84 if index == 1 else 102 if index == 2 else 78
-            draw.ellipse((moon_x, moon_y, moon_x + 120, moon_y + 120), fill=theme["moon"])
+            draw.ellipse(
+                (moon_x, moon_y, moon_x + 120, moon_y + 120), fill=theme["moon"]
+            )
 
-            for sx, sy, sr in [(160, 88, 10), (280, 132, 8), (860, 62, 9), (1180, 180, 7), (1020, 236, 6)]:
+            for sx, sy, sr in [
+                (160, 88, 10),
+                (280, 132, 8),
+                (860, 62, 9),
+                (1180, 180, 7),
+                (1020, 236, 6),
+            ]:
                 draw_star(sx, sy, sr)
 
             draw_cloud(122, 116, 1.0)
@@ -1355,8 +1538,12 @@ class WorkflowRunner:
             if index == 1:
                 draw_rabbit(250, 408, scale=1.8, pose="stand")
                 draw_cloud(930, 206, 0.72)
-                draw.rounded_rectangle((880, 520, 1160, 590), radius=22, fill=(255, 255, 255))
-                draw.text((910, 542), "晚安，小月亮", font=meta_font, fill=theme["accent"])
+                draw.rounded_rectangle(
+                    (880, 520, 1160, 590), radius=22, fill=(255, 255, 255)
+                )
+                draw.text(
+                    (910, 542), "晚安，小月亮", font=meta_font, fill=theme["accent"]
+                )
 
             elif index == 2:
                 draw_rabbit(200, 424, scale=1.7, pose="stand")
@@ -1374,43 +1561,96 @@ class WorkflowRunner:
                 )
                 draw_question_mark(356, 318, theme["accent"])
                 draw_question_mark(410, 282, theme["accent_soft"])
-                draw.rounded_rectangle((860, 494, 1170, 594), radius=26, fill=(255, 255, 255))
-                draw.text((895, 520), "要往哪边走呢？", font=body_font, fill=theme["text_primary"])
+                draw.rounded_rectangle(
+                    (860, 494, 1170, 594), radius=26, fill=(255, 255, 255)
+                )
+                draw.text(
+                    (895, 520),
+                    "要往哪边走呢？",
+                    font=body_font,
+                    fill=theme["text_primary"],
+                )
 
             else:
                 draw_rabbit(286, 420, scale=1.75, pose="walk")
                 draw_arrow(804, 478, theme["accent"])
-                draw.rounded_rectangle((934, 394, 1118, 468), radius=26, fill=(255, 255, 255))
-                draw.text((968, 420), "继续向前", font=body_font, fill=theme["text_primary"])
-                draw.ellipse((1032, 520, 1152, 640), fill=(255, 236, 170), outline=(229, 194, 92), width=4)
+                draw.rounded_rectangle(
+                    (934, 394, 1118, 468), radius=26, fill=(255, 255, 255)
+                )
+                draw.text(
+                    (968, 420), "继续向前", font=body_font, fill=theme["text_primary"]
+                )
+                draw.ellipse(
+                    (1032, 520, 1152, 640),
+                    fill=(255, 236, 170),
+                    outline=(229, 194, 92),
+                    width=4,
+                )
                 draw.ellipse((1066, 552, 1118, 604), fill=(255, 255, 255))
-                draw.rounded_rectangle((1068, 608, 1118, 642), radius=10, fill=(189, 160, 124))
+                draw.rounded_rectangle(
+                    (1068, 608, 1118, 642), radius=10, fill=(189, 160, 124)
+                )
 
             draw.ellipse((60, 600, 220, 700), fill=theme["bush"])
             draw.ellipse((880, 612, 1080, 712), fill=theme["bush"])
-            draw.ellipse((1080, 624, 1230, 714), fill=(theme["bush"][0] - 8, theme["bush"][1] - 10, theme["bush"][2] - 6))
+            draw.ellipse(
+                (1080, 624, 1230, 714),
+                fill=(
+                    theme["bush"][0] - 8,
+                    theme["bush"][1] - 10,
+                    theme["bush"][2] - 6,
+                ),
+            )
 
             overlay_x = 42
             overlay_y = 28
-            draw.rounded_rectangle((overlay_x, overlay_y, 510, 96), radius=26, fill=(255, 255, 255))
-            draw.text((overlay_x + 24, overlay_y + 18), topic[:22], font=title_font, fill=theme["accent"])
+            draw.rounded_rectangle(
+                (overlay_x, overlay_y, 510, 96), radius=26, fill=(255, 255, 255)
+            )
+            draw.text(
+                (overlay_x + 24, overlay_y + 18),
+                topic[:22],
+                font=title_font,
+                fill=theme["accent"],
+            )
 
             draw.rounded_rectangle((42, 114, 340, 176), radius=20, fill=(255, 255, 255))
-            draw.text((64, 128), scene_title[:14] if scene_title else f"Scene {index}", font=scene_font, fill=theme["text_primary"])
-            draw.text((250, 132), f"{index}/{max(1, int(self._scene_count(ctx.input.duration_sec)))}", font=meta_font, fill=theme["text_secondary"])
+            draw.text(
+                (64, 128),
+                scene_title[:14] if scene_title else f"Scene {index}",
+                font=scene_font,
+                fill=theme["text_primary"],
+            )
+            draw.text(
+                (250, 132),
+                f"{index}/{max(1, int(self._scene_count(ctx.input.duration_sec)))}",
+                font=meta_font,
+                fill=theme["text_secondary"],
+            )
 
             caption = visual_description or body_text
             caption_lines = textwrap.wrap(caption, width=28)[:2]
             if caption_lines:
-                draw.rounded_rectangle((42, 606, 680, 686), radius=24, fill=(255, 255, 255))
+                draw.rounded_rectangle(
+                    (42, 606, 680, 686), radius=24, fill=(255, 255, 255)
+                )
                 cy = 622
                 for line in caption_lines:
-                    draw.text((66, cy), line, font=body_font, fill=theme["text_secondary"])
+                    draw.text(
+                        (66, cy), line, font=body_font, fill=theme["text_secondary"]
+                    )
                     cy += 28
 
             if duration_sec > 0:
-                draw.rounded_rectangle((1090, 620, 1218, 672), radius=18, fill=(255, 255, 255))
-                draw.text((1120, 636), f"{duration_sec}S", font=meta_font, fill=theme["text_secondary"])
+                draw.rounded_rectangle(
+                    (1090, 620, 1218, 672), radius=18, fill=(255, 255, 255)
+                )
+                draw.text(
+                    (1120, 636),
+                    f"{duration_sec}S",
+                    font=meta_font,
+                    fill=theme["text_secondary"],
+                )
 
             buffer = io.BytesIO()
             image.save(buffer, format="PPM")
@@ -1420,7 +1660,9 @@ class WorkflowRunner:
             print("[scene_ppm_fallback]", repr(e))
 
             safe_scene_label = f"SCENE {index:02d}"
-            safe_footer = f"{index}/{max(1, int(self._scene_count(ctx.input.duration_sec)))}"
+            safe_footer = (
+                f"{index}/{max(1, int(self._scene_count(ctx.input.duration_sec)))}"
+            )
 
             def _ascii_text(value: str, default: str) -> str:
                 normalized = "".join(
@@ -1448,7 +1690,9 @@ class WorkflowRunner:
                 pixels[i + 1] = color[1]
                 pixels[i + 2] = color[2]
 
-            def _fill_rect(x: int, y: int, w: int, h: int, color: tuple[int, int, int]) -> None:
+            def _fill_rect(
+                x: int, y: int, w: int, h: int, color: tuple[int, int, int]
+            ) -> None:
                 x0 = max(0, x)
                 y0 = max(0, y)
                 x1 = min(width, x + w)
@@ -1461,7 +1705,9 @@ class WorkflowRunner:
                         pixels[row + 2] = color[2]
                         row += 3
 
-            def _fill_circle(cx: int, cy: int, radius: int, color: tuple[int, int, int]) -> None:
+            def _fill_circle(
+                cx: int, cy: int, radius: int, color: tuple[int, int, int]
+            ) -> None:
                 r2 = radius * radius
                 for yy in range(max(0, cy - radius), min(height, cy + radius + 1)):
                     for xx in range(max(0, cx - radius), min(width, cx + radius + 1)):
@@ -1513,7 +1759,9 @@ class WorkflowRunner:
                 ".": ["00000", "00000", "00000", "00000", "00000", "01100", "01100"],
             }
 
-            def _draw_char(x: int, y: int, ch: str, scale: int, color: tuple[int, int, int]) -> int:
+            def _draw_char(
+                x: int, y: int, ch: str, scale: int, color: tuple[int, int, int]
+            ) -> int:
                 pattern = FONT.get(ch, FONT[" "])
                 for row_index, row_bits in enumerate(pattern):
                     for col_index, bit in enumerate(row_bits):
@@ -1527,19 +1775,32 @@ class WorkflowRunner:
                             )
                 return 6 * scale
 
-            def _draw_text(x: int, y: int, text: str, scale: int, color: tuple[int, int, int]) -> None:
+            def _draw_text(
+                x: int, y: int, text: str, scale: int, color: tuple[int, int, int]
+            ) -> None:
                 cursor_x = x
                 for ch in text:
                     cursor_x += _draw_char(cursor_x, y, ch, scale, color)
 
             for y in range(height):
                 ratio = y / max(1, height - 1)
-                r = int(theme["sky_top"][0] * (1 - ratio) + theme["sky_bottom"][0] * ratio)
-                g = int(theme["sky_top"][1] * (1 - ratio) + theme["sky_bottom"][1] * ratio)
-                b = int(theme["sky_top"][2] * (1 - ratio) + theme["sky_bottom"][2] * ratio)
+                r = int(
+                    theme["sky_top"][0] * (1 - ratio) + theme["sky_bottom"][0] * ratio
+                )
+                g = int(
+                    theme["sky_top"][1] * (1 - ratio) + theme["sky_bottom"][1] * ratio
+                )
+                b = int(
+                    theme["sky_top"][2] * (1 - ratio) + theme["sky_bottom"][2] * ratio
+                )
                 _fill_rect(0, y, width, 1, (r, g, b))
 
-            progress_ratio = min(1.0, max(0.0, index / max(1, int(self._scene_count(ctx.input.duration_sec)))))
+            progress_ratio = min(
+                1.0,
+                max(
+                    0.0, index / max(1, int(self._scene_count(ctx.input.duration_sec)))
+                ),
+            )
 
             _fill_rect(22, 22, width - 44, 72, theme["accent"])
             _fill_rect(38, 128, 280, height - 182, (255, 255, 255))
@@ -1604,6 +1865,7 @@ class WorkflowRunner:
                 ) from e
 
         raise RuntimeError(f"unknown image provider: {provider}")
+
     def _run_pillow_image_assets(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -1638,7 +1900,7 @@ class WorkflowRunner:
             "asset_count": len(assets),
             "assets": assets,
         }
-    
+
     def _generate_api_image_bytes(
         self,
         *,
@@ -1665,7 +1927,9 @@ class WorkflowRunner:
         if not api_key:
             raise RuntimeError("SILICONFLOW_API_KEY is not set")
 
-        base_url = os.getenv("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1").strip()
+        base_url = os.getenv(
+            "SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1"
+        ).strip()
         if not base_url:
             base_url = "https://api.siliconflow.cn/v1"
 
@@ -1737,7 +2001,9 @@ class WorkflowRunner:
                 f"SiliconFlow image generation failed with HTTP {e.code}: {error_body}"
             ) from e
         except urllib.error.URLError as e:
-            raise RuntimeError(f"SiliconFlow image generation request failed: {e}") from e
+            raise RuntimeError(
+                f"SiliconFlow image generation request failed: {e}"
+            ) from e
 
         try:
             result = json.loads(response_text)
@@ -1780,7 +2046,9 @@ class WorkflowRunner:
             ) from e
 
         if not image_bytes:
-            raise RuntimeError(f"Generated image download returned empty bytes for scene {scene_index}")
+            raise RuntimeError(
+                f"Generated image download returned empty bytes for scene {scene_index}"
+            )
 
         return image_bytes
 
@@ -1809,7 +2077,9 @@ class WorkflowRunner:
             if not prompt:
                 narration = str(scene.get("narration", "")).strip()
                 visual_description = str(scene.get("visual_description", "")).strip()
-                prompt = visual_description or narration or f"storybook scene {scene_id}"
+                prompt = (
+                    visual_description or narration or f"storybook scene {scene_id}"
+                )
 
             file_name = f"{scene_id}.png"
             output_path = run_dir / file_name
@@ -1841,7 +2111,7 @@ class WorkflowRunner:
             "asset_count": len(assets),
             "assets": assets,
         }
-    
+
     def _run_video_prompts(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -1902,7 +2172,9 @@ class WorkflowRunner:
                 segments = [text]
 
             for seg_index, segment in enumerate(segments, start=1):
-                speaker = alternating_speakers[(seg_index - 1) % len(alternating_speakers)]
+                speaker = alternating_speakers[
+                    (seg_index - 1) % len(alternating_speakers)
+                ]
                 final_text = f"{segment}。"
                 lines.append(
                     {
@@ -1928,7 +2200,9 @@ class WorkflowRunner:
         lines = dialogue_script.get("lines") or []
 
         if not dialogue_script.get("enabled") or not lines:
-            empty_directory_manifest = self._write_audio_directory_manifest(ctx.run_id, [])
+            empty_directory_manifest = self._write_audio_directory_manifest(
+                ctx.run_id, []
+            )
             return {
                 "enabled": False,
                 "provider": "mock_tts",
@@ -2300,7 +2574,9 @@ class WorkflowRunner:
 
         final_video_path = video_run_dir / "final.mp4"
 
-        subtitle_filter = f"subtitles=filename=assets/mock/video/{ctx.run_id}/subtitles.srt"
+        subtitle_filter = (
+            f"subtitles=filename=assets/mock/video/{ctx.run_id}/subtitles.srt"
+        )
 
         subprocess.run(
             [
