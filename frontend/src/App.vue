@@ -28,6 +28,14 @@ type WorkflowRunResponse = {
   [key: string]: unknown
 }
 
+type StructuredCharacterInput = {
+  display_name: string
+  species: string
+  role_type: 'primary' | 'secondary'
+  visual_traits: string
+  forbidden_traits: string
+}
+
 type AudioSceneAsset = {
   asset_id?: string
   segment_id?: string
@@ -122,6 +130,21 @@ const storyboardText = ref('')
 const narrationText = ref('')
 const subtitlesText = ref('')
 const renderPlanText = ref('')
+const structuredCharactersEnabled = ref(true)
+
+const primaryCharacterDisplayName = ref('小兔子')
+const primaryCharacterSpecies = ref('rabbit')
+const primaryCharacterVisualTraits = ref('long upright ears, white fur, red scarf')
+const primaryCharacterForbiddenTraits = ref('cat ears, turtle shell')
+
+const secondaryCharacterDisplayName = ref('小乌龟')
+const secondaryCharacterSpecies = ref('turtle')
+const secondaryCharacterVisualTraits = ref('round shell, short legs, green shell')
+const secondaryCharacterForbiddenTraits = ref('rabbit ears, cat ears')
+
+const characterCandidatesText = ref('')
+const characterManifestText = ref('')
+
 const mockAudioIndexUrl = ref('')
 const mockAudioSceneGroups = ref<AudioSceneGroup[]>([])
 const mockAudioDirectoryText = ref('')
@@ -276,7 +299,21 @@ function extractRenderPlanText(data: WorkflowRunResponse): string {
   }
   return ''
 }
+function extractCharacterCandidatesText(data: WorkflowRunResponse): string {
+  const value = data.outputs?.character_candidates
+  if (value && typeof value === 'object') {
+    return stringifyPretty(value)
+  }
+  return ''
+}
 
+function extractCharacterManifestText(data: WorkflowRunResponse): string {
+  const value = data.outputs?.character_manifest
+  if (value && typeof value === 'object') {
+    return stringifyPretty(value)
+  }
+  return ''
+}
 function extractMockAudioOutput(data: WorkflowRunResponse): AudioSegmentsOutput | null {
   const audioSegments = data.outputs?.audio_segments
   if (!audioSegments || typeof audioSegments !== 'object') {
@@ -442,6 +479,8 @@ async function runWorkflow() {
   resultText.value = ''
   storyText.value = ''
   storyboardText.value = ''
+  characterCandidatesText.value = ''
+  characterManifestText.value = ''
   narrationText.value = ''
   subtitlesText.value = ''
   renderPlanText.value = ''
@@ -449,6 +488,29 @@ async function runWorkflow() {
   mockAudioSceneGroups.value = []
   mockAudioDirectoryText.value = ''
   stepSummaries.value = []
+
+  const structuredCharacters: StructuredCharacterInput[] = structuredCharactersEnabled.value
+    ? [
+        {
+          display_name: primaryCharacterDisplayName.value.trim(),
+          species: primaryCharacterSpecies.value.trim(),
+          role_type: 'primary',
+          visual_traits: primaryCharacterVisualTraits.value.trim(),
+          forbidden_traits: primaryCharacterForbiddenTraits.value.trim(),
+        },
+        ...(secondaryCharacterDisplayName.value.trim()
+          ? [
+              {
+                display_name: secondaryCharacterDisplayName.value.trim(),
+                species: secondaryCharacterSpecies.value.trim(),
+                role_type: 'secondary' as const,
+                visual_traits: secondaryCharacterVisualTraits.value.trim(),
+                forbidden_traits: secondaryCharacterForbiddenTraits.value.trim(),
+              },
+            ]
+          : []),
+      ]
+    : []
 
   const payload = {
     workflow_id: 'storybook-demo',
@@ -459,6 +521,8 @@ async function runWorkflow() {
       tone: tone.value,
       visual_style: visualStyle.value,
       character_style: characterStyle.value,
+      structured_characters_enabled: structuredCharactersEnabled.value,
+      characters: structuredCharacters,
       voice_style: voiceStyle.value,
       voiceover_enabled: voiceoverEnabled.value,
       voice_mode: voiceMode.value,
@@ -501,6 +565,9 @@ async function runWorkflow() {
     renderPlanText.value = extractRenderPlanText(data)
     extractMockAudioState(data)
     stepSummaries.value = buildStepSummaries(data)
+    characterCandidatesText.value = extractCharacterCandidatesText(data)
+    characterManifestText.value = extractCharacterManifestText(data)
+
     resultText.value = stringifyPretty(data)
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Request failed'
@@ -811,6 +878,77 @@ onMounted(() => {
         </div>
       </section>
 
+      <section class="config-panel">
+        <h2 class="section-title">Character Finalization</h2>
+
+        <label class="checkbox-field">
+          <input v-model="structuredCharactersEnabled" type="checkbox" />
+          <span>Enable Structured Characters</span>
+        </label>
+
+        <div v-if="structuredCharactersEnabled" class="config-grid">
+          <label class="field">
+            <span>Primary Character Display Name</span>
+            <input v-model="primaryCharacterDisplayName" class="input" type="text" />
+          </label>
+
+          <label class="field">
+            <span>Primary Character Species</span>
+            <input v-model="primaryCharacterSpecies" class="input" type="text" />
+          </label>
+
+          <label class="field">
+            <span>Primary Visual Traits</span>
+            <textarea
+              v-model="primaryCharacterVisualTraits"
+              class="textarea"
+              rows="3"
+              placeholder="例如：long upright ears, white fur, red scarf"
+            />
+          </label>
+
+          <label class="field">
+            <span>Primary Forbidden Traits</span>
+            <textarea
+              v-model="primaryCharacterForbiddenTraits"
+              class="textarea"
+              rows="3"
+              placeholder="例如：cat ears, turtle shell"
+            />
+          </label>
+
+          <label class="field">
+            <span>Secondary Character Display Name</span>
+            <input v-model="secondaryCharacterDisplayName" class="input" type="text" />
+          </label>
+
+          <label class="field">
+            <span>Secondary Character Species</span>
+            <input v-model="secondaryCharacterSpecies" class="input" type="text" />
+          </label>
+
+          <label class="field">
+            <span>Secondary Visual Traits</span>
+            <textarea
+              v-model="secondaryCharacterVisualTraits"
+              class="textarea"
+              rows="3"
+              placeholder="例如：round shell, short legs, green shell"
+            />
+          </label>
+
+          <label class="field">
+            <span>Secondary Forbidden Traits</span>
+            <textarea
+              v-model="secondaryCharacterForbiddenTraits"
+              class="textarea"
+              rows="3"
+              placeholder="例如：rabbit ears, cat ears"
+            />
+          </label>
+        </div>
+      </section>
+
       <section class="steps-panel">
         <h2 class="section-title">Workflow Steps</h2>
         <div class="steps-grid">
@@ -851,6 +989,16 @@ onMounted(() => {
       <section v-if="renderPlanText" class="result-panel">
         <h2 class="section-title">Render Plan</h2>
         <pre class="light-result">{{ renderPlanText }}</pre>
+      </section>
+
+      <section v-if="characterCandidatesText" class="result-panel">
+        <h2 class="section-title">Character Candidates</h2>
+        <pre class="light-result">{{ characterCandidatesText }}</pre>
+      </section>
+
+      <section v-if="characterManifestText" class="result-panel">
+        <h2 class="section-title">Character Manifest</h2>
+        <pre class="light-result">{{ characterManifestText }}</pre>
       </section>
 
       <section

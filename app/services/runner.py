@@ -476,6 +476,20 @@ class WorkflowRunner:
         self._save_session_data(req, aggregated_outputs)
         render_package = self._build_render_package(ctx, aggregated_outputs)
 
+        character_candidates = self._build_character_candidates(req.input)
+        character_manifest = self._build_character_manifest(req.input, character_candidates)
+
+        aggregated_outputs["character_candidates"] = {
+            "enabled": bool(req.input.structured_characters_enabled),
+            "count": len(character_candidates),
+            "items": character_candidates,
+        }
+        aggregated_outputs["character_manifest"] = {
+            "enabled": bool(req.input.structured_characters_enabled),
+            "count": len(character_manifest),
+            "characters": character_manifest,
+        }
+
         return WorkflowRunResponse(
             workflow_id=req.workflow_id,
             session_id=req.session_id,
@@ -487,6 +501,172 @@ class WorkflowRunner:
             render_package=render_package,
             timestamp=WorkflowRunResponse.now_timestamp(),
         )
+    
+    def _build_character_candidates(self, workflow_input: WorkflowInput) -> List[Dict[str, Any]]:
+        if workflow_input.structured_characters_enabled and workflow_input.characters:
+            items: List[Dict[str, Any]] = []
+            for index, character in enumerate(workflow_input.characters, start=1):
+                items.append(
+                    {
+                        "candidate_id": f"candidate_{index:02d}",
+                        "display_name": character.display_name.strip(),
+                        "species": character.species.strip(),
+                        "role_type": character.role_type,
+                        "visual_traits": character.visual_traits.strip(),
+                        "forbidden_traits": character.forbidden_traits.strip(),
+                        "source": "structured_input",
+                    }
+                )
+            return items
+
+        items: List[Dict[str, Any]] = []
+
+        main_display_name = (
+            workflow_input.main_character_display.strip()
+            or workflow_input.main_character.strip()
+        )
+        if main_display_name:
+            items.append(
+                {
+                    "candidate_id": "candidate_01",
+                    "display_name": main_display_name,
+                    "species": workflow_input.main_character_species.strip() or "rabbit",
+                    "role_type": "primary",
+                    "visual_traits": workflow_input.main_character_visual_traits.strip(),
+                    "forbidden_traits": "",
+                    "source": "legacy_main_character",
+                }
+            )
+
+        secondary_display_name = (
+            workflow_input.secondary_character_display.strip()
+            or workflow_input.secondary_character.strip()
+        )
+        if secondary_display_name:
+            items.append(
+                {
+                    "candidate_id": f"candidate_{len(items) + 1:02d}",
+                    "display_name": secondary_display_name,
+                    "species": workflow_input.secondary_character_species.strip() or "turtle",
+                    "role_type": "secondary",
+                    "visual_traits": workflow_input.secondary_character_visual_traits.strip(),
+                    "forbidden_traits": "",
+                    "source": "legacy_secondary_character",
+                }
+            )
+
+        return items
+
+
+    def _build_character_manifest(
+        self,
+        workflow_input: WorkflowInput,
+        candidates: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        manifest: List[Dict[str, Any]] = []
+
+        for candidate in candidates:
+            role_type = str(candidate.get("role_type") or "secondary").strip()
+            if role_type == "primary":
+                character_id = "char_primary_01"
+            else:
+                secondary_index = (
+                    sum(
+                        1
+                        for item in manifest
+                        if str(item.get("role_type") or "").strip() == "secondary"
+                    )
+                    + 1
+                )
+                character_id = f"char_secondary_{secondary_index:02d}"
+
+            visual_traits_text = str(candidate.get("visual_traits") or "").strip()
+            forbidden_traits_text = str(candidate.get("forbidden_traits") or "").strip()
+
+            signature_traits = [
+                item.strip()
+                for item in visual_traits_text.split(",")
+                if item.strip()
+            ]
+            forbidden_traits = [
+                item.strip()
+                for item in forbidden_traits_text.split(",")
+                if item.strip()
+            ]
+
+            manifest.append(
+                {
+                    "character_id": character_id,
+                    "display_name": str(candidate.get("display_name") or "").strip(),
+                    "species": str(candidate.get("species") or "").strip(),
+                    "role_type": role_type,
+                    "signature_traits": signature_traits,
+                    "forbidden_traits": forbidden_traits,
+                    "locking_level": "strict",
+                    "reference_assets": {
+                        "status": "pending",
+                        "front_view": None,
+                        "side_view": None,
+                        "three_quarter_view": None,
+                    },
+                    "source": str(candidate.get("source") or "").strip(),
+                }
+            )
+
+        return manifest
+    def _build_character_manifest(
+        self,
+        workflow_input: WorkflowInput,
+        candidates: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        manifest: List[Dict[str, Any]] = []
+
+        for index, candidate in enumerate(candidates, start=1):
+            role_type = str(candidate.get("role_type") or "secondary").strip()
+            if role_type == "primary":
+                character_id = "char_primary_01"
+            else:
+                secondary_index = sum(
+                    1
+                    for item in manifest
+                    if str(item.get("role_type") or "").strip() == "secondary"
+                ) + 1
+                character_id = f"char_secondary_{secondary_index:02d}"
+
+            visual_traits_text = str(candidate.get("visual_traits") or "").strip()
+            forbidden_traits_text = str(candidate.get("forbidden_traits") or "").strip()
+
+            signature_traits = [
+                item.strip()
+                for item in visual_traits_text.split(",")
+                if item.strip()
+            ]
+            forbidden_traits = [
+                item.strip()
+                for item in forbidden_traits_text.split(",")
+                if item.strip()
+            ]
+
+            manifest.append(
+                {
+                    "character_id": character_id,
+                    "display_name": str(candidate.get("display_name") or "").strip(),
+                    "species": str(candidate.get("species") or "").strip(),
+                    "role_type": role_type,
+                    "signature_traits": signature_traits,
+                    "forbidden_traits": forbidden_traits,
+                    "locking_level": "strict",
+                    "reference_assets": {
+                        "status": "pending",
+                        "front_view": None,
+                        "side_view": None,
+                        "three_quarter_view": None,
+                    },
+                    "source": str(candidate.get("source") or "").strip(),
+                }
+            )
+
+        return manifest
 
     def _get_session_data(self, session_id: Optional[str]) -> Optional[Dict[str, Any]]:
         if not session_id:

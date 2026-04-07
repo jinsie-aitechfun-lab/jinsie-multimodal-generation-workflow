@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -17,12 +17,38 @@ class StepSpec(BaseModel):
     )
 
 
+class StructuredCharacterInput(BaseModel):
+    display_name: str = Field(
+        ...,
+        min_length=1,
+        description="Character display name, e.g. 小兔子 / 小乌龟",
+    )
+    species: str = Field(
+        ...,
+        min_length=1,
+        description="Character species, e.g. rabbit / turtle / fox / cat",
+    )
+    role_type: Literal["primary", "secondary"] = Field(
+        default="primary",
+        description="Character role type",
+    )
+    visual_traits: str = Field(
+        default="",
+        description="Free-form visual traits, e.g. long upright ears, red scarf",
+    )
+    forbidden_traits: str = Field(
+        default="",
+        description="Free-form forbidden traits, e.g. no shell, no cat ears",
+    )
+
+
 class WorkflowInput(BaseModel):
     topic: str = Field(..., description="Story topic or user prompt")
     audience: str = Field(default="children")
     tone: str = Field(default="warm")
     visual_style: str = Field(default="storybook")
     character_style: str = Field(default="animal")
+
     main_character: str = Field(
         default="",
         description="Concrete main character entity, free-form text",
@@ -37,7 +63,10 @@ class WorkflowInput(BaseModel):
     )
     main_character_visual_traits: str = Field(
         default="",
-        description="Optional visual traits for main character, e.g. long upright ears, white tail, no shell",
+        description=(
+            "Optional visual traits for main character, "
+            "e.g. long upright ears, white tail, no shell"
+        ),
     )
     image_generation_mode: str = Field(
         default="single_pass",
@@ -65,7 +94,10 @@ class WorkflowInput(BaseModel):
     )
     secondary_character_visual_traits: str = Field(
         default="",
-        description="Optional visual traits for secondary character, e.g. round shell, short legs, no rabbit ears",
+        description=(
+            "Optional visual traits for secondary character, "
+            "e.g. round shell, short legs, no rabbit ears"
+        ),
     )
     character_consistency_anchor: str = Field(
         default="",
@@ -74,6 +106,16 @@ class WorkflowInput(BaseModel):
             "e.g. white rabbit, long ears, red scarf"
         ),
     )
+
+    structured_characters_enabled: bool = Field(
+        default=False,
+        description="Whether to enable structured character inputs for character finalization layer",
+    )
+    characters: List[StructuredCharacterInput] = Field(
+        default_factory=list,
+        description="Structured character list for character finalization layer",
+    )
+
     voice_style: str = Field(default="warm_female")
     voiceover_enabled: bool = Field(default=False)
     voice_mode: str = Field(default="single")
