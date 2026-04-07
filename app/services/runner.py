@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -199,14 +200,14 @@ class WorkflowRunner:
         if speaker_specific:
             return speaker_specific
 
-        default_voice = os.getenv("TTS_VOICE", "").strip()
-        if default_voice:
-            return default_voice
-
         style_key = voice_style.strip().upper()
         style_specific = os.getenv(f"TTS_VOICE_STYLE_{style_key}", "").strip()
         if style_specific:
             return style_specific
+
+        default_voice = os.getenv("TTS_VOICE", "").strip()
+        if default_voice:
+            return default_voice
 
         raise RuntimeError("TTS_VOICE is missing")
 
@@ -2607,19 +2608,40 @@ class WorkflowRunner:
             method="GET",
         )
 
-        try:
-            with urllib.request.urlopen(download_request, timeout=120) as response:
-                image_bytes = response.read()
-        except urllib.error.HTTPError as e:
-            raise RuntimeError(
-                f"Generated image download failed with HTTP {e.code} for scene {scene_index}"
-            ) from e
-        except urllib.error.URLError as e:
-            raise RuntimeError(
-                f"Generated image download failed for scene {scene_index}: {e}"
-            ) from e
+        last_error: Optional[Exception] = None
+        image_bytes: bytes = b""
+
+        for attempt in range(3):
+            try:
+                with urllib.request.urlopen(download_request, timeout=120) as response:
+                    downloaded = response.read()
+
+                if downloaded:
+                    image_bytes = downloaded
+                    break
+
+                last_error = RuntimeError(
+                    f"Generated image download returned empty bytes for scene {scene_index}"
+                )
+            except urllib.error.HTTPError as e:
+                last_error = RuntimeError(
+                    f"Generated image download failed with HTTP {e.code} for scene {scene_index}"
+                )
+            except urllib.error.URLError as e:
+                last_error = RuntimeError(
+                    f"Generated image download failed for scene {scene_index}: {e}"
+                )
+            except Exception as e:
+                last_error = RuntimeError(
+                    f"Generated image download failed for scene {scene_index}: {e}"
+                )
+
+            if attempt < 2:
+                time.sleep(1.5 * (attempt + 1))
 
         if not image_bytes:
+            if last_error is not None:
+                raise last_error
             raise RuntimeError(
                 f"Generated image download returned empty bytes for scene {scene_index}"
             )
@@ -2681,6 +2703,10 @@ class WorkflowRunner:
                     scene=pseudo_scene,
                     scene_index=index,
                 )
+                if not isinstance(image_bytes, (bytes, bytearray)):
+                    raise RuntimeError(
+                        f"api image generator returned non-bytes payload for shot {shot_id}"
+                    )
                 output_path.write_bytes(image_bytes)
 
                 assets.append(
@@ -2721,9 +2747,13 @@ class WorkflowRunner:
 
             image_bytes = self._generate_api_image_bytes(
                 prompt=prompt,
-                scene=scene,
+                scene=pseudo_scene,
                 scene_index=index,
             )
+            if not isinstance(image_bytes, (bytes, bytearray)):
+                raise RuntimeError(
+                    f"api image generator returned non-bytes payload for shot {shot_id}"
+                )
             output_path.write_bytes(image_bytes)
 
             assets.append(

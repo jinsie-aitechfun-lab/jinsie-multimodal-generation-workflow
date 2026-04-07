@@ -31,6 +31,26 @@ class WorkflowInput(BaseModel):
         default="",
         description="Display name for story/subtitle rendering, e.g. 小兔子",
     )
+    main_character_species: str = Field(
+        default="rabbit",
+        description="Main character species, e.g. rabbit / fox / cat / bear / deer",
+    )
+    main_character_visual_traits: str = Field(
+        default="",
+        description="Optional visual traits for main character, e.g. long upright ears, white tail, no shell",
+    )
+    image_generation_mode: str = Field(
+        default="single_pass",
+        description="Image generation mode: single_pass or split_compose",
+    )
+    main_character_position: str = Field(
+        default="right",
+        description="Main character position in composed image: left / center / right",
+    )
+    secondary_character_position: str = Field(
+        default="left",
+        description="Secondary character position in composed image: left / center / right",
+    )
     secondary_character: str = Field(
         default="",
         description="Optional secondary character entity, free-form text",
@@ -38,6 +58,14 @@ class WorkflowInput(BaseModel):
     secondary_character_display: str = Field(
         default="",
         description="Optional display name for secondary character, e.g. 小乌龟",
+    )
+    secondary_character_species: str = Field(
+        default="turtle",
+        description="Secondary character species, e.g. turtle / fox / cat / bear / dog",
+    )
+    secondary_character_visual_traits: str = Field(
+        default="",
+        description="Optional visual traits for secondary character, e.g. round shell, short legs, no rabbit ears",
     )
     character_consistency_anchor: str = Field(
         default="",
