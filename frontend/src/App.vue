@@ -5,6 +5,7 @@ type StepName =
   | 'story'
   | 'storyboard'
   | 'image_prompts'
+  | 'image_assets'
   | 'video_prompts'
   | 'dialogue_script'
   | 'narration'
@@ -104,6 +105,7 @@ const STEP_OPTIONS: Array<{ label: string; value: StepName }> = [
   { label: 'Story', value: 'story' },
   { label: 'Storyboard', value: 'storyboard' },
   { label: 'Image Prompts', value: 'image_prompts' },
+  { label: 'Image Assets', value: 'image_assets' },
   { label: 'Video Prompts', value: 'video_prompts' },
   { label: 'Dialogue Script', value: 'dialogue_script' },
   { label: 'Narration', value: 'narration' },
@@ -115,6 +117,7 @@ const DEFAULT_STEPS: StepName[] = [
   'story',
   'storyboard',
   'image_prompts',
+  'image_assets',
   'video_prompts',
   'dialogue_script',
   'narration',
@@ -144,6 +147,7 @@ const secondaryCharacterForbiddenTraits = ref('rabbit ears, cat ears')
 
 const characterCandidatesText = ref('')
 const characterManifestText = ref('')
+const imageReviewText = ref('')
 
 const mockAudioIndexUrl = ref('')
 const mockAudioSceneGroups = ref<AudioSceneGroup[]>([])
@@ -309,6 +313,13 @@ function extractCharacterCandidatesText(data: WorkflowRunResponse): string {
 
 function extractCharacterManifestText(data: WorkflowRunResponse): string {
   const value = data.outputs?.character_manifest
+  if (value && typeof value === 'object') {
+    return stringifyPretty(value)
+  }
+  return ''
+}
+function extractImageReviewText(data: WorkflowRunResponse): string {
+  const value = data.outputs?.image_review
   if (value && typeof value === 'object') {
     return stringifyPretty(value)
   }
@@ -481,6 +492,7 @@ async function runWorkflow() {
   storyboardText.value = ''
   characterCandidatesText.value = ''
   characterManifestText.value = ''
+  characterCandidatesText.value = ''
   narrationText.value = ''
   subtitlesText.value = ''
   renderPlanText.value = ''
@@ -567,6 +579,7 @@ async function runWorkflow() {
     stepSummaries.value = buildStepSummaries(data)
     characterCandidatesText.value = extractCharacterCandidatesText(data)
     characterManifestText.value = extractCharacterManifestText(data)
+    imageReviewText.value = extractImageReviewText(data)
 
     resultText.value = stringifyPretty(data)
   } catch (error) {
@@ -1000,7 +1013,10 @@ onMounted(() => {
         <h2 class="section-title">Character Manifest</h2>
         <pre class="light-result">{{ characterManifestText }}</pre>
       </section>
-
+      <section v-if="imageReviewText" class="result-panel">
+        <h2 class="section-title">Image Review / Asset Selection</h2>
+        <pre class="light-result">{{ imageReviewText }}</pre>
+      </section>
       <section
         v-if="mockAudioIndexUrl || mockAudioSceneGroups.length > 0 || mockAudioDirectoryText"
         class="result-panel"
