@@ -128,11 +128,17 @@ const DEFAULT_STEPS: StepName[] = [
 const loading = ref(false)
 const errorMessage = ref('')
 const resultText = ref('')
+
 const storyText = ref('')
 const storyboardText = ref('')
+const imagePromptsText = ref('')
+const imageAssetsText = ref('')
+const imageReviewText = ref('')
+const videoPromptsText = ref('')
 const narrationText = ref('')
 const subtitlesText = ref('')
 const renderPlanText = ref('')
+
 const structuredCharactersEnabled = ref(true)
 
 const primaryCharacterDisplayName = ref('小兔子')
@@ -147,7 +153,6 @@ const secondaryCharacterForbiddenTraits = ref('rabbit ears, cat ears')
 
 const characterCandidatesText = ref('')
 const characterManifestText = ref('')
-const imageReviewText = ref('')
 
 const mockAudioIndexUrl = ref('')
 const mockAudioSceneGroups = ref<AudioSceneGroup[]>([])
@@ -279,6 +284,28 @@ function extractNarrationText(data: WorkflowRunResponse): string {
     typeof narration.full_text === 'string'
   ) {
     return narration.full_text
+  }
+  return ''
+}
+
+function extractImagePromptsText(data: WorkflowRunResponse): string {
+  const value = data.outputs?.image_prompts
+  if (value && typeof value === 'object') {
+    return stringifyPretty(value)
+  }
+  return ''
+}
+function extractImageAssetsText(data: WorkflowRunResponse): string {
+  const value = data.outputs?.image_assets
+  if (value && typeof value === 'object') {
+    return stringifyPretty(value)
+  }
+  return ''
+}
+function extractVideoPromptsText(data: WorkflowRunResponse): string {
+  const value = data.outputs?.video_prompts
+  if (value && typeof value === 'object') {
+    return stringifyPretty(value)
   }
   return ''
 }
@@ -490,12 +517,16 @@ async function runWorkflow() {
   resultText.value = ''
   storyText.value = ''
   storyboardText.value = ''
+  imagePromptsText.value = ''
+  imageAssetsText.value = ''
+  imageReviewText.value = ''
+  videoPromptsText.value = ''
   characterCandidatesText.value = ''
   characterManifestText.value = ''
-  characterCandidatesText.value = ''
   narrationText.value = ''
   subtitlesText.value = ''
   renderPlanText.value = ''
+
   mockAudioIndexUrl.value = ''
   mockAudioSceneGroups.value = []
   mockAudioDirectoryText.value = ''
@@ -572,6 +603,10 @@ async function runWorkflow() {
 
     storyText.value = extractStoryText(data)
     storyboardText.value = extractStoryboardText(data)
+    imagePromptsText.value = extractImagePromptsText(data)
+    imageAssetsText.value = extractImageAssetsText(data)
+    imageReviewText.value = extractImageReviewText(data)
+    videoPromptsText.value = extractVideoPromptsText(data)
     narrationText.value = extractNarrationText(data)
     subtitlesText.value = extractSubtitlesText(data)
     renderPlanText.value = extractRenderPlanText(data)
@@ -579,7 +614,6 @@ async function runWorkflow() {
     stepSummaries.value = buildStepSummaries(data)
     characterCandidatesText.value = extractCharacterCandidatesText(data)
     characterManifestText.value = extractCharacterManifestText(data)
-    imageReviewText.value = extractImageReviewText(data)
 
     resultText.value = stringifyPretty(data)
   } catch (error) {
@@ -987,6 +1021,25 @@ onMounted(() => {
       <section v-if="storyboardText" class="result-panel">
         <h2 class="section-title">Storyboard</h2>
         <pre class="light-result">{{ storyboardText }}</pre>
+      </section>
+            <section v-if="imagePromptsText" class="result-panel">
+        <h2 class="section-title">Image Prompts</h2>
+        <pre class="light-result">{{ imagePromptsText }}</pre>
+      </section>
+
+      <section v-if="imageAssetsText" class="result-panel">
+        <h2 class="section-title">Image Assets</h2>
+        <pre class="light-result">{{ imageAssetsText }}</pre>
+      </section>
+
+      <section v-if="imageReviewText" class="result-panel">
+        <h2 class="section-title">Image Review / Asset Selection</h2>
+        <pre class="light-result">{{ imageReviewText }}</pre>
+      </section>
+
+      <section v-if="videoPromptsText" class="result-panel">
+        <h2 class="section-title">Video Prompts</h2>
+        <pre class="light-result">{{ videoPromptsText }}</pre>
       </section>
 
       <section v-if="narrationText" class="result-panel">
