@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import json
 import os
 import subprocess
@@ -1466,7 +1467,73 @@ class WorkflowRunner:
             "mime_type": item.get("mime_type"),
             "provider": provider,
         }
+    def _build_mock_candidate_asset_refs(
+        self,
+        item: Dict[str, Any],
+        provider: str,
+    ) -> List[Dict[str, Any]]:
+        primary_ref = self._image_asset_ref_from_item(item, provider)
 
+        relative_path = str(item.get("relative_path") or "").strip()
+        public_url = str(item.get("public_url") or "").strip()
+        file_name = str(item.get("file_name") or "").strip()
+        scene_id = item.get("scene_id")
+        mime_type = item.get("mime_type")
+
+        if not relative_path or not public_url or not file_name:
+            return [primary_ref]
+
+        if "." in file_name:
+            file_stem, file_ext = file_name.rsplit(".", 1)
+            mock_file_name = f"{file_stem}__candidate_b.{file_ext}"
+        else:
+            mock_file_name = f"{file_name}__candidate_b"
+
+        if "." in relative_path:
+            relative_stem, relative_ext = relative_path.rsplit(".", 1)
+            mock_relative_path = f"{relative_stem}__candidate_b.{relative_ext}"
+        else:
+            mock_relative_path = f"{relative_path}__candidate_b"
+
+        if "." in public_url:
+            public_stem, public_ext = public_url.rsplit(".", 1)
+            mock_public_url = f"{public_stem}__candidate_b.{public_ext}"
+        else:
+            mock_public_url = f"{public_url}__candidate_b"
+
+        mock_ref = {
+            "scene_id": scene_id,
+            "file_name": mock_file_name,
+            "relative_path": mock_relative_path,
+            "public_url": mock_public_url,
+            "mime_type": mime_type,
+            "provider": f"{provider}_mock_candidate",
+        }
+
+        self._ensure_mock_candidate_asset_file(primary_ref, mock_ref)
+
+        return [primary_ref, mock_ref]
+    def _ensure_mock_candidate_asset_file(
+        self,
+        primary_ref: Dict[str, Any],
+        candidate_ref: Dict[str, Any],
+    ) -> None:
+        primary_relative_path = str(primary_ref.get("relative_path") or "").strip()
+        candidate_relative_path = str(candidate_ref.get("relative_path") or "").strip()
+
+        if not primary_relative_path or not candidate_relative_path:
+            return
+
+        source_path = PROJECT_ROOT / primary_relative_path
+        target_path = PROJECT_ROOT / candidate_relative_path
+
+        if not source_path.exists():
+            return
+
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if not target_path.exists():
+            shutil.copyfile(source_path, target_path)
     def _build_image_review_from_assets(
         self,
         outputs: Dict[str, Any],
@@ -1486,7 +1553,8 @@ class WorkflowRunner:
                 continue
 
             scene_title = str(item.get("scene_title") or "").strip()
-            selected_asset_ref = self._image_asset_ref_from_item(item, provider)
+            candidate_asset_refs = self._build_mock_candidate_asset_refs(item, provider)
+            selected_asset_ref = candidate_asset_refs[0]
 
             selected_assets.append(
                 {
@@ -1497,7 +1565,7 @@ class WorkflowRunner:
                     "selection_source": "default_auto_selection",
                     "selection_reason": "default_selected_from_image_assets",
                     "selected_asset_ref": selected_asset_ref,
-                    "candidate_asset_refs": [selected_asset_ref],
+                    "candidate_asset_refs": candidate_asset_refs,
                     "characters": item.get("characters") or [],
                     "character_ids": item.get("character_ids") or [],
                     "prompt": str(item.get("prompt") or "").strip(),
