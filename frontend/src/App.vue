@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import InteractiveImageReview from './components/InteractiveImageReview.vue'
 
 type StepName =
   | 'story'
@@ -262,19 +263,6 @@ function assetRefPath(assetRef?: ImageAssetRef): string {
     return ''
   }
   return assetRef.public_url || assetRef.relative_path || ''
-}
-
-function isSameAssetRef(a?: ImageAssetRef, b?: ImageAssetRef): boolean {
-  if (!a || !b) {
-    return false
-  }
-
-  const aRelativePath = (a.relative_path || '').trim()
-  const bRelativePath = (b.relative_path || '').trim()
-  const aFileName = (a.file_name || '').trim()
-  const bFileName = (b.file_name || '').trim()
-
-  return aRelativePath === bRelativePath && aFileName === bFileName
 }
 
 function toAssetHref(path?: string): string {
@@ -692,6 +680,8 @@ async function selectImageAsset(sceneId: string, assetRef: ImageAssetRef) {
 }
 async function runWorkflow() {
   resultText.value = ''
+  currentWorkflowResponse.value = null
+  currentWorkflowPayload.value = null
   storyText.value = ''
   storyboardText.value = ''
   currentWorkflowResponse.value = null
@@ -1199,80 +1189,13 @@ onMounted(() => {
         <pre class="light-result">{{ imageAssetsText }}</pre>
       </section>
 
-      <section v-if="imageReviewSelectedAssets.length > 0" class="result-panel">
-        <h2 class="section-title">Interactive Image Review</h2>
-
-        <div class="review-scene-grid">
-          <article
-            v-for="item in imageReviewSelectedAssets"
-            :key="item.scene_id || item.scene_title"
-            class="review-scene-card"
-          >
-            <div class="review-scene-head">
-              <div>
-                <strong>{{ item.scene_title || item.scene_id || 'unknown-scene' }}</strong>
-                <p class="detail-text">
-                  {{ item.selection_source || '-' }} / {{ item.selection_mode || '-' }}
-                </p>
-              </div>
-
-              <span class="summary-status">
-                {{ selectingSceneId === item.scene_id ? 'Switching...' : item.review_status || '-' }}
-              </span>
-            </div>
-
-            <div class="detail-block">
-              <span class="detail-label">Current Selected</span>
-              <code>{{ assetRefPath(item.selected_asset_ref) || '-' }}</code>
-
-              <a
-                v-if="isImageAsset(assetRefPath(item.selected_asset_ref))"
-                class="asset-image-link"
-                :href="toAssetHref(assetRefPath(item.selected_asset_ref))"
-                target="_blank"
-                rel="noreferrer"
-              >
-                <img
-                  class="asset-image asset-image-thumbnail review-selected-image"
-                  :src="toAssetHref(assetRefPath(item.selected_asset_ref))"
-                  :alt="item.scene_title || item.scene_id || 'selected-image'"
-                />
-              </a>
-            </div>
-
-            <div class="detail-block">
-              <span class="detail-label">Candidate Assets</span>
-
-              <div class="review-candidate-grid">
-                <button
-                  v-for="candidate in item.candidate_asset_refs || []"
-                  :key="candidate.relative_path || candidate.file_name || candidate.public_url"
-                  type="button"
-                  class="asset-select-card"
-                  :class="{
-                    active: isSameAssetRef(candidate, item.selected_asset_ref),
-                  }"
-                  :disabled="loading || selectingSceneId === item.scene_id"
-                  @click="selectImageAsset(item.scene_id || '', candidate)"
-                >
-                  <span class="detail-label">
-                    {{ isSameAssetRef(candidate, item.selected_asset_ref) ? 'Selected' : 'Click to Select' }}
-                  </span>
-
-                  <code>{{ candidate.file_name || '-' }}</code>
-
-                  <img
-                    v-if="isImageAsset(assetRefPath(candidate))"
-                    class="asset-image asset-image-thumbnail"
-                    :src="toAssetHref(assetRefPath(candidate))"
-                    :alt="candidate.file_name || 'candidate-image'"
-                  />
-                </button>
-              </div>
-            </div>
-          </article>
-        </div>
-      </section>
+      <InteractiveImageReview
+        :items="imageReviewSelectedAssets"
+        :api-base-url="apiBaseUrl"
+        :loading="loading"
+        :selecting-scene-id="selectingSceneId"
+        @select-asset="({ sceneId, assetRef }) => selectImageAsset(sceneId, assetRef)"
+      />
 
       <section v-if="imageReviewText" class="result-panel">
         <h2 class="section-title">Image Review / Asset Selection</h2>
