@@ -454,7 +454,22 @@ class WorkflowRunner:
         previous_session_data = self._get_session_data(req.session_id)
 
         step_results: List[StepResult] = []
-        aggregated_outputs: Dict[str, Any] = {}
+
+        character_candidates = self._build_character_candidates(req.input)
+        character_manifest = self._build_character_manifest(req.input, character_candidates)
+
+        aggregated_outputs: Dict[str, Any] = {
+            "character_candidates": {
+                "enabled": bool(req.input.structured_characters_enabled),
+                "count": len(character_candidates),
+                "items": character_candidates,
+            },
+            "character_manifest": {
+                "enabled": bool(req.input.structured_characters_enabled),
+                "count": len(character_manifest),
+                "characters": character_manifest,
+            },
+        }
 
         for step in req.steps:
             name = step.name.strip()
@@ -476,20 +491,6 @@ class WorkflowRunner:
         self._save_session_data(req, aggregated_outputs)
         render_package = self._build_render_package(ctx, aggregated_outputs)
 
-        character_candidates = self._build_character_candidates(req.input)
-        character_manifest = self._build_character_manifest(req.input, character_candidates)
-
-        aggregated_outputs["character_candidates"] = {
-            "enabled": bool(req.input.structured_characters_enabled),
-            "count": len(character_candidates),
-            "items": character_candidates,
-        }
-        aggregated_outputs["character_manifest"] = {
-            "enabled": bool(req.input.structured_characters_enabled),
-            "count": len(character_manifest),
-            "characters": character_manifest,
-        }
-
         return WorkflowRunResponse(
             workflow_id=req.workflow_id,
             session_id=req.session_id,
@@ -501,7 +502,6 @@ class WorkflowRunner:
             render_package=render_package,
             timestamp=WorkflowRunResponse.now_timestamp(),
         )
-    
     def _build_character_candidates(self, workflow_input: WorkflowInput) -> List[Dict[str, Any]]:
         if workflow_input.structured_characters_enabled and workflow_input.characters:
             items: List[Dict[str, Any]] = []
@@ -557,63 +557,6 @@ class WorkflowRunner:
 
         return items
 
-
-    def _build_character_manifest(
-        self,
-        workflow_input: WorkflowInput,
-        candidates: List[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
-        manifest: List[Dict[str, Any]] = []
-
-        for candidate in candidates:
-            role_type = str(candidate.get("role_type") or "secondary").strip()
-            if role_type == "primary":
-                character_id = "char_primary_01"
-            else:
-                secondary_index = (
-                    sum(
-                        1
-                        for item in manifest
-                        if str(item.get("role_type") or "").strip() == "secondary"
-                    )
-                    + 1
-                )
-                character_id = f"char_secondary_{secondary_index:02d}"
-
-            visual_traits_text = str(candidate.get("visual_traits") or "").strip()
-            forbidden_traits_text = str(candidate.get("forbidden_traits") or "").strip()
-
-            signature_traits = [
-                item.strip()
-                for item in visual_traits_text.split(",")
-                if item.strip()
-            ]
-            forbidden_traits = [
-                item.strip()
-                for item in forbidden_traits_text.split(",")
-                if item.strip()
-            ]
-
-            manifest.append(
-                {
-                    "character_id": character_id,
-                    "display_name": str(candidate.get("display_name") or "").strip(),
-                    "species": str(candidate.get("species") or "").strip(),
-                    "role_type": role_type,
-                    "signature_traits": signature_traits,
-                    "forbidden_traits": forbidden_traits,
-                    "locking_level": "strict",
-                    "reference_assets": {
-                        "status": "pending",
-                        "front_view": None,
-                        "side_view": None,
-                        "three_quarter_view": None,
-                    },
-                    "source": str(candidate.get("source") or "").strip(),
-                }
-            )
-
-        return manifest
     def _build_character_manifest(
         self,
         workflow_input: WorkflowInput,
@@ -668,6 +611,260 @@ class WorkflowRunner:
 
         return manifest
 
+    def _character_manifest_items(self, outputs: Dict[str, Any]) -> List[Dict[str, Any]]:
+        manifest_output = outputs.get("character_manifest") or {}
+        characters = manifest_output.get("characters") or []
+        if isinstance(characters, list):
+            return characters
+        return []
+
+
+    def _manifest_character_by_role(
+        self,
+        outputs: Dict[str, Any],
+        role_type: str,
+    ) -> Optional[Dict[str, Any]]:
+        for item in self._character_manifest_items(outputs):
+            if str(item.get("role_type") or "").strip() == role_type:
+                return item
+        return None
+
+    def _run_image_prompts(
+        self, ctx: StepContext, outputs: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        sentence_shots = outputs.get("sentence_shots") or {}
+        shot_items = sentence_shots.get("items") or []
+
+        storyboard = outputs.get("storyboard") or {}
+        scenes = storyboard.get("scenes") or []
+
+        global_style_anchor = (
+            f"{ctx.input.visual_style} illustration, "
+            f"{ctx.input.tone} mood, "
+            "children's storybook art, "
+            "soft pastel palette, "
+            "warm gentle lighting, "
+            "clean composition, "
+            "consistent character design, "
+            "vertical 9:16 framing"
+        )
+
+        character_anchor = self._character_consistency_anchor(ctx)
+
+        prompts: List[Dict[str, Any]] = []
+
+        if shot_items:
+            scene_map: Dict[str, Dict[str, Any]] = {
+                str(scene.get("scene_id") or "").strip(): scene
+                for scene in scenes
+                if isinstance(scene, dict)
+            }
+
+            for shot in shot_items:
+                shot_id = str(shot.get("shot_id") or "").strip()
+                scene_id = str(shot.get("scene_id") or "").strip()
+                scene_title = str(shot.get("scene_title") or "").strip()
+                visual_description = str(shot.get("visual_description") or "").strip()
+                shot_type = str(shot.get("shot_type") or "medium").strip()
+                transition = str(shot.get("transition") or "fade").strip()
+                text = str(shot.get("text") or "").strip()
+
+                scene_data = scene_map.get(scene_id) or {}
+                character_block = self._scene_character_prompt_block(outputs, scene_data)
+                negative_block = self._scene_character_negative_block(outputs, scene_data)
+
+                shot_anchor = (
+                    f"scene title: {scene_title}, "
+                    f"camera shot: {shot_type}, "
+                    f"transition feeling: {transition}, "
+                    f"visual focus: {visual_description}"
+                )
+
+                story_anchor = f"story context: {text}"
+
+                prompt = ", ".join(
+                    part
+                    for part in [
+                        global_style_anchor,
+                        character_anchor,
+                        character_block,
+                        shot_anchor,
+                        story_anchor,
+                        negative_block,
+                    ]
+                    if part
+                )
+
+                prompts.append(
+                    {
+                        "shot_id": shot_id,
+                        "scene_id": scene_id,
+                        "scene_title": scene_title,
+                        "characters": scene_data.get("characters") or [],
+                        "prompt": prompt,
+                    }
+                )
+
+            return {"provider": "image_prompt_builder", "prompts": prompts}
+
+        for scene in scenes:
+            scene_id = str(scene.get("scene_id") or "").strip()
+            narration = str(scene.get("narration", "")).strip()
+            visual_description = str(scene.get("visual_description", "")).strip()
+            shot_type = str(scene.get("shot_type", "medium")).strip()
+            transition = str(scene.get("transition", "fade")).strip()
+            scene_title = str(scene.get("scene_title", "")).strip()
+
+            character_block = self._scene_character_prompt_block(outputs, scene)
+            negative_block = self._scene_character_negative_block(outputs, scene)
+
+            scene_anchor = (
+                f"scene title: {scene_title}, "
+                f"camera shot: {shot_type}, "
+                f"transition feeling: {transition}, "
+                f"visual focus: {visual_description}"
+            )
+
+            story_anchor = f"story context: {narration}"
+
+            prompt = ", ".join(
+                part
+                for part in [
+                    global_style_anchor,
+                    character_anchor,
+                    character_block,
+                    scene_anchor,
+                    story_anchor,
+                    negative_block,
+                ]
+                if part
+            )
+
+            prompts.append(
+                {
+                    "scene_id": scene_id,
+                    "scene_title": scene_title,
+                    "characters": scene.get("characters") or [],
+                    "prompt": prompt,
+                }
+            )
+
+        return {"provider": "image_prompt_builder", "prompts": prompts}
+
+    def _scene_character_bindings(self, outputs: Dict[str, Any]) -> List[Dict[str, Any]]:
+        bindings: List[Dict[str, Any]] = []
+        for item in self._character_manifest_items(outputs):
+            bindings.append(
+                {
+                    "character_id": item.get("character_id"),
+                    "display_name": item.get("display_name"),
+                    "species": item.get("species"),
+                    "role_type": item.get("role_type"),
+                }
+            )
+        return bindings
+    
+    def _manifest_character_by_id(
+        self,
+        outputs: Dict[str, Any],
+        character_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        target = str(character_id or "").strip()
+        if not target:
+            return None
+
+        for item in self._character_manifest_items(outputs):
+            if str(item.get("character_id") or "").strip() == target:
+                return item
+        return None
+
+    def _scene_character_prompt_block(
+        self,
+        outputs: Dict[str, Any],
+        scene: Dict[str, Any],
+    ) -> str:
+        scene_characters = scene.get("characters") or []
+        if not isinstance(scene_characters, list) or not scene_characters:
+            return ""
+
+        parts: List[str] = []
+
+        for binding in scene_characters:
+            if not isinstance(binding, dict):
+                continue
+
+            character_id = str(binding.get("character_id") or "").strip()
+            manifest_item = self._manifest_character_by_id(outputs, character_id)
+            if manifest_item is None:
+                continue
+
+            display_name = str(manifest_item.get("display_name") or "").strip()
+            species = str(manifest_item.get("species") or "").strip()
+            role_type = str(manifest_item.get("role_type") or "").strip()
+
+            signature_traits = manifest_item.get("signature_traits") or []
+            forbidden_traits = manifest_item.get("forbidden_traits") or []
+
+            signature_text = ", ".join(
+                item.strip() for item in signature_traits if str(item).strip()
+            )
+            forbidden_text = ", ".join(
+                item.strip() for item in forbidden_traits if str(item).strip()
+            )
+
+            detail_parts = [
+                f"{role_type} character",
+                f"name: {display_name}" if display_name else "",
+                f"species: {species}" if species else "",
+                f"must keep: {signature_text}" if signature_text else "",
+                f"must avoid: {forbidden_text}" if forbidden_text else "",
+            ]
+            detail_text = "; ".join(part for part in detail_parts if part)
+            if detail_text:
+                parts.append(detail_text)
+
+        if not parts:
+            return ""
+
+        return "character definitions: " + " | ".join(parts)
+
+    def _scene_character_negative_block(
+        self,
+        outputs: Dict[str, Any],
+        scene: Dict[str, Any],
+    ) -> str:
+        scene_characters = scene.get("characters") or []
+        if not isinstance(scene_characters, list) or not scene_characters:
+            return ""
+
+        negatives: List[str] = []
+
+        for binding in scene_characters:
+            if not isinstance(binding, dict):
+                continue
+
+            character_id = str(binding.get("character_id") or "").strip()
+            manifest_item = self._manifest_character_by_id(outputs, character_id)
+            if manifest_item is None:
+                continue
+
+            forbidden_traits = manifest_item.get("forbidden_traits") or []
+            for item in forbidden_traits:
+                value = str(item or "").strip()
+                if value:
+                    negatives.append(value)
+
+        deduped: List[str] = []
+        seen = set()
+        for item in negatives:
+            if item not in seen:
+                deduped.append(item)
+                seen.add(item)
+
+        if not deduped:
+            return ""
+
+        return "negative constraints: " + ", ".join(deduped)
     def _get_session_data(self, session_id: Optional[str]) -> Optional[Dict[str, Any]]:
         if not session_id:
             return None
@@ -951,7 +1148,19 @@ class WorkflowRunner:
             line["shot_id"] = shot_id
 
         return line
-    def _main_character_display_label(self, ctx: StepContext) -> str:
+
+    def _main_character_display_label(
+        self,
+        ctx: StepContext,
+        outputs: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        if outputs:
+            manifest_item = self._manifest_character_by_role(outputs, "primary")
+            if manifest_item is not None:
+                display_value = str(manifest_item.get("display_name") or "").strip()
+                if display_value:
+                    return display_value
+
         display_value = str(
             getattr(ctx.input, "main_character_display", "") or ""
         ).strip()
@@ -964,19 +1173,18 @@ class WorkflowRunner:
 
         return self._character_style_label(ctx.input.character_style)
 
-    def _main_character_display_label(self, ctx: StepContext) -> str:
-        display_value = str(
-            getattr(ctx.input, "main_character_display", "") or ""
-        ).strip()
-        if display_value:
-            return display_value
+    def _secondary_character_display_label(
+        self,
+        ctx: StepContext,
+        outputs: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        if outputs:
+            manifest_item = self._manifest_character_by_role(outputs, "secondary")
+            if manifest_item is not None:
+                display_value = str(manifest_item.get("display_name") or "").strip()
+                if display_value:
+                    return display_value
 
-        main_value = str(getattr(ctx.input, "main_character", "") or "").strip()
-        if main_value:
-            return main_value
-
-        return self._character_style_label(ctx.input.character_style)
-    def _secondary_character_display_label(self, ctx: StepContext) -> str:
         display_value = str(
             getattr(ctx.input, "secondary_character_display", "") or ""
         ).strip()
@@ -989,8 +1197,14 @@ class WorkflowRunner:
 
         return ""
 
-    def _has_secondary_character(self, ctx: StepContext) -> bool:
-        return bool(self._secondary_character_display_label(ctx))
+
+    def _has_secondary_character(
+        self,
+        ctx: StepContext,
+        outputs: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        return bool(self._secondary_character_display_label(ctx, outputs))
+    
     def _main_character_label(self, ctx: StepContext) -> str:
         value = str(getattr(ctx.input, "main_character", "") or "").strip()
         if value:
@@ -1038,14 +1252,19 @@ class WorkflowRunner:
             return main_character
         return f"{ctx.input.character_style} protagonist"
     
-    def _build_story_paragraphs(self, ctx: StepContext) -> List[str]:
+    def _build_story_paragraphs(
+        self,
+        ctx: StepContext,
+        outputs: Optional[Dict[str, Any]] = None,
+    ) -> List[str]:
         topic = ctx.input.topic.strip() or "一个温暖的童话故事"
         audience_label = self._audience_label(ctx.input.audience)
         tone_label = self._tone_label(ctx.input.tone)
         visual_label = self._visual_style_label(ctx.input.visual_style)
-        main_character_display = self._main_character_display_label(ctx)
-        secondary_character_display = self._secondary_character_display_label(ctx)
-        has_secondary_character = self._has_secondary_character(ctx)
+
+        main_character_display = self._main_character_display_label(ctx, outputs)
+        secondary_character_display = self._secondary_character_display_label(ctx, outputs)
+        has_secondary_character = self._has_secondary_character(ctx, outputs)
 
         if has_secondary_character:
             paragraph_1 = (
@@ -1085,80 +1304,18 @@ class WorkflowRunner:
         )
 
         return [paragraph_1, paragraph_2, paragraph_3, paragraph_4]
-
-    def _scene_blueprints(
-        self, ctx: StepContext, scene_count: int
-    ) -> List[Dict[str, str]]:
-        tone_label = self._tone_label(ctx.input.tone)
-        visual_label = self._visual_style_label(ctx.input.visual_style)
-        main_character_display = self._main_character_display_label(ctx)
-
-        base = [
-            {
-                "scene_title": "故事开场",
-                "visual_description": (
-                    f"{visual_label}风格画面，晨光柔和，主角{main_character_display}第一次出场，"
-                    f"整体氛围{tone_label}、轻盈而有期待感。"
-                ),
-                "shot_type": "wide",
-                "transition": "fade",
-            },
-            {
-                "scene_title": "遇到问题",
-                "visual_description": (
-                    f"{visual_label}风格画面，主角{main_character_display}停下脚步思考，"
-                    f"周围环境出现小小变化，画面强调困惑与转折。"
-                ),
-                "shot_type": "medium",
-                "transition": "cut",
-            },
-            {
-                "scene_title": "行动推进",
-                "visual_description": (
-                    f"{visual_label}风格画面，主角{main_character_display}主动尝试解决问题，"
-                    f"动作更明确，节奏变得积极，画面更有前进感。"
-                ),
-                "shot_type": "medium",
-                "transition": "dissolve",
-            },
-            {
-                "scene_title": "温暖收束",
-                "visual_description": (
-                    f"{visual_label}风格画面，主角{main_character_display}完成旅程，表情放松，"
-                    f"画面回到温暖明亮的氛围，用来承接结尾情绪。"
-                ),
-                "shot_type": "close-up",
-                "transition": "fade",
-            },
-            {
-                "scene_title": "回味结尾",
-                "visual_description": (
-                    f"{visual_label}风格画面，主角{main_character_display}回头望向来时的路，"
-                    f"环境安静舒展，用于强化余韵与成长感。"
-                ),
-                "shot_type": "wide",
-                "transition": "fade",
-            },
-            {
-                "scene_title": "片尾定格",
-                "visual_description": (
-                    f"{visual_label}风格画面，主角{main_character_display}站在新的起点上，"
-                    f"适合作为片尾定格镜头，氛围柔和完整。"
-                ),
-                "shot_type": "close-up",
-                "transition": "fade",
-            },
-        ]
-        return base[:scene_count]
     
     def _scene_blueprints(
-        self, ctx: StepContext, scene_count: int
+        self,
+        ctx: StepContext,
+        scene_count: int,
+        outputs: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, str]]:
         tone_label = self._tone_label(ctx.input.tone)
         visual_label = self._visual_style_label(ctx.input.visual_style)
-        main_character_display = self._main_character_display_label(ctx)
-        secondary_character_display = self._secondary_character_display_label(ctx)
-        has_secondary_character = self._has_secondary_character(ctx)
+        main_character_display = self._main_character_display_label(ctx, outputs)
+        secondary_character_display = self._secondary_character_display_label(ctx, outputs)
+        has_secondary_character = self._has_secondary_character(ctx, outputs)
 
         if has_secondary_character:
             base = [
@@ -1276,7 +1433,6 @@ class WorkflowRunner:
             },
         ]
         return base[:scene_count]
-
     def _build_video_provider_prompts(
         self, ctx: StepContext, scenes: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
@@ -1637,70 +1793,87 @@ class WorkflowRunner:
         }
 
     def _run_story(self, ctx: StepContext, outputs: Dict[str, Any]) -> Dict[str, Any]:
+        paragraphs = self._build_story_paragraphs(ctx, outputs)
+        story_text = "\n".join(paragraphs)
+
         topic = ctx.input.topic.strip() or "一个温暖的童话故事"
-        paragraphs = self._build_story_paragraphs(ctx)
-        title = f"{topic}的故事"
-        summary = (
-            f"一个围绕“{topic}”展开的短篇故事，整体气质温暖，"
-            f"适合做成儿童向的多模态视频内容。"
-        )
-        text = "\n".join(paragraphs)
+        tone_label = self._tone_label(ctx.input.tone)
+        audience_label = self._audience_label(ctx.input.audience)
+        main_character_display = self._main_character_display_label(ctx, outputs)
+        secondary_character_display = self._secondary_character_display_label(ctx, outputs)
+        has_secondary_character = self._has_secondary_character(ctx, outputs)
+
+        if has_secondary_character:
+            summary = (
+                f"一个围绕“{topic}”展开的短篇故事，主角是{main_character_display}，"
+                f"配角是{secondary_character_display}，整体气质{tone_label}，适合做成{audience_label}向内容。"
+            )
+        else:
+            summary = (
+                f"一个围绕“{topic}”展开的短篇故事，主角是{main_character_display}，"
+                f"整体气质{tone_label}，适合做成{audience_label}向内容。"
+            )
+
+        manifest_items = self._character_manifest_items(outputs)
 
         return {
-            "title": title,
+            "title": f"{topic}的故事",
             "summary": summary,
-            "text": text,
+            "text": story_text,
             "style_profile": {
                 "audience": ctx.input.audience,
                 "tone": ctx.input.tone,
                 "visual_style": ctx.input.visual_style,
                 "character_style": ctx.input.character_style,
                 "main_character": ctx.input.main_character,
-                "main_character_display": ctx.input.main_character_display,
+                "main_character_display": main_character_display,
                 "secondary_character": ctx.input.secondary_character,
-                "secondary_character_display": ctx.input.secondary_character_display,
+                "secondary_character_display": secondary_character_display,
                 "character_consistency_anchor": ctx.input.character_consistency_anchor,
                 "language": ctx.input.language,
+                "structured_characters_enabled": bool(ctx.input.structured_characters_enabled),
+                "character_ids": [
+                    item.get("character_id")
+                    for item in manifest_items
+                    if item.get("character_id")
+                ],
             },
         }
-
     def _run_storyboard(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
-        story = outputs.get("story") or {}
-        story_text = str(story.get("text", ""))
-        story_parts = [part.strip() for part in story_text.split("\n") if part.strip()]
         scene_count = self._scene_count(ctx.input.duration_sec)
-        duration_per_scene = max(5, ctx.input.duration_sec // scene_count)
+        blueprints = self._scene_blueprints(ctx, scene_count, outputs)
+        paragraphs = self._build_story_paragraphs(ctx, outputs)
+        total_duration_sec = ctx.input.duration_sec
+        per_scene_duration = max(1, total_duration_sec // max(scene_count, 1))
 
-        while len(story_parts) < scene_count and story_parts:
-            story_parts.append(story_parts[-1])
-
-        if not story_parts:
-            story_parts = ["一个温暖的故事正在展开。"] * scene_count
-
-        story_parts = story_parts[:scene_count]
-        blueprints = self._scene_blueprints(ctx, scene_count)
+        character_bindings = self._scene_character_bindings(outputs)
 
         scenes: List[Dict[str, Any]] = []
-        for index, (segment, blueprint) in enumerate(
-            zip(story_parts, blueprints), start=1
-        ):
+        for index, blueprint in enumerate(blueprints, start=1):
+            narration = (
+                paragraphs[index - 1]
+                if index - 1 < len(paragraphs)
+                else paragraphs[-1]
+            )
+
             scenes.append(
                 {
                     "scene_id": f"scene_{index:02d}",
                     "scene_title": blueprint["scene_title"],
                     "visual_description": blueprint["visual_description"],
-                    "narration": segment,
-                    "duration_sec": duration_per_scene,
+                    "narration": narration,
+                    "duration_sec": per_scene_duration,
                     "shot_type": blueprint["shot_type"],
                     "transition": blueprint["transition"],
+                    "characters": character_bindings,
                 }
             )
 
         return {
-            "scene_count": len(scenes),
-            "total_duration_sec": ctx.input.duration_sec,
+            "scene_count": scene_count,
+            "total_duration_sec": total_duration_sec,
             "scenes": scenes,
         }
     def _run_sentence_shots(
@@ -1783,106 +1956,6 @@ class WorkflowRunner:
 
         return merged[:10]
 
-    def _run_image_prompts(
-        self, ctx: StepContext, outputs: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        sentence_shots = outputs.get("sentence_shots") or {}
-        shot_items = sentence_shots.get("items") or []
-
-        storyboard = outputs.get("storyboard") or {}
-        scenes = storyboard.get("scenes") or []
-
-        global_style_anchor = (
-            f"{ctx.input.visual_style} illustration, "
-            f"{ctx.input.tone} mood, "
-            "children's storybook art, "
-            "soft pastel palette, "
-            "warm gentle lighting, "
-            "clean composition, "
-            "consistent character design, "
-            "vertical 9:16 framing"
-        )
-
-        character_anchor = self._character_consistency_anchor(ctx)
-
-        prompts: List[Dict[str, Any]] = []
-
-        if shot_items:
-            for shot in shot_items:
-                shot_id = str(shot.get("shot_id") or "").strip()
-                scene_id = str(shot.get("scene_id") or "").strip()
-                scene_title = str(shot.get("scene_title") or "").strip()
-                visual_description = str(shot.get("visual_description") or "").strip()
-                shot_type = str(shot.get("shot_type") or "medium").strip()
-                transition = str(shot.get("transition") or "fade").strip()
-                text = str(shot.get("text") or "").strip()
-
-                shot_anchor = (
-                    f"scene title: {scene_title}, "
-                    f"camera shot: {shot_type}, "
-                    f"transition feeling: {transition}, "
-                    f"visual focus: {visual_description}"
-                )
-
-                story_anchor = f"story context: {text}"
-
-                prompt = ", ".join(
-                    part
-                    for part in [
-                        global_style_anchor,
-                        character_anchor,
-                        shot_anchor,
-                        story_anchor,
-                    ]
-                    if part
-                )
-
-                prompts.append(
-                    {
-                        "shot_id": shot_id,
-                        "scene_id": scene_id,
-                        "prompt": prompt,
-                    }
-                )
-
-            return {"provider": "image_prompt_builder", "prompts": prompts}
-
-        for scene in scenes:
-            scene_id = str(scene.get("scene_id") or "")
-            narration = str(scene.get("narration", "")).strip()
-            visual_description = str(scene.get("visual_description", "")).strip()
-            shot_type = str(scene.get("shot_type", "medium")).strip()
-            transition = str(scene.get("transition", "fade")).strip()
-            scene_title = str(scene.get("scene_title", "")).strip()
-
-            scene_anchor = (
-                f"scene title: {scene_title}, "
-                f"camera shot: {shot_type}, "
-                f"transition feeling: {transition}, "
-                f"visual focus: {visual_description}"
-            )
-
-            story_anchor = f"story context: {narration}"
-
-            prompt = ", ".join(
-                part
-                for part in [
-                    global_style_anchor,
-                    character_anchor,
-                    scene_anchor,
-                    story_anchor,
-                ]
-                if part
-            )
-
-            prompts.append(
-                {
-                    "scene_id": scene_id,
-                    "prompt": prompt,
-                }
-            )
-
-        return {"provider": "image_prompt_builder", "prompts": prompts}
     def _build_scene_ppm(
         self, ctx: StepContext, scene: Dict[str, Any], index: int
     ) -> bytes:
@@ -2535,7 +2608,77 @@ class WorkflowRunner:
             data.extend(f"P6\n{width} {height}\n255\n".encode("ascii"))
             data.extend(pixels)
             return bytes(data)
+    def _image_prompt_item_maps(
+        self, outputs: Dict[str, Any]
+    ) -> tuple[Dict[str, Dict[str, Any]], Dict[str, Dict[str, Any]]]:
+        image_prompts = outputs.get("image_prompts") or {}
+        prompt_items = image_prompts.get("prompts") or []
 
+        prompt_by_scene_id: Dict[str, Dict[str, Any]] = {}
+        prompt_by_shot_id: Dict[str, Dict[str, Any]] = {}
+
+        for item in prompt_items:
+            if not isinstance(item, dict):
+                continue
+
+            scene_id = str(item.get("scene_id") or "").strip()
+            shot_id = str(item.get("shot_id") or "").strip()
+
+            if scene_id:
+                prompt_by_scene_id[scene_id] = item
+            if shot_id:
+                prompt_by_shot_id[shot_id] = item
+
+        return prompt_by_scene_id, prompt_by_shot_id
+
+    def _character_ids_from_bindings(
+        self, bindings: List[Dict[str, Any]]
+    ) -> List[str]:
+        results: List[str] = []
+        seen = set()
+
+        for item in bindings:
+            if not isinstance(item, dict):
+                continue
+            character_id = str(item.get("character_id") or "").strip()
+            if character_id and character_id not in seen:
+                results.append(character_id)
+                seen.add(character_id)
+
+        return results
+
+    def _image_asset_metadata(
+        self,
+        *,
+        scene: Optional[Dict[str, Any]] = None,
+        prompt_item: Optional[Dict[str, Any]] = None,
+        fallback_scene_title: str = "",
+    ) -> Dict[str, Any]:
+        scene = scene or {}
+        prompt_item = prompt_item or {}
+
+        scene_title = str(
+            prompt_item.get("scene_title")
+            or scene.get("scene_title")
+            or fallback_scene_title
+            or ""
+        ).strip()
+
+        characters = prompt_item.get("characters")
+        if not isinstance(characters, list):
+            characters = scene.get("characters") or []
+        if not isinstance(characters, list):
+            characters = []
+
+        prompt_text = str(prompt_item.get("prompt") or "").strip()
+
+        return {
+            "scene_title": scene_title,
+            "characters": characters,
+            "character_ids": self._character_ids_from_bindings(characters),
+            "prompt": prompt_text,
+        }
+    
     def _run_image_assets(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -2583,18 +2726,23 @@ class WorkflowRunner:
             if scene.get("scene_id")
         }
 
+        prompt_by_scene_id, prompt_by_shot_id = self._image_prompt_item_maps(outputs)
+
         run_dir = self._ensure_image_run_dir(ctx.run_id)
         assets: List[Dict[str, Any]] = []
 
         if shot_items:
             for index, shot in enumerate(shot_items, start=1):
                 shot_id = str(shot.get("shot_id") or f"shot_{index:02d}")
-                scene_id = str(shot.get("scene_id") or "")
-                scene_title = str(shot.get("scene_title") or f"Shot {index}")
+                scene_id = str(shot.get("scene_id") or "").strip()
+                scene_title = str(shot.get("scene_title") or f"Shot {index}").strip()
                 visual_description = str(shot.get("visual_description") or "").strip()
                 shot_text = str(shot.get("text") or "").strip()
                 shot_type = str(shot.get("shot_type") or "medium").strip()
                 transition = str(shot.get("transition") or "fade").strip()
+
+                parent_scene = scene_by_id.get(scene_id) or {}
+                prompt_item = prompt_by_shot_id.get(shot_id) or prompt_by_scene_id.get(scene_id) or {}
 
                 pseudo_scene = {
                     "scene_id": shot_id,
@@ -2604,21 +2752,31 @@ class WorkflowRunner:
                     "duration_sec": 0,
                     "shot_type": shot_type,
                     "transition": transition,
+                    "characters": prompt_item.get("characters") or parent_scene.get("characters") or [],
                 }
 
                 file_name = f"{shot_id}.ppm"
                 output_path = run_dir / file_name
                 output_path.write_bytes(self._build_scene_ppm(ctx, pseudo_scene, index))
 
+                asset_meta = self._image_asset_metadata(
+                    scene=scene_by_id.get(scene_id) or {},
+                    prompt_item=prompt_by_shot_id.get(shot_id) or prompt_by_scene_id.get(scene_id) or {},
+                    fallback_scene_title=scene_title,
+                )
+
                 assets.append(
                     {
                         "shot_id": shot_id,
                         "scene_id": scene_id,
-                        "scene_title": scene_title,
+                        "scene_title": asset_meta["scene_title"],
+                        "characters": asset_meta["characters"],
+                        "character_ids": asset_meta["character_ids"],
+                        "prompt": asset_meta["prompt"],
                         "file_name": file_name,
                         "relative_path": f"assets/mock/image/{ctx.run_id}/{file_name}",
                         "public_url": f"/assets/mock/image/{ctx.run_id}/{file_name}",
-                        "mime_type": "image/x-portable-pixmap",
+                        "mime_type": "image/png",
                         "status": "generated",
                     }
                 )
@@ -2637,14 +2795,24 @@ class WorkflowRunner:
             output_path = run_dir / file_name
             output_path.write_bytes(self._build_scene_ppm(ctx, scene, index))
 
+            prompt_item = prompt_by_scene_id.get(scene_id) or {}
+            asset_meta = self._image_asset_metadata(
+                scene=scene,
+                prompt_item=prompt_by_scene_id.get(scene_id) or {},
+                fallback_scene_title=str(scene.get("scene_title") or "").strip(),
+            )
+
             assets.append(
                 {
                     "scene_id": scene_id,
-                    "scene_title": scene.get("scene_title"),
+                    "scene_title": asset_meta["scene_title"],
+                    "characters": asset_meta["characters"],
+                    "character_ids": asset_meta["character_ids"],
+                    "prompt": asset_meta["prompt"],
                     "file_name": file_name,
                     "relative_path": f"assets/mock/image/{ctx.run_id}/{file_name}",
                     "public_url": f"/assets/mock/image/{ctx.run_id}/{file_name}",
-                    "mime_type": "image/x-portable-pixmap",
+                    "mime_type": "image/png",
                     "status": "generated",
                 }
             )
@@ -2836,20 +3004,13 @@ class WorkflowRunner:
 
         storyboard = outputs.get("storyboard") or {}
         scenes = storyboard.get("scenes") or []
-
-        image_prompts = outputs.get("image_prompts") or {}
-        prompt_items = image_prompts.get("prompts") or []
-
-        prompt_by_shot_id = {
-            str(item.get("shot_id")): str(item.get("prompt") or "").strip()
-            for item in prompt_items
-            if item.get("shot_id")
+        scene_by_id = {
+            str(scene.get("scene_id")): scene
+            for scene in scenes
+            if scene.get("scene_id")
         }
-        prompt_by_scene_id = {
-            str(item.get("scene_id")): str(item.get("prompt") or "").strip()
-            for item in prompt_items
-            if item.get("scene_id")
-        }
+
+        prompt_by_scene_id, prompt_by_shot_id = self._image_prompt_item_maps(outputs)
 
         run_dir = self._ensure_image_run_dir(ctx.run_id)
         assets: List[Dict[str, Any]] = []
@@ -2857,9 +3018,15 @@ class WorkflowRunner:
         if shot_items:
             for index, shot in enumerate(shot_items, start=1):
                 shot_id = str(shot.get("shot_id") or f"shot_{index:02d}")
-                scene_id = str(shot.get("scene_id") or "")
-                scene_title = str(shot.get("scene_title") or f"Shot {index}")
-                prompt = prompt_by_shot_id.get(shot_id, "").strip()
+                scene_id = str(shot.get("scene_id") or "").strip()
+                scene_title = str(shot.get("scene_title") or f"Shot {index}").strip()
+
+                prompt_item = (
+                    prompt_by_shot_id.get(shot_id)
+                    or prompt_by_scene_id.get(scene_id)
+                    or {}
+                )
+                prompt = str(prompt_item.get("prompt") or "").strip()
 
                 if not prompt:
                     text = str(shot.get("text", "")).strip()
@@ -2872,10 +3039,16 @@ class WorkflowRunner:
                 pseudo_scene = {
                     "scene_id": shot_id,
                     "scene_title": scene_title,
-                    "visual_description": shot.get("visual_description"),
-                    "narration": shot.get("text"),
-                    "shot_type": shot.get("shot_type"),
-                    "transition": shot.get("transition"),
+                    "visual_description": str(shot.get("visual_description") or "").strip(),
+                    "narration": str(shot.get("text") or "").strip(),
+                    "duration_sec": 0,
+                    "shot_type": str(shot.get("shot_type") or "medium").strip(),
+                    "transition": str(shot.get("transition") or "fade").strip(),
+                    "characters": (
+                        prompt_item.get("characters")
+                        or (scene_by_id.get(scene_id) or {}).get("characters")
+                        or []
+                    ),
                 }
 
                 image_bytes = self._generate_api_image_bytes(
@@ -2885,21 +3058,30 @@ class WorkflowRunner:
                 )
                 if not isinstance(image_bytes, (bytes, bytearray)):
                     raise RuntimeError(
-                        f"api image generator returned non-bytes payload for shot {shot_id}"
+                        f"api image provider returned invalid bytes for shot {shot_id}"
                     )
-                output_path.write_bytes(image_bytes)
+
+                output_path.write_bytes(bytes(image_bytes))
+
+                asset_meta = self._image_asset_metadata(
+                    scene=scene_by_id.get(scene_id) or {},
+                    prompt_item=prompt_item,
+                    fallback_scene_title=scene_title,
+                )
 
                 assets.append(
                     {
                         "shot_id": shot_id,
                         "scene_id": scene_id,
-                        "scene_title": scene_title,
+                        "scene_title": asset_meta["scene_title"],
+                        "characters": asset_meta["characters"],
+                        "character_ids": asset_meta["character_ids"],
+                        "prompt": prompt,
                         "file_name": file_name,
                         "relative_path": f"assets/mock/image/{ctx.run_id}/{file_name}",
                         "public_url": f"/assets/mock/image/{ctx.run_id}/{file_name}",
                         "mime_type": "image/png",
                         "status": "generated",
-                        "prompt": prompt,
                     }
                 )
 
@@ -2913,17 +3095,29 @@ class WorkflowRunner:
 
         for index, scene in enumerate(scenes, start=1):
             scene_id = str(scene.get("scene_id") or f"scene_{index:02d}")
-            prompt = prompt_by_scene_id.get(scene_id, "").strip()
+            prompt_item = prompt_by_scene_id.get(scene_id) or {}
+            prompt = str(prompt_item.get("prompt") or "").strip()
 
             if not prompt:
-                narration = str(scene.get("narration", "")).strip()
-                visual_description = str(scene.get("visual_description", "")).strip()
+                visual_description = str(scene.get("visual_description") or "").strip()
+                narration = str(scene.get("narration") or "").strip()
                 prompt = (
                     visual_description or narration or f"storybook scene {scene_id}"
                 )
 
             file_name = f"{scene_id}.png"
             output_path = run_dir / file_name
+
+            pseudo_scene = {
+                "scene_id": scene_id,
+                "scene_title": str(scene.get("scene_title") or "").strip(),
+                "visual_description": str(scene.get("visual_description") or "").strip(),
+                "narration": str(scene.get("narration") or "").strip(),
+                "duration_sec": int(scene.get("duration_sec") or 0),
+                "shot_type": str(scene.get("shot_type") or "medium").strip(),
+                "transition": str(scene.get("transition") or "fade").strip(),
+                "characters": prompt_item.get("characters") or scene.get("characters") or [],
+            }
 
             image_bytes = self._generate_api_image_bytes(
                 prompt=prompt,
@@ -2932,20 +3126,29 @@ class WorkflowRunner:
             )
             if not isinstance(image_bytes, (bytes, bytearray)):
                 raise RuntimeError(
-                    f"api image generator returned non-bytes payload for shot {shot_id}"
+                    f"api image provider returned invalid bytes for scene {scene_id}"
                 )
-            output_path.write_bytes(image_bytes)
+
+            output_path.write_bytes(bytes(image_bytes))
+
+            asset_meta = self._image_asset_metadata(
+                scene=scene,
+                prompt_item=prompt_item,
+                fallback_scene_title=str(scene.get("scene_title") or "").strip(),
+            )
 
             assets.append(
                 {
                     "scene_id": scene_id,
-                    "scene_title": scene.get("scene_title"),
+                    "scene_title": asset_meta["scene_title"],
+                    "characters": asset_meta["characters"],
+                    "character_ids": asset_meta["character_ids"],
+                    "prompt": prompt,
                     "file_name": file_name,
                     "relative_path": f"assets/mock/image/{ctx.run_id}/{file_name}",
                     "public_url": f"/assets/mock/image/{ctx.run_id}/{file_name}",
                     "mime_type": "image/png",
                     "status": "generated",
-                    "prompt": prompt,
                 }
             )
 
@@ -2956,6 +3159,7 @@ class WorkflowRunner:
             "asset_count": len(assets),
             "assets": assets,
         }
+    
     def _run_video_prompts(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
