@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import InteractiveImageReview from './components/InteractiveImageReview.vue'
 import WorkflowResultsPanel from './components/WorkflowResultsPanel.vue'
 import WorkflowRunPanel from './components/WorkflowRunPanel.vue'
+import SampleAssetsPanel from './components/SampleAssetsPanel.vue'
 type StepName =
   | 'story'
   | 'storyboard'
@@ -284,34 +285,6 @@ function toAssetHref(path?: string): string {
   const normalizedPath = trimmed.startsWith('/') ? trimmed : `/${trimmed}`
 
   return `${normalizedBase}${normalizedPath}`
-}
-
-function hasAssetLink(path?: string): boolean {
-  return Boolean(path && path.trim())
-}
-
-function isImageAsset(path?: string): boolean {
-  if (!path) {
-    return false
-  }
-
-  const value = path.toLowerCase()
-  return (
-    value.endsWith('.png') ||
-    value.endsWith('.jpg') ||
-    value.endsWith('.jpeg') ||
-    value.endsWith('.webp') ||
-    value.endsWith('.gif')
-  )
-}
-
-function isVideoAsset(path?: string): boolean {
-  if (!path) {
-    return false
-  }
-
-  const value = path.toLowerCase()
-  return value.endsWith('.mp4') || value.endsWith('.webm') || value.endsWith('.mov')
 }
 
 function stringifyPretty(value: unknown): string {
@@ -790,194 +763,20 @@ onMounted(() => {
       <p class="desc">
         输入一个主题，系统按默认参数或可选配置生成故事、分镜、旁白、字幕与视频渲染计划。
       </p>
-            <section class="samples-panel">
-        <div class="samples-panel-head">
-          <div>
-            <h2 class="section-title">Real Sample Assets</h2>
-            <p class="samples-desc">
-              展示项目四当前已归档的真实可灵样片，总览 / 列表 / 详情三层查询已接入。
-            </p>
-          </div>
-
-          <button class="secondary-btn" :disabled="samplesLoading" @click="loadSampleAssets">
-            {{ samplesLoading ? 'Loading...' : 'Refresh Samples' }}
-          </button>
-        </div>
-
-        <p v-if="samplesErrorMessage" class="error">
-          样例资产加载失败：{{ samplesErrorMessage }}
-        </p>
-
-        <div v-if="samplesSummary" class="samples-summary-grid">
-          <div class="samples-metric">
-            <span class="metric-label">Providers</span>
-            <strong class="metric-value">
-              {{ (samplesSummary.providers || []).join(', ') || '-' }}
-            </strong>
-          </div>
-
-          <div class="samples-metric">
-            <span class="metric-label">Total Samples</span>
-            <strong class="metric-value">
-              {{ samplesSummary.total_sample_count ?? 0 }}
-            </strong>
-          </div>
-
-          <div class="samples-metric samples-metric-wide">
-            <span class="metric-label">Provider Stats</span>
-            <pre class="light-result compact-result">{{ providerStatsText }}</pre>
-          </div>
-        </div>
-
-        <div class="samples-layout">
-          <section class="samples-list-panel">
-            <h3 class="subsection-title">Kling Sample List</h3>
-
-            <p v-if="klingSamples.length === 0" class="hint">
-              当前没有可展示的样片记录。
-            </p>
-
-            <button
-              v-for="sample in klingSamples"
-              :key="sample.sample_id || sample.scene_id"
-              class="sample-list-item"
-              :class="{ active: sample.sample_id === selectedSampleId }"
-              @click="selectSample(sample.sample_id || '')"
-            >
-              <strong>{{ sample.sample_id || 'unknown-sample' }}</strong>
-              <span>scene_id: {{ sample.scene_id || '-' }}</span>
-              <span>status: {{ sample.status || '-' }}</span>
-            </button>
-          </section>
-
-          <section class="sample-detail-panel">
-            <h3 class="subsection-title">Sample Detail</h3>
-
-            <div v-if="selectedSampleDetail" class="sample-detail-content">
-              <div class="detail-row">
-                <span class="detail-label">sample_id</span>
-                <code>{{ selectedSampleDetail.sample_id || '-' }}</code>
-              </div>
-
-              <div class="detail-row">
-                <span class="detail-label">scene_id</span>
-                <code>{{ selectedSampleDetail.scene_id || '-' }}</code>
-              </div>
-
-              <div class="detail-row">
-                <span class="detail-label">generated_scene_id</span>
-                <code>{{ selectedSampleDetail.generated_scene_id || '-' }}</code>
-              </div>
-
-              <div class="detail-row">
-                <span class="detail-label">status</span>
-                <code>{{ selectedSampleDetail.status || '-' }}</code>
-              </div>
-
-              <div class="detail-block">
-                <span class="detail-label">notes</span>
-                <p class="detail-text">{{ selectedSampleDetail.notes || '-' }}</p>
-                <a
-                  v-if="hasAssetLink(selectedSampleDetail.assets?.notes)"
-                  class="asset-link"
-                  :href="toAssetHref(selectedSampleDetail.assets?.notes)"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Open notes file
-                </a>
-
-                <div class="notes-preview-block">
-                  <span class="detail-label">notes preview</span>
-                  <p v-if="selectedSampleNotesLoading" class="detail-text">Loading notes...</p>
-                  <pre v-else class="notes-preview">{{ selectedSampleNotesText || '-' }}</pre>
-                </div>
-              </div>
-
-              <div class="detail-block">
-                <span class="detail-label">clean_video</span>
-                <code>{{ selectedSampleDetail.assets?.clean_video || '-' }}</code>
-                <a
-                  v-if="hasAssetLink(selectedSampleDetail.assets?.clean_video)"
-                  class="asset-link"
-                  :href="toAssetHref(selectedSampleDetail.assets?.clean_video)"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Open clean video
-                </a>
-                <video
-                  v-if="isVideoAsset(selectedSampleDetail.assets?.clean_video)"
-                  class="asset-video"
-                  controls
-                  preload="metadata"
-                  :src="toAssetHref(selectedSampleDetail.assets?.clean_video)"
-                />
-              </div>
-
-              <div class="detail-block">
-                <span class="detail-label">watermarked_video</span>
-                <code>{{ selectedSampleDetail.assets?.watermarked_video || '-' }}</code>
-                <a
-                  v-if="hasAssetLink(selectedSampleDetail.assets?.watermarked_video)"
-                  class="asset-link"
-                  :href="toAssetHref(selectedSampleDetail.assets?.watermarked_video)"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Open watermarked video
-                </a>
-              </div>
-
-              <div class="detail-block">
-                <span class="detail-label">input_screenshot</span>
-                <code>{{ selectedSampleDetail.assets?.input_screenshot || '-' }}</code>
-                <a
-                  v-if="isImageAsset(selectedSampleDetail.assets?.input_screenshot)"
-                  class="asset-image-link"
-                  :href="toAssetHref(selectedSampleDetail.assets?.input_screenshot)"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <img
-                    class="asset-image asset-image-thumbnail"
-                    :src="toAssetHref(selectedSampleDetail.assets?.input_screenshot)"
-                    alt="input screenshot preview"
-                  />
-                </a>
-              </div>
-
-              <div class="detail-block">
-                <span class="detail-label">result_screenshots</span>
-                <ul class="asset-list asset-grid-list">
-                  <li
-                    v-for="path in selectedSampleDetail.assets?.result_screenshots || []"
-                    :key="path"
-                    class="asset-list-item"
-                  >
-                    <code>{{ path }}</code>
-                    <a
-                      v-if="isImageAsset(path)"
-                      class="asset-image-link"
-                      :href="toAssetHref(path)"
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      <img
-                        class="asset-image asset-image-thumbnail"
-                        :src="toAssetHref(path)"
-                        :alt="path"
-                      />
-                    </a>
-                  </li>
-                </ul>
-              </div>
-            </div>
-
-            <p v-else class="hint">请选择左侧样片查看详情。</p>
-          </section>
-        </div>
-      </section>
+      <SampleAssetsPanel
+        :samples-loading="samplesLoading"
+        :samples-error-message="samplesErrorMessage"
+        :samples-summary="samplesSummary"
+        :provider-stats-text="providerStatsText"
+        :kling-samples="klingSamples"
+        :selected-sample-id="selectedSampleId"
+        :selected-sample-detail="selectedSampleDetail"
+        :selected-sample-notes-text="selectedSampleNotesText"
+        :selected-sample-notes-loading="selectedSampleNotesLoading"
+        :api-base-url="apiBaseUrl"
+        @refresh="loadSampleAssets"
+        @select-sample="selectSample"
+      />    
       <WorkflowRunPanel
         :loading="loading"
         :can-submit="canSubmit"
