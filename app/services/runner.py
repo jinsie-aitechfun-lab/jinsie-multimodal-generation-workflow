@@ -484,7 +484,9 @@ class WorkflowRunner:
             aggregated_outputs[name] = output
 
             if name == "image_assets" and isinstance(output, dict):
-                aggregated_outputs["image_review"] = self._build_default_image_review(output)
+                aggregated_outputs["image_review"] = self._build_image_review_from_assets(
+                    aggregated_outputs
+                )
 
         session_memory_summary = self._build_session_memory_summary(
             req.session_id,
@@ -1451,27 +1453,25 @@ class WorkflowRunner:
                 mapping[scene_id] = item
         return mapping
 
-    def _selected_asset_ref_by_scene_id(
-        self, outputs: Dict[str, Any]
-    ) -> Dict[str, Dict[str, Any]]:
-        image_review = outputs.get("image_review") or {}
-        selected_assets = image_review.get("selected_assets") or []
-
-        mapping: Dict[str, Dict[str, Any]] = {}
-        for item in selected_assets:
-            if not isinstance(item, dict):
-                continue
-            scene_id = str(item.get("scene_id") or "").strip()
-            selected_asset_ref = item.get("selected_asset_ref") or {}
-            if scene_id and isinstance(selected_asset_ref, dict) and selected_asset_ref:
-                mapping[scene_id] = selected_asset_ref
-
-        return mapping
-
-    def _build_default_image_review(
+    def _image_asset_ref_from_item(
         self,
-        image_assets_output: Dict[str, Any],
+        item: Dict[str, Any],
+        provider: str,
     ) -> Dict[str, Any]:
+        return {
+            "scene_id": item.get("scene_id"),
+            "file_name": item.get("file_name"),
+            "relative_path": item.get("relative_path"),
+            "public_url": item.get("public_url"),
+            "mime_type": item.get("mime_type"),
+            "provider": provider,
+        }
+
+    def _build_image_review_from_assets(
+        self,
+        outputs: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        image_assets_output = outputs.get("image_assets") or {}
         assets = image_assets_output.get("assets") or []
         provider = str(image_assets_output.get("provider") or "").strip()
 
@@ -1482,16 +1482,11 @@ class WorkflowRunner:
                 continue
 
             scene_id = str(item.get("scene_id") or "").strip()
-            scene_title = str(item.get("scene_title") or "").strip()
+            if not scene_id:
+                continue
 
-            selected_asset_ref = {
-                "scene_id": item.get("scene_id"),
-                "file_name": item.get("file_name"),
-                "relative_path": item.get("relative_path"),
-                "public_url": item.get("public_url"),
-                "mime_type": item.get("mime_type"),
-                "provider": provider,
-            }
+            scene_title = str(item.get("scene_title") or "").strip()
+            selected_asset_ref = self._image_asset_ref_from_item(item, provider)
 
             selected_assets.append(
                 {
@@ -1499,7 +1494,10 @@ class WorkflowRunner:
                     "scene_title": scene_title,
                     "review_status": "auto_selected",
                     "selection_mode": "default_first_pass",
+                    "selection_source": "default_auto_selection",
+                    "selection_reason": "default_selected_from_image_assets",
                     "selected_asset_ref": selected_asset_ref,
+                    "candidate_asset_refs": [selected_asset_ref],
                     "characters": item.get("characters") or [],
                     "character_ids": item.get("character_ids") or [],
                     "prompt": str(item.get("prompt") or "").strip(),
@@ -1508,12 +1506,47 @@ class WorkflowRunner:
 
         return {
             "enabled": True,
-            "mode": "default_auto_selection",
+            "mode": "selection_contract",
             "provider": provider,
             "asset_count": len(assets),
             "selected_count": len(selected_assets),
             "selected_assets": selected_assets,
         }
+    def _selection_item_by_scene_id(
+        self, outputs: Dict[str, Any]
+    ) -> Dict[str, Dict[str, Any]]:
+        image_review = outputs.get("image_review") or {}
+        selected_assets = image_review.get("selected_assets") or []
+
+        mapping: Dict[str, Dict[str, Any]] = {}
+        for item in selected_assets:
+            if not isinstance(item, dict):
+                continue
+
+            scene_id = str(item.get("scene_id") or "").strip()
+            if scene_id:
+                mapping[scene_id] = item
+
+        return mapping
+    def _selected_asset_ref_by_scene_id(
+        self, outputs: Dict[str, Any]
+    ) -> Dict[str, Dict[str, Any]]:
+        selection_items = self._selection_item_by_scene_id(outputs)
+
+        mapping: Dict[str, Dict[str, Any]] = {}
+        for scene_id, item in selection_items.items():
+            selected_asset_ref = item.get("selected_asset_ref") or {}
+            if isinstance(selected_asset_ref, dict) and selected_asset_ref:
+                mapping[scene_id] = selected_asset_ref
+
+        return mapping
+    def _build_default_image_review(
+        self,
+        image_assets_output: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        return self._build_image_review_from_assets(
+            {"image_assets": image_assets_output}
+        )
     def _video_prompt_scene_metadata(
         self,
         scene: Dict[str, Any],
@@ -1534,19 +1567,23 @@ class WorkflowRunner:
                 seen.add(character_id)
 
         scene_id = str(scene.get("scene_id") or "").strip()
-
-        image_asset = self._image_asset_by_scene_id(outputs).get(scene_id) or {}
-        selected_asset = self._selected_asset_ref_by_scene_id(outputs).get(scene_id) or {}
-
-        effective_asset_ref = selected_asset or image_asset
-        selection_source = "image_review" if selected_asset else "image_assets"
+        selection_item = self._selection_item_by_scene_id(outputs).get(scene_id) or {}
+        selected_asset_ref = selection_item.get("selected_asset_ref") or {}
 
         return {
             "characters": characters,
             "character_ids": character_ids,
-            "selected_asset_ref": selected_asset,
-            "image_asset_ref": effective_asset_ref,
-            "selection_source": selection_source,
+            "selected_asset_ref": selected_asset_ref,
+            "image_asset_ref": selected_asset_ref,
+            "selection_source": str(
+                selection_item.get("selection_source") or "unknown"
+            ).strip(),
+            "selection_mode": str(
+                selection_item.get("selection_mode") or "unknown"
+            ).strip(),
+            "review_status": str(
+                selection_item.get("review_status") or "unreviewed"
+            ).strip(),
         }
     def _attach_video_prompt_contract(
         self,
@@ -1561,6 +1598,8 @@ class WorkflowRunner:
         enriched["selected_asset_ref"] = meta["selected_asset_ref"]
         enriched["image_asset_ref"] = meta["image_asset_ref"]
         enriched["selection_source"] = meta["selection_source"]
+        enriched["selection_mode"] = meta["selection_mode"]
+        enriched["review_status"] = meta["review_status"]
         return enriched
     def _build_video_prompt_base(
         self,
