@@ -685,8 +685,6 @@ async function runWorkflow() {
   currentWorkflowPayload.value = null
   storyText.value = ''
   storyboardText.value = ''
-  currentWorkflowResponse.value = null
-  currentWorkflowPayload.value = null
   imagePromptsText.value = ''
   imageAssetsText.value = ''
   imageReviewText.value = ''
@@ -1176,129 +1174,10 @@ h1 {
   font-size: 15px;
 }
 
-.label {
-  display: block;
-  margin-bottom: 8px;
-  color: #111827;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.input {
-  width: 100%;
-  box-sizing: border-box;
-  border: 1px solid #d1d5db;
-  border-radius: 12px;
-  padding: 12px 14px;
-  margin-bottom: 16px;
-  font-size: 14px;
-  color: #111827;
-  background: #ffffff;
-}
-
-.textarea {
-  width: 100%;
-  box-sizing: border-box;
-  border: 1px solid #d1d5db;
-  border-radius: 12px;
-  padding: 12px 14px;
-  font-size: 15px;
-  line-height: 1.5;
-  resize: vertical;
-  background: #ffffff;
-  color: #111827;
-}
-
-.textarea:focus,
-.input:focus,
-.textarea:focus {
-  outline: none;
-  border-color: #111827;
-}
-
-.config-panel,
-.steps-panel,
-.story-panel,
-.result-panel,
-.summary-item {
-  margin-top: 20px;
-  padding: 16px;
-  border-radius: 14px;
-  background: #f8fafc;
-  border: 1px solid #e5e7eb;
-}
-
-.config-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.field {
-  display: block;
-}
-
-.field span,
-.checkbox-field span {
-  display: block;
-  margin-bottom: 8px;
-  color: #111827;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.checkbox-field {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-top: 28px;
-}
-
-.checkbox-field span {
-  margin-bottom: 0;
-  font-weight: 500;
-}
-
-.steps-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.step-option {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #111827;
-  font-size: 14px;
-}
-
 .hint {
   margin: 12px 0 0;
   color: #dc2626;
   font-size: 13px;
-}
-
-.btn {
-  margin-top: 16px;
-  border: none;
-  border-radius: 10px;
-  padding: 12px 18px;
-  font-size: 15px;
-  cursor: pointer;
-  background: #111827;
-  color: #ffffff;
-}
-
-.btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.7;
-}
-
-.error {
-  margin-top: 16px;
-  color: #dc2626;
-  font-size: 14px;
 }
 
 .summary-panel,
@@ -1334,14 +1213,6 @@ h1 {
   font-size: 16px;
   line-height: 1.4;
   color: #111827;
-}
-
-.story-text {
-  margin: 0;
-  color: #1f2937;
-  font-size: 15px;
-  line-height: 1.8;
-  white-space: pre-wrap;
 }
 
 .result {
