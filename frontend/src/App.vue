@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import InteractiveImageReview from './components/InteractiveImageReview.vue'
 import WorkflowResultsPanel from './components/WorkflowResultsPanel.vue'
+import WorkflowRunPanel from './components/WorkflowRunPanel.vue'
 type StepName =
   | 'story'
   | 'storyboard'
@@ -979,196 +980,67 @@ onMounted(() => {
           </section>
         </div>
       </section>
-
-      <label class="label" for="session-id">Session ID</label>
-      <input
-        id="session-id"
-        v-model="sessionId"
-        class="input"
-        type="text"
-        placeholder="请输入会话标识，例如 demo-session-001"
+      <WorkflowRunPanel
+        :loading="loading"
+        :can-submit="canSubmit"
+        :error-message="errorMessage"
+        :session-id="sessionId"
+        :topic="topic"
+        :audience="audience"
+        :tone="tone"
+        :visual-style="visualStyle"
+        :character-style="characterStyle"
+        :voice-style="voiceStyle"
+        :voiceover-enabled="voiceoverEnabled"
+        :voice-mode="voiceMode"
+        :narrator-voice-style="narratorVoiceStyle"
+        :mother-voice-style="motherVoiceStyle"
+        :child-voice-style="childVoiceStyle"
+        :duration-sec="durationSec"
+        :language="language"
+        :subtitle-enabled="subtitleEnabled"
+        :video-provider="videoProvider"
+        :output-mode="outputMode"
+        :structured-characters-enabled="structuredCharactersEnabled"
+        :primary-character-display-name="primaryCharacterDisplayName"
+        :primary-character-species="primaryCharacterSpecies"
+        :primary-character-visual-traits="primaryCharacterVisualTraits"
+        :primary-character-forbidden-traits="primaryCharacterForbiddenTraits"
+        :secondary-character-display-name="secondaryCharacterDisplayName"
+        :secondary-character-species="secondaryCharacterSpecies"
+        :secondary-character-visual-traits="secondaryCharacterVisualTraits"
+        :secondary-character-forbidden-traits="secondaryCharacterForbiddenTraits"
+        :selected-steps="selectedSteps"
+        :step-options="STEP_OPTIONS"
+        @update:sessionId="sessionId = $event"
+        @update:topic="topic = $event"
+        @update:audience="audience = $event"
+        @update:tone="tone = $event"
+        @update:visualStyle="visualStyle = $event"
+        @update:characterStyle="characterStyle = $event"
+        @update:voiceStyle="voiceStyle = $event"
+        @update:voiceoverEnabled="voiceoverEnabled = $event"
+        @update:voiceMode="voiceMode = $event"
+        @update:narratorVoiceStyle="narratorVoiceStyle = $event"
+        @update:motherVoiceStyle="motherVoiceStyle = $event"
+        @update:childVoiceStyle="childVoiceStyle = $event"
+        @update:durationSec="durationSec = $event"
+        @update:language="language = $event"
+        @update:subtitleEnabled="subtitleEnabled = $event"
+        @update:videoProvider="videoProvider = $event"
+        @update:outputMode="outputMode = $event"
+        @update:structuredCharactersEnabled="structuredCharactersEnabled = $event"
+        @update:primaryCharacterDisplayName="primaryCharacterDisplayName = $event"
+        @update:primaryCharacterSpecies="primaryCharacterSpecies = $event"
+        @update:primaryCharacterVisualTraits="primaryCharacterVisualTraits = $event"
+        @update:primaryCharacterForbiddenTraits="primaryCharacterForbiddenTraits = $event"
+        @update:secondaryCharacterDisplayName="secondaryCharacterDisplayName = $event"
+        @update:secondaryCharacterSpecies="secondaryCharacterSpecies = $event"
+        @update:secondaryCharacterVisualTraits="secondaryCharacterVisualTraits = $event"
+        @update:secondaryCharacterForbiddenTraits="secondaryCharacterForbiddenTraits = $event"
+        @update:selectedSteps="selectedSteps = $event"
+        @run="runWorkflow"
       />
-
-      <label class="label" for="topic">Topic</label>
-      <textarea
-        id="topic"
-        v-model="topic"
-        class="textarea"
-        rows="4"
-        placeholder="请输入一个主题，例如：写一个关于小猫冒险的故事"
-      />
-
-      <section class="config-panel">
-        <h2 class="section-title">Generation Config</h2>
-
-        <div class="config-grid">
-          <label class="field">
-            <span>Audience</span>
-            <input v-model="audience" class="input" type="text" />
-          </label>
-
-          <label class="field">
-            <span>Tone</span>
-            <input v-model="tone" class="input" type="text" />
-          </label>
-
-          <label class="field">
-            <span>Visual Style</span>
-            <input v-model="visualStyle" class="input" type="text" />
-          </label>
-
-          <label class="field">
-            <span>Character Style</span>
-            <input v-model="characterStyle" class="input" type="text" />
-          </label>
-
-                    <label class="field">
-            <span>Voice Style</span>
-            <input v-model="voiceStyle" class="input" type="text" />
-          </label>
-
-          <label class="checkbox-field">
-            <input v-model="voiceoverEnabled" type="checkbox" />
-            <span>Enable Voiceover</span>
-          </label>
-
-          <label class="field">
-            <span>Voice Mode</span>
-            <select v-model="voiceMode" class="input">
-              <option value="single">single</option>
-              <option value="multi">multi</option>
-            </select>
-          </label>
-
-          <label class="field">
-            <span>Narrator Voice</span>
-            <input v-model="narratorVoiceStyle" class="input" type="text" />
-          </label>
-
-          <label v-if="voiceMode === 'multi'" class="field">
-            <span>Mother Voice</span>
-            <input v-model="motherVoiceStyle" class="input" type="text" />
-          </label>
-
-          <label v-if="voiceMode === 'multi'" class="field">
-            <span>Child Voice</span>
-            <input v-model="childVoiceStyle" class="input" type="text" />
-          </label>
-
-          <label class="field">
-            <span>Duration (sec)</span>
-            <input v-model.number="durationSec" class="input" type="number" min="15" max="300" />
-          </label>
-
-          <label class="field">
-            <span>Language</span>
-            <input v-model="language" class="input" type="text" />
-          </label>
-
-          <label class="field">
-            <span>Video Provider</span>
-            <input v-model="videoProvider" class="input" type="text" />
-          </label>
-
-          <label class="field">
-            <span>Output Mode</span>
-            <input v-model="outputMode" class="input" type="text" />
-          </label>
-
-          <label class="checkbox-field">
-            <input v-model="subtitleEnabled" type="checkbox" />
-            <span>Enable Subtitles</span>
-          </label>
-        </div>
-      </section>
-
-      <section class="config-panel">
-        <h2 class="section-title">Character Finalization</h2>
-
-        <label class="checkbox-field">
-          <input v-model="structuredCharactersEnabled" type="checkbox" />
-          <span>Enable Structured Characters</span>
-        </label>
-
-        <div v-if="structuredCharactersEnabled" class="config-grid">
-          <label class="field">
-            <span>Primary Character Display Name</span>
-            <input v-model="primaryCharacterDisplayName" class="input" type="text" />
-          </label>
-
-          <label class="field">
-            <span>Primary Character Species</span>
-            <input v-model="primaryCharacterSpecies" class="input" type="text" />
-          </label>
-
-          <label class="field">
-            <span>Primary Visual Traits</span>
-            <textarea
-              v-model="primaryCharacterVisualTraits"
-              class="textarea"
-              rows="3"
-              placeholder="例如：long upright ears, white fur, red scarf"
-            />
-          </label>
-
-          <label class="field">
-            <span>Primary Forbidden Traits</span>
-            <textarea
-              v-model="primaryCharacterForbiddenTraits"
-              class="textarea"
-              rows="3"
-              placeholder="例如：cat ears, turtle shell"
-            />
-          </label>
-
-          <label class="field">
-            <span>Secondary Character Display Name</span>
-            <input v-model="secondaryCharacterDisplayName" class="input" type="text" />
-          </label>
-
-          <label class="field">
-            <span>Secondary Character Species</span>
-            <input v-model="secondaryCharacterSpecies" class="input" type="text" />
-          </label>
-
-          <label class="field">
-            <span>Secondary Visual Traits</span>
-            <textarea
-              v-model="secondaryCharacterVisualTraits"
-              class="textarea"
-              rows="3"
-              placeholder="例如：round shell, short legs, green shell"
-            />
-          </label>
-
-          <label class="field">
-            <span>Secondary Forbidden Traits</span>
-            <textarea
-              v-model="secondaryCharacterForbiddenTraits"
-              class="textarea"
-              rows="3"
-              placeholder="例如：rabbit ears, cat ears"
-            />
-          </label>
-        </div>
-      </section>
-
-      <section class="steps-panel">
-        <h2 class="section-title">Workflow Steps</h2>
-        <div class="steps-grid">
-          <label v-for="step in STEP_OPTIONS" :key="step.value" class="step-option">
-            <input v-model="selectedSteps" type="checkbox" :value="step.value" />
-            <span>{{ step.label }}</span>
-          </label>
-        </div>
-        <p v-if="selectedSteps.length === 0" class="hint">请至少选择一个 step。</p>
-      </section>
-
-      <button class="btn" :disabled="!canSubmit" @click="runWorkflow">
-        {{ loading ? '请求中...' : 'Run Workflow' }}
-      </button>
-
-      <p v-if="errorMessage" class="error">请求失败：{{ errorMessage }}</p>
       <InteractiveImageReview
         :items="imageReviewSelectedAssets"
         :api-base-url="apiBaseUrl"
