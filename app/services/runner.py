@@ -1651,6 +1651,148 @@ class WorkflowRunner:
             return self._build_jimeng_video_prompts(ctx, scenes, outputs)
 
         raise UnknownVideoProviderError(f"Unknown video provider: {provider}")
+    
+    def _apply_manual_image_selection(
+        self,
+        image_review: Dict[str, Any],
+        scene_id: str,
+        selected_asset_ref: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        updated_review = dict(image_review or {})
+        selected_assets = updated_review.get("selected_assets") or []
+
+        normalized_scene_id = str(scene_id or "").strip()
+        if not normalized_scene_id:
+            raise ValueError("scene_id is required")
+
+        if not isinstance(selected_asset_ref, dict) or not selected_asset_ref:
+            raise ValueError("selected_asset_ref is required")
+
+        updated_items: List[Dict[str, Any]] = []
+        found = False
+
+        for item in selected_assets:
+            if not isinstance(item, dict):
+                updated_items.append(item)
+                continue
+
+            item_scene_id = str(item.get("scene_id") or "").strip()
+            if item_scene_id != normalized_scene_id:
+                updated_items.append(item)
+                continue
+
+            updated_item = dict(item)
+            updated_item["selected_asset_ref"] = dict(selected_asset_ref)
+            updated_item["selection_source"] = "manual_selection"
+            updated_item["selection_mode"] = "manual_click_override"
+            updated_item["review_status"] = "manually_selected"
+            updated_item["selection_reason"] = "selected_by_user_click"
+
+            candidate_asset_refs = updated_item.get("candidate_asset_refs") or []
+            if isinstance(candidate_asset_refs, list):
+                already_exists = False
+                for candidate in candidate_asset_refs:
+                    if not isinstance(candidate, dict):
+                        continue
+                    if (
+                        str(candidate.get("relative_path") or "").strip()
+                        == str(selected_asset_ref.get("relative_path") or "").strip()
+                        and str(candidate.get("file_name") or "").strip()
+                        == str(selected_asset_ref.get("file_name") or "").strip()
+                    ):
+                        already_exists = True
+                        break
+
+                if not already_exists:
+                    updated_item["candidate_asset_refs"] = candidate_asset_refs + [
+                        dict(selected_asset_ref)
+                    ]
+            else:
+                updated_item["candidate_asset_refs"] = [dict(selected_asset_ref)]
+
+            updated_items.append(updated_item)
+            found = True
+
+        if not found:
+            raise ValueError(f"scene_id not found in image_review: {normalized_scene_id}")
+
+        updated_review["selected_assets"] = updated_items
+        updated_review["selected_count"] = len(
+            [item for item in updated_items if isinstance(item, dict)]
+        )
+        updated_review["mode"] = "selection_contract"
+        return updated_review
+
+    def update_image_review_selection(
+        self,
+        workflow_id: str,
+        session_id: Optional[str],
+        run_id: str,
+        scene_id: str,
+        selected_asset_ref: Dict[str, Any],
+        image_review: Dict[str, Any],
+        video_provider: str = "mock",
+    ) -> Dict[str, Any]:
+        updated_image_review = self._apply_manual_image_selection(
+            image_review=image_review,
+            scene_id=scene_id,
+            selected_asset_ref=selected_asset_ref,
+        )
+
+        storyboard_scene_id = str(scene_id or "").strip()
+        storyboard_scenes: List[Dict[str, Any]] = []
+
+        for item in updated_image_review.get("selected_assets") or []:
+            if not isinstance(item, dict):
+                continue
+            item_scene_id = str(item.get("scene_id") or "").strip()
+            if item_scene_id != storyboard_scene_id:
+                continue
+
+            storyboard_scenes.append(
+                {
+                    "scene_id": item_scene_id,
+                    "scene_title": str(item.get("scene_title") or "").strip(),
+                    "visual_description": "",
+                    "narration": "",
+                    "duration_sec": 0,
+                    "shot_type": "medium",
+                    "transition": "cut",
+                    "characters": item.get("characters") or [],
+                }
+            )
+
+        outputs = {
+            "image_review": updated_image_review,
+            "storyboard": {
+                "scenes": storyboard_scenes,
+            },
+        }
+
+        ctx = StepContext(
+            workflow_id=workflow_id,
+            session_id=session_id,
+            run_id=run_id,
+            input=WorkflowInput(
+                topic="manual_selection_update",
+                video_provider=video_provider,
+            ),
+        )
+
+        video_prompts = self._build_video_provider_prompts(
+            ctx=ctx,
+            scenes=storyboard_scenes,
+            outputs=outputs,
+        )
+
+        return {
+            "workflow_id": workflow_id,
+            "session_id": session_id,
+            "run_id": run_id,
+            "scene_id": scene_id,
+            "image_review": updated_image_review,
+            "video_prompts": video_prompts,
+        }
     def _build_mock_video_prompts(
         self,
         ctx: StepContext,

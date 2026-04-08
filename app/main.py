@@ -4,7 +4,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.schemas.workflow import WorkflowRunRequest, WorkflowRunResponse
+from app.schemas.workflow import (
+    ImageReviewSelectRequest,
+    ImageReviewSelectResponse,
+    WorkflowRunRequest,
+    WorkflowRunResponse,
+)
 from app.services.runner import UnknownStepError, WorkflowRunner
 
 app = FastAPI(title="jinsie-multimodal-generation-workflow", version="0.1.0")
@@ -64,4 +69,33 @@ def run_workflow(req: WorkflowRunRequest):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         print("[workflow] runtime error", repr(e))
+        raise
+@app.post("/v1/image-review/select", response_model=ImageReviewSelectResponse)
+def select_image_review_asset(req: ImageReviewSelectRequest):
+    print("[image-review] selection request received", req.workflow_id, req.scene_id)
+    try:
+        result = _runner.update_image_review_selection(
+            workflow_id=req.workflow_id,
+            session_id=req.session_id,
+            run_id=req.run_id,
+            scene_id=req.scene_id,
+            selected_asset_ref=req.selected_asset_ref,
+            image_review=req.image_review,
+            video_provider=req.video_provider,
+        )
+        print("[image-review] selection updated", req.run_id, req.scene_id)
+        return ImageReviewSelectResponse(
+            workflow_id=result["workflow_id"],
+            session_id=result.get("session_id"),
+            run_id=result["run_id"],
+            scene_id=result["scene_id"],
+            image_review=result["image_review"],
+            video_prompts=result["video_prompts"],
+            timestamp=ImageReviewSelectResponse.now_timestamp(),
+        )
+    except ValueError as e:
+        print("[image-review] bad request", str(e))
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        print("[image-review] runtime error", repr(e))
         raise

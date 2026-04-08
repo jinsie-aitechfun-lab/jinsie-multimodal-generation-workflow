@@ -176,3 +176,30 @@ class WorkflowRunResponse(BaseModel):
             .isoformat()
             .replace("+00:00", "Z")
         )
+class ImageReviewSelectRequest(BaseModel):
+    workflow_id: str
+    session_id: Optional[str] = None
+    run_id: str
+    scene_id: str
+    selected_asset_ref: Dict[str, Any] = Field(default_factory=dict)
+    image_review: Dict[str, Any] = Field(default_factory=dict)
+    video_provider: str = Field(default="mock")
+
+
+class ImageReviewSelectResponse(BaseModel):
+    workflow_id: str
+    session_id: Optional[str] = None
+    run_id: str
+    scene_id: str
+    image_review: Dict[str, Any] = Field(default_factory=dict)
+    video_prompts: Dict[str, Any] = Field(default_factory=dict)
+    timestamp: str
+
+    @staticmethod
+    def now_timestamp() -> str:
+        return (
+            datetime.now(timezone.utc)
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
