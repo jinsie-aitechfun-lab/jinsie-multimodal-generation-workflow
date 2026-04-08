@@ -1731,6 +1731,8 @@ class WorkflowRunner:
         scene_id: str,
         selected_asset_ref: Dict[str, Any],
         image_review: Dict[str, Any],
+        storyboard: Dict[str, Any],
+        workflow_input: Dict[str, Any],
         video_provider: str = "mock",
     ) -> Dict[str, Any]:
         updated_image_review = self._apply_manual_image_selection(
@@ -1739,28 +1741,30 @@ class WorkflowRunner:
             selected_asset_ref=selected_asset_ref,
         )
 
-        storyboard_scene_id = str(scene_id or "").strip()
-        storyboard_scenes: List[Dict[str, Any]] = []
+        storyboard_scenes = (storyboard or {}).get("scenes") or []
+        if not isinstance(storyboard_scenes, list) or not storyboard_scenes:
+            raise ValueError("storyboard.scenes is required")
 
-        for item in updated_image_review.get("selected_assets") or []:
-            if not isinstance(item, dict):
-                continue
-            item_scene_id = str(item.get("scene_id") or "").strip()
-            if item_scene_id != storyboard_scene_id:
-                continue
-
-            storyboard_scenes.append(
-                {
-                    "scene_id": item_scene_id,
-                    "scene_title": str(item.get("scene_title") or "").strip(),
-                    "visual_description": "",
-                    "narration": "",
-                    "duration_sec": 0,
-                    "shot_type": "medium",
-                    "transition": "cut",
-                    "characters": item.get("characters") or [],
+        try:
+            normalized_input = WorkflowInput(
+                **{
+                    **(workflow_input or {}),
+                    "video_provider": (
+                        str(video_provider or "").strip()
+                        or str((workflow_input or {}).get("video_provider") or "").strip()
+                        or "mock"
+                    ),
                 }
             )
+        except Exception as e:
+            raise ValueError(f"invalid workflow_input: {e}") from e
+
+        ctx = StepContext(
+            workflow_id=workflow_id,
+            session_id=session_id,
+            run_id=run_id,
+            input=normalized_input,
+        )
 
         outputs = {
             "image_review": updated_image_review,
@@ -1768,16 +1772,6 @@ class WorkflowRunner:
                 "scenes": storyboard_scenes,
             },
         }
-
-        ctx = StepContext(
-            workflow_id=workflow_id,
-            session_id=session_id,
-            run_id=run_id,
-            input=WorkflowInput(
-                topic="manual_selection_update",
-                video_provider=video_provider,
-            ),
-        )
 
         video_prompts = self._build_video_provider_prompts(
             ctx=ctx,

@@ -81,6 +81,8 @@ def select_image_review_asset(req: ImageReviewSelectRequest):
             scene_id=req.scene_id,
             selected_asset_ref=req.selected_asset_ref,
             image_review=req.image_review,
+            storyboard=req.storyboard,
+            workflow_input=req.workflow_input,
             video_provider=req.video_provider,
         )
         print("[image-review] selection updated", req.run_id, req.scene_id)
