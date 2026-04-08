@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import InteractiveImageReview from './components/InteractiveImageReview.vue'
-
+import WorkflowResultsPanel from './components/WorkflowResultsPanel.vue'
 type StepName =
   | 'story'
   | 'storyboard'
@@ -1169,26 +1169,6 @@ onMounted(() => {
       </button>
 
       <p v-if="errorMessage" class="error">请求失败：{{ errorMessage }}</p>
-
-      <section v-if="storyText" class="story-panel">
-        <h2 class="section-title">Story Result</h2>
-        <p class="story-text">{{ storyText }}</p>
-      </section>
-
-      <section v-if="storyboardText" class="result-panel">
-        <h2 class="section-title">Storyboard</h2>
-        <pre class="light-result">{{ storyboardText }}</pre>
-      </section>
-            <section v-if="imagePromptsText" class="result-panel">
-        <h2 class="section-title">Image Prompts</h2>
-        <pre class="light-result">{{ imagePromptsText }}</pre>
-      </section>
-
-      <section v-if="imageAssetsText" class="result-panel">
-        <h2 class="section-title">Image Assets</h2>
-        <pre class="light-result">{{ imageAssetsText }}</pre>
-      </section>
-
       <InteractiveImageReview
         :items="imageReviewSelectedAssets"
         :api-base-url="apiBaseUrl"
@@ -1196,42 +1176,19 @@ onMounted(() => {
         :selecting-scene-id="selectingSceneId"
         @select-asset="({ sceneId, assetRef }) => selectImageAsset(sceneId, assetRef)"
       />
-
-      <section v-if="imageReviewText" class="result-panel">
-        <h2 class="section-title">Image Review / Asset Selection</h2>
-        <pre class="light-result">{{ imageReviewText }}</pre>
-      </section>
-
-      <section v-if="videoPromptsText" class="result-panel">
-        <h2 class="section-title">Video Prompts</h2>
-        <pre class="light-result">{{ videoPromptsText }}</pre>
-      </section>
-
-      <section v-if="narrationText" class="result-panel">
-        <h2 class="section-title">Narration</h2>
-        <pre class="light-result">{{ narrationText }}</pre>
-      </section>
-
-      <section v-if="subtitlesText" class="result-panel">
-        <h2 class="section-title">Subtitles Preview</h2>
-        <pre class="light-result">{{ subtitlesText }}</pre>
-      </section>
-
-      <section v-if="renderPlanText" class="result-panel">
-        <h2 class="section-title">Render Plan</h2>
-        <pre class="light-result">{{ renderPlanText }}</pre>
-      </section>
-
-      <section v-if="characterCandidatesText" class="result-panel">
-        <h2 class="section-title">Character Candidates</h2>
-        <pre class="light-result">{{ characterCandidatesText }}</pre>
-      </section>
-
-      <section v-if="characterManifestText" class="result-panel">
-        <h2 class="section-title">Character Manifest</h2>
-        <pre class="light-result">{{ characterManifestText }}</pre>
-      </section>
-
+      <WorkflowResultsPanel
+        :story-text="storyText"
+        :storyboard-text="storyboardText"
+        :image-prompts-text="imagePromptsText"
+        :image-assets-text="imageAssetsText"
+        :image-review-text="imageReviewText"
+        :video-prompts-text="videoPromptsText"
+        :narration-text="narrationText"
+        :subtitles-text="subtitlesText"
+        :render-plan-text="renderPlanText"
+        :character-candidates-text="characterCandidatesText"
+        :character-manifest-text="characterManifestText"
+      />
       <section
         v-if="mockAudioIndexUrl || mockAudioSceneGroups.length > 0 || mockAudioDirectoryText"
         class="result-panel"
