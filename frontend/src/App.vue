@@ -29,6 +29,46 @@ type WorkflowRunResponse = {
   [key: string]: unknown
 }
 
+type WorkflowRunPayload = {
+  workflow_id: string
+  session_id: string
+  input: Record<string, unknown>
+  steps: Array<{ name: StepName }>
+}
+
+type ImageAssetRef = {
+  scene_id?: string
+  file_name?: string
+  relative_path?: string
+  public_url?: string
+  mime_type?: string
+  provider?: string
+}
+
+type ImageReviewSelectedAsset = {
+  scene_id?: string
+  scene_title?: string
+  review_status?: string
+  selection_mode?: string
+  selection_source?: string
+  selection_reason?: string
+  selected_asset_ref?: ImageAssetRef
+  candidate_asset_refs?: ImageAssetRef[]
+  characters?: Array<Record<string, unknown>>
+  character_ids?: string[]
+  prompt?: string
+}
+
+type ImageReviewSelectResponse = {
+  workflow_id?: string
+  session_id?: string
+  run_id?: string
+  scene_id?: string
+  image_review?: Record<string, unknown>
+  video_prompts?: Record<string, unknown>
+  timestamp?: string
+}
+
 type StructuredCharacterInput = {
   display_name: string
   species: string
@@ -189,7 +229,9 @@ const selectedSteps = ref<StepName[]>([...DEFAULT_STEPS])
 const stepSummaries = ref<Array<{ name: string; status: string; preview: string }>>(
   []
 )
-
+const currentWorkflowResponse = ref<WorkflowRunResponse | null>(null)
+const currentWorkflowPayload = ref<WorkflowRunPayload | null>(null)
+const selectingSceneId = ref('')
 const apiBaseUrl =
   (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() ||
   'http://127.0.0.1:8004'
@@ -205,16 +247,54 @@ const providerStatsText = computed(() => {
   return stringifyPretty(samplesSummary.value.provider_stats)
 })
 
+const imageReviewSelectedAssets = computed<ImageReviewSelectedAsset[]>(() => {
+  const value = currentWorkflowResponse.value?.outputs?.image_review
+  if (!value || typeof value !== 'object') {
+    return []
+  }
+
+  const selectedAssets = (value as Record<string, unknown>).selected_assets
+  return Array.isArray(selectedAssets) ? (selectedAssets as ImageReviewSelectedAsset[]) : []
+})
+
+function assetRefPath(assetRef?: ImageAssetRef): string {
+  if (!assetRef) {
+    return ''
+  }
+  return assetRef.public_url || assetRef.relative_path || ''
+}
+
+function isSameAssetRef(a?: ImageAssetRef, b?: ImageAssetRef): boolean {
+  if (!a || !b) {
+    return false
+  }
+
+  const aRelativePath = (a.relative_path || '').trim()
+  const bRelativePath = (b.relative_path || '').trim()
+  const aFileName = (a.file_name || '').trim()
+  const bFileName = (b.file_name || '').trim()
+
+  return aRelativePath === bRelativePath && aFileName === bFileName
+}
+
 function toAssetHref(path?: string): string {
   if (!path) {
     return ''
   }
 
-  if (path.startsWith('http://') || path.startsWith('https://')) {
-    return path
+  const trimmed = path.trim()
+  if (!trimmed) {
+    return ''
   }
 
-  return `${apiBaseUrl}/${path}`
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed
+  }
+
+  const normalizedBase = apiBaseUrl.replace(/\/+$/, '')
+  const normalizedPath = trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+
+  return `${normalizedBase}${normalizedPath}`
 }
 
 function hasAssetLink(path?: string): boolean {
@@ -415,6 +495,24 @@ function buildStepSummaries(data: WorkflowRunResponse): Array<{
   }))
 }
 
+function applyWorkflowResponse(data: WorkflowRunResponse) {
+  storyText.value = extractStoryText(data)
+  storyboardText.value = extractStoryboardText(data)
+  imagePromptsText.value = extractImagePromptsText(data)
+  imageAssetsText.value = extractImageAssetsText(data)
+  imageReviewText.value = extractImageReviewText(data)
+  videoPromptsText.value = extractVideoPromptsText(data)
+  narrationText.value = extractNarrationText(data)
+  subtitlesText.value = extractSubtitlesText(data)
+  renderPlanText.value = extractRenderPlanText(data)
+  extractMockAudioState(data)
+  stepSummaries.value = buildStepSummaries(data)
+  characterCandidatesText.value = extractCharacterCandidatesText(data)
+  characterManifestText.value = extractCharacterManifestText(data)
+  resultText.value = stringifyPretty(data)
+  currentWorkflowResponse.value = data
+}
+
 async function fetchSamplesSummary() {
   const response = await fetch(`${apiBaseUrl}/v1/samples/summary`)
   if (!response.ok) {
@@ -513,10 +611,91 @@ async function selectSample(sampleId: string) {
   }
 }
 
+async function selectImageAsset(sceneId: string, assetRef: ImageAssetRef) {
+  if (!sceneId || !assetRefPath(assetRef)) {
+    return
+  }
+
+  if (!currentWorkflowResponse.value || !currentWorkflowPayload.value) {
+    errorMessage.value = '请先运行一次 workflow，再进行手动选图。'
+    return
+  }
+
+  const outputs = currentWorkflowResponse.value.outputs || {}
+  const imageReview = outputs.image_review
+  const storyboard = outputs.storyboard
+
+  if (!imageReview || typeof imageReview !== 'object') {
+    errorMessage.value = '当前缺少 image_review 数据。'
+    return
+  }
+
+  if (!storyboard || typeof storyboard !== 'object') {
+    errorMessage.value = '当前缺少 storyboard 数据。'
+    return
+  }
+
+  selectingSceneId.value = sceneId
+  errorMessage.value = ''
+
+  const payload = {
+    workflow_id: currentWorkflowResponse.value.workflow_id || currentWorkflowPayload.value.workflow_id,
+    session_id:
+      currentWorkflowResponse.value.session_id || currentWorkflowPayload.value.session_id,
+    run_id: currentWorkflowResponse.value.run_id || '',
+    scene_id: sceneId,
+    selected_asset_ref: assetRef,
+    image_review: imageReview,
+    storyboard,
+    workflow_input: currentWorkflowPayload.value.input,
+    video_provider:
+      typeof currentWorkflowPayload.value.input?.video_provider === 'string'
+        ? currentWorkflowPayload.value.input.video_provider
+        : videoProvider.value,
+  }
+
+  try {
+    const response = await fetch(`${apiBaseUrl}/v1/image-review/select`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+
+    const data: ImageReviewSelectResponse = await response.json()
+
+    const mergedResponse: WorkflowRunResponse = {
+      ...(currentWorkflowResponse.value || {}),
+      workflow_id: data.workflow_id || currentWorkflowResponse.value.workflow_id,
+      session_id: data.session_id || currentWorkflowResponse.value.session_id,
+      run_id: data.run_id || currentWorkflowResponse.value.run_id,
+      outputs: {
+        ...(currentWorkflowResponse.value.outputs || {}),
+        image_review:
+          data.image_review || currentWorkflowResponse.value.outputs?.image_review || {},
+        video_prompts:
+          data.video_prompts || currentWorkflowResponse.value.outputs?.video_prompts || {},
+      },
+    }
+
+    applyWorkflowResponse(mergedResponse)
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '手动选图请求失败'
+  } finally {
+    selectingSceneId.value = ''
+  }
+}
 async function runWorkflow() {
   resultText.value = ''
   storyText.value = ''
   storyboardText.value = ''
+  currentWorkflowResponse.value = null
+  currentWorkflowPayload.value = null
   imagePromptsText.value = ''
   imageAssetsText.value = ''
   imageReviewText.value = ''
@@ -582,6 +761,7 @@ async function runWorkflow() {
     },
     steps: selectedSteps.value.map((name) => ({ name })),
   }
+  currentWorkflowPayload.value = payload as WorkflowRunPayload
 
   try {
     const response = await fetch(`${apiBaseUrl}/v1/workflow/run`, {
@@ -601,21 +781,8 @@ async function runWorkflow() {
       sessionId.value = data.session_id
     }
 
-    storyText.value = extractStoryText(data)
-    storyboardText.value = extractStoryboardText(data)
-    imagePromptsText.value = extractImagePromptsText(data)
-    imageAssetsText.value = extractImageAssetsText(data)
-    imageReviewText.value = extractImageReviewText(data)
-    videoPromptsText.value = extractVideoPromptsText(data)
-    narrationText.value = extractNarrationText(data)
-    subtitlesText.value = extractSubtitlesText(data)
-    renderPlanText.value = extractRenderPlanText(data)
-    extractMockAudioState(data)
-    stepSummaries.value = buildStepSummaries(data)
-    characterCandidatesText.value = extractCharacterCandidatesText(data)
-    characterManifestText.value = extractCharacterManifestText(data)
+    applyWorkflowResponse(data)
 
-    resultText.value = stringifyPretty(data)
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Request failed'
   } finally {
@@ -1032,6 +1199,81 @@ onMounted(() => {
         <pre class="light-result">{{ imageAssetsText }}</pre>
       </section>
 
+      <section v-if="imageReviewSelectedAssets.length > 0" class="result-panel">
+        <h2 class="section-title">Interactive Image Review</h2>
+
+        <div class="review-scene-grid">
+          <article
+            v-for="item in imageReviewSelectedAssets"
+            :key="item.scene_id || item.scene_title"
+            class="review-scene-card"
+          >
+            <div class="review-scene-head">
+              <div>
+                <strong>{{ item.scene_title || item.scene_id || 'unknown-scene' }}</strong>
+                <p class="detail-text">
+                  {{ item.selection_source || '-' }} / {{ item.selection_mode || '-' }}
+                </p>
+              </div>
+
+              <span class="summary-status">
+                {{ selectingSceneId === item.scene_id ? 'Switching...' : item.review_status || '-' }}
+              </span>
+            </div>
+
+            <div class="detail-block">
+              <span class="detail-label">Current Selected</span>
+              <code>{{ assetRefPath(item.selected_asset_ref) || '-' }}</code>
+
+              <a
+                v-if="isImageAsset(assetRefPath(item.selected_asset_ref))"
+                class="asset-image-link"
+                :href="toAssetHref(assetRefPath(item.selected_asset_ref))"
+                target="_blank"
+                rel="noreferrer"
+              >
+                <img
+                  class="asset-image asset-image-thumbnail review-selected-image"
+                  :src="toAssetHref(assetRefPath(item.selected_asset_ref))"
+                  :alt="item.scene_title || item.scene_id || 'selected-image'"
+                />
+              </a>
+            </div>
+
+            <div class="detail-block">
+              <span class="detail-label">Candidate Assets</span>
+
+              <div class="review-candidate-grid">
+                <button
+                  v-for="candidate in item.candidate_asset_refs || []"
+                  :key="candidate.relative_path || candidate.file_name || candidate.public_url"
+                  type="button"
+                  class="asset-select-card"
+                  :class="{
+                    active: isSameAssetRef(candidate, item.selected_asset_ref),
+                  }"
+                  :disabled="loading || selectingSceneId === item.scene_id"
+                  @click="selectImageAsset(item.scene_id || '', candidate)"
+                >
+                  <span class="detail-label">
+                    {{ isSameAssetRef(candidate, item.selected_asset_ref) ? 'Selected' : 'Click to Select' }}
+                  </span>
+
+                  <code>{{ candidate.file_name || '-' }}</code>
+
+                  <img
+                    v-if="isImageAsset(assetRefPath(candidate))"
+                    class="asset-image asset-image-thumbnail"
+                    :src="toAssetHref(assetRefPath(candidate))"
+                    :alt="candidate.file_name || 'candidate-image'"
+                  />
+                </button>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+
       <section v-if="imageReviewText" class="result-panel">
         <h2 class="section-title">Image Review / Asset Selection</h2>
         <pre class="light-result">{{ imageReviewText }}</pre>
@@ -1066,10 +1308,7 @@ onMounted(() => {
         <h2 class="section-title">Character Manifest</h2>
         <pre class="light-result">{{ characterManifestText }}</pre>
       </section>
-      <section v-if="imageReviewText" class="result-panel">
-        <h2 class="section-title">Image Review / Asset Selection</h2>
-        <pre class="light-result">{{ imageReviewText }}</pre>
-      </section>
+
       <section
         v-if="mockAudioIndexUrl || mockAudioSceneGroups.length > 0 || mockAudioDirectoryText"
         class="result-panel"
@@ -1592,6 +1831,60 @@ h1 {
   border: 1px solid #e5e7eb;
   border-radius: 10px;
   background: #f8fafc;
+}
+
+.review-scene-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.review-scene-card {
+  padding: 16px;
+  border-radius: 14px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+}
+
+.review-scene-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.review-candidate-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.asset-select-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid #d1d5db;
+  background: #f8fafc;
+  cursor: pointer;
+  text-align: left;
+}
+
+.asset-select-card.active {
+  border-color: #111827;
+  background: #eef2ff;
+}
+
+.asset-select-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.review-selected-image {
+  max-width: 280px;
 }
 
 .notes-preview-block {
