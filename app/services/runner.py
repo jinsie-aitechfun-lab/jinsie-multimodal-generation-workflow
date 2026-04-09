@@ -3023,6 +3023,24 @@ class WorkflowRunner:
             data.extend(f"P6\n{width} {height}\n255\n".encode("ascii"))
             data.extend(pixels)
             return bytes(data)
+    def _build_scene_png(
+        self,
+        ctx: StepContext,
+        scene: Dict[str, Any],
+        index: int,
+    ) -> bytes:
+        from io import BytesIO
+        from PIL import Image
+
+        ppm_bytes = self._build_scene_ppm(ctx, scene, index)
+
+        input_buffer = BytesIO(ppm_bytes)
+        output_buffer = BytesIO()
+
+        image = Image.open(input_buffer)
+        image.save(output_buffer, format="PNG")
+
+        return output_buffer.getvalue()
     def _image_prompt_item_maps(
         self, outputs: Dict[str, Any]
     ) -> tuple[Dict[str, Dict[str, Any]], Dict[str, Dict[str, Any]]]:
@@ -3211,9 +3229,9 @@ class WorkflowRunner:
                     "characters": prompt_item.get("characters") or parent_scene.get("characters") or [],
                 }
 
-                file_name = f"{shot_id}.ppm"
+                file_name = f"{shot_id}.png"
                 output_path = run_dir / file_name
-                output_path.write_bytes(self._build_scene_ppm(ctx, pseudo_scene, index))
+                output_path.write_bytes(self._build_scene_png(ctx, pseudo_scene, index))
 
                 asset_meta = self._image_asset_metadata(
                     scene=scene_by_id.get(scene_id) or {},
@@ -3262,10 +3280,10 @@ class WorkflowRunner:
                     candidate_index=candidate_index,
                 )
 
-                file_name = f"{scene_id}__{candidate_suffix}.ppm"
+                file_name = f"{scene_id}__{candidate_suffix}.png"
                 output_path = run_dir / file_name
                 output_path.write_bytes(
-                    self._build_scene_ppm(ctx, candidate_scene, index + candidate_index)
+                    self._build_scene_png(ctx, candidate_scene, index + candidate_index)
                 )
 
                 candidate_asset_refs.append(
