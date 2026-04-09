@@ -1,0 +1,564 @@
+<script setup lang="ts">
+type SampleAssetPaths = {
+  notes?: string
+  clean_video?: string
+  watermarked_video?: string
+  input_screenshot?: string
+  result_screenshots?: string[]
+}
+
+type KlingSample = {
+  sample_id?: string
+  scene_id?: string
+  generated_scene_id?: string
+  status?: string
+  notes?: string
+  assets?: SampleAssetPaths
+}
+
+type SamplesSummaryResponse = {
+  providers?: string[]
+  total_sample_count?: number
+  provider_stats?: Record<
+    string,
+    {
+      sample_count?: number
+      latest_sample_id?: string
+      available_scene_ids?: string[]
+    }
+  >
+}
+
+const props = defineProps<{
+  samplesLoading: boolean
+  samplesErrorMessage: string
+  samplesSummary: SamplesSummaryResponse | null
+  providerStatsText: string
+  klingSamples: KlingSample[]
+  selectedSampleId: string
+  selectedSampleDetail: KlingSample | null
+  selectedSampleNotesText: string
+  selectedSampleNotesLoading: boolean
+  apiBaseUrl: string
+}>()
+
+const emit = defineEmits<{
+  (e: 'refresh'): void
+  (e: 'select-sample', sampleId: string): void
+}>()
+
+function toAssetHref(path?: string): string {
+  if (!path) {
+    return ''
+  }
+
+  const trimmed = path.trim()
+  if (!trimmed) {
+    return ''
+  }
+
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed
+  }
+
+  const normalizedBase = props.apiBaseUrl.replace(/\/+$/, '')
+  const normalizedPath = trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+
+  return `${normalizedBase}${normalizedPath}`
+}
+
+function hasAssetLink(path?: string): boolean {
+  return Boolean(path && path.trim())
+}
+
+function isImageAsset(path?: string): boolean {
+  if (!path) {
+    return false
+  }
+
+  const value = path.toLowerCase()
+  return (
+    value.endsWith('.png') ||
+    value.endsWith('.jpg') ||
+    value.endsWith('.jpeg') ||
+    value.endsWith('.webp') ||
+    value.endsWith('.gif')
+  )
+}
+
+function isVideoAsset(path?: string): boolean {
+  if (!path) {
+    return false
+  }
+
+  const value = path.toLowerCase()
+  return value.endsWith('.mp4') || value.endsWith('.webm') || value.endsWith('.mov')
+}
+</script>
+
+<template>
+  <section class="samples-panel">
+    <div class="samples-panel-head">
+      <div>
+        <h2 class="section-title">Real Sample Assets</h2>
+        <p class="samples-desc">
+          展示项目四当前已归档的真实可灵样片，总览 / 列表 / 详情三层查询已接入。
+        </p>
+      </div>
+
+      <button class="secondary-btn" :disabled="samplesLoading" @click="emit('refresh')">
+        {{ samplesLoading ? 'Loading...' : 'Refresh Samples' }}
+      </button>
+    </div>
+
+    <p v-if="samplesErrorMessage" class="error">
+      样例资产加载失败：{{ samplesErrorMessage }}
+    </p>
+
+    <div v-if="samplesSummary" class="samples-summary-grid">
+      <div class="samples-metric">
+        <span class="metric-label">Providers</span>
+        <strong class="metric-value">
+          {{ (samplesSummary.providers || []).join(', ') || '-' }}
+        </strong>
+      </div>
+
+      <div class="samples-metric">
+        <span class="metric-label">Total Samples</span>
+        <strong class="metric-value">
+          {{ samplesSummary.total_sample_count ?? 0 }}
+        </strong>
+      </div>
+
+      <div class="samples-metric samples-metric-wide">
+        <span class="metric-label">Provider Stats</span>
+        <pre class="light-result compact-result">{{ providerStatsText }}</pre>
+      </div>
+    </div>
+
+    <div class="samples-layout">
+      <section class="samples-list-panel">
+        <h3 class="subsection-title">Kling Sample List</h3>
+
+        <p v-if="klingSamples.length === 0" class="hint">
+          当前没有可展示的样片记录。
+        </p>
+
+        <button
+          v-for="sample in klingSamples"
+          :key="sample.sample_id || sample.scene_id"
+          class="sample-list-item"
+          :class="{ active: sample.sample_id === selectedSampleId }"
+          @click="emit('select-sample', sample.sample_id || '')"
+        >
+          <strong>{{ sample.sample_id || 'unknown-sample' }}</strong>
+          <span>scene_id: {{ sample.scene_id || '-' }}</span>
+          <span>status: {{ sample.status || '-' }}</span>
+        </button>
+      </section>
+
+      <section class="sample-detail-panel">
+        <h3 class="subsection-title">Sample Detail</h3>
+
+        <div v-if="selectedSampleDetail" class="sample-detail-content">
+          <div class="detail-row">
+            <span class="detail-label">sample_id</span>
+            <code>{{ selectedSampleDetail.sample_id || '-' }}</code>
+          </div>
+
+          <div class="detail-row">
+            <span class="detail-label">scene_id</span>
+            <code>{{ selectedSampleDetail.scene_id || '-' }}</code>
+          </div>
+
+          <div class="detail-row">
+            <span class="detail-label">generated_scene_id</span>
+            <code>{{ selectedSampleDetail.generated_scene_id || '-' }}</code>
+          </div>
+
+          <div class="detail-row">
+            <span class="detail-label">status</span>
+            <code>{{ selectedSampleDetail.status || '-' }}</code>
+          </div>
+
+          <div class="detail-block">
+            <span class="detail-label">notes</span>
+            <p class="detail-text">{{ selectedSampleDetail.notes || '-' }}</p>
+            <a
+              v-if="hasAssetLink(selectedSampleDetail.assets?.notes)"
+              class="asset-link"
+              :href="toAssetHref(selectedSampleDetail.assets?.notes)"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open notes file
+            </a>
+
+            <div class="notes-preview-block">
+              <span class="detail-label">notes preview</span>
+              <p v-if="selectedSampleNotesLoading" class="detail-text">Loading notes...</p>
+              <pre v-else class="notes-preview">{{ selectedSampleNotesText || '-' }}</pre>
+            </div>
+          </div>
+
+          <div class="detail-block">
+            <span class="detail-label">clean_video</span>
+            <code>{{ selectedSampleDetail.assets?.clean_video || '-' }}</code>
+            <a
+              v-if="hasAssetLink(selectedSampleDetail.assets?.clean_video)"
+              class="asset-link"
+              :href="toAssetHref(selectedSampleDetail.assets?.clean_video)"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open clean video
+            </a>
+            <video
+              v-if="isVideoAsset(selectedSampleDetail.assets?.clean_video)"
+              class="asset-video"
+              controls
+              preload="metadata"
+              :src="toAssetHref(selectedSampleDetail.assets?.clean_video)"
+            />
+          </div>
+
+          <div class="detail-block">
+            <span class="detail-label">watermarked_video</span>
+            <code>{{ selectedSampleDetail.assets?.watermarked_video || '-' }}</code>
+            <a
+              v-if="hasAssetLink(selectedSampleDetail.assets?.watermarked_video)"
+              class="asset-link"
+              :href="toAssetHref(selectedSampleDetail.assets?.watermarked_video)"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open watermarked video
+            </a>
+          </div>
+
+          <div class="detail-block">
+            <span class="detail-label">input_screenshot</span>
+            <code>{{ selectedSampleDetail.assets?.input_screenshot || '-' }}</code>
+            <a
+              v-if="isImageAsset(selectedSampleDetail.assets?.input_screenshot)"
+              class="asset-image-link"
+              :href="toAssetHref(selectedSampleDetail.assets?.input_screenshot)"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <img
+                class="asset-image asset-image-thumbnail"
+                :src="toAssetHref(selectedSampleDetail.assets?.input_screenshot)"
+                alt="input screenshot preview"
+              />
+            </a>
+          </div>
+
+          <div class="detail-block">
+            <span class="detail-label">result_screenshots</span>
+            <ul class="asset-list asset-grid-list">
+              <li
+                v-for="path in selectedSampleDetail.assets?.result_screenshots || []"
+                :key="path"
+                class="asset-list-item"
+              >
+                <code>{{ path }}</code>
+                <a
+                  v-if="isImageAsset(path)"
+                  class="asset-image-link"
+                  :href="toAssetHref(path)"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <img
+                    class="asset-image asset-image-thumbnail"
+                    :src="toAssetHref(path)"
+                    :alt="path"
+                  />
+                </a>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <p v-else class="hint">请选择左侧样片查看详情。</p>
+      </section>
+    </div>
+  </section>
+</template>
+
+<style scoped>
+.samples-panel {
+  margin: 24px 0;
+  padding: 20px;
+  border-radius: 16px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+}
+
+.samples-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.samples-desc {
+  color: #4b5563;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.secondary-btn {
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #111827;
+  border-radius: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.secondary-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.samples-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.samples-metric {
+  padding: 14px;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  text-align: left;
+}
+
+.samples-metric-wide {
+  grid-column: 1 / -1;
+}
+
+.metric-label {
+  display: block;
+  margin-bottom: 8px;
+  color: #6b7280;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.metric-value {
+  color: #111827;
+  font-size: 18px;
+}
+
+.samples-layout {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 16px;
+}
+
+.samples-list-panel,
+.sample-detail-panel {
+  padding: 16px;
+  border-radius: 14px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+}
+
+.subsection-title {
+  margin: 0 0 12px;
+  color: #111827;
+  font-size: 18px;
+  text-align: left;
+}
+
+.sample-list-item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  border: 1px solid #e5e7eb;
+  background: #f8fafc;
+  color: #111827;
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+
+.sample-list-item.active {
+  border-color: #111827;
+  background: #eef2ff;
+}
+
+.sample-detail-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: left;
+}
+
+.detail-row,
+.detail-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.detail-label {
+  color: #6b7280;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.detail-text {
+  color: #111827;
+  line-height: 1.6;
+}
+
+.asset-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.asset-list li {
+  margin-bottom: 8px;
+}
+
+.compact-result {
+  margin: 0;
+  max-height: 220px;
+}
+
+.light-result {
+  margin: 12px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #1f2937;
+}
+
+.hint {
+  margin: 12px 0 0;
+  color: #dc2626;
+  font-size: 13px;
+}
+
+.error {
+  margin-top: 16px;
+  color: #dc2626;
+  font-size: 14px;
+}
+
+.asset-link {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin-top: 6px;
+  color: #2563eb;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.asset-link:hover {
+  text-decoration: underline;
+}
+
+.asset-list-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.asset-image {
+  display: block;
+  width: 100%;
+  max-width: 520px;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  margin-top: 8px;
+}
+
+.asset-video {
+  display: block;
+  width: 100%;
+  max-width: 520px;
+  border-radius: 10px;
+  margin-top: 8px;
+  background: #000000;
+}
+
+.asset-image-link {
+  display: inline-block;
+  width: fit-content;
+  margin-top: 8px;
+}
+
+.asset-image-thumbnail {
+  max-width: 240px;
+  max-height: 180px;
+  object-fit: cover;
+  cursor: pointer;
+}
+
+.asset-grid-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  padding-left: 0;
+  list-style: none;
+}
+
+.asset-grid-list .asset-list-item {
+  padding: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.notes-preview-block {
+  margin-top: 10px;
+}
+
+.notes-preview {
+  margin: 0;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  background: #f8fafc;
+  color: #111827;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow: auto;
+  text-align: left;
+}
+
+@media (max-width: 900px) {
+  .samples-panel-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .samples-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .samples-layout {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

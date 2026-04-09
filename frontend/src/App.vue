@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-
+import InteractiveImageReview from './components/InteractiveImageReview.vue'
+import WorkflowResultsPanel from './components/WorkflowResultsPanel.vue'
+import WorkflowRunPanel from './components/WorkflowRunPanel.vue'
+import SampleAssetsPanel from './components/SampleAssetsPanel.vue'
 type StepName =
   | 'story'
   | 'storyboard'
@@ -264,19 +267,6 @@ function assetRefPath(assetRef?: ImageAssetRef): string {
   return assetRef.public_url || assetRef.relative_path || ''
 }
 
-function isSameAssetRef(a?: ImageAssetRef, b?: ImageAssetRef): boolean {
-  if (!a || !b) {
-    return false
-  }
-
-  const aRelativePath = (a.relative_path || '').trim()
-  const bRelativePath = (b.relative_path || '').trim()
-  const aFileName = (a.file_name || '').trim()
-  const bFileName = (b.file_name || '').trim()
-
-  return aRelativePath === bRelativePath && aFileName === bFileName
-}
-
 function toAssetHref(path?: string): string {
   if (!path) {
     return ''
@@ -295,34 +285,6 @@ function toAssetHref(path?: string): string {
   const normalizedPath = trimmed.startsWith('/') ? trimmed : `/${trimmed}`
 
   return `${normalizedBase}${normalizedPath}`
-}
-
-function hasAssetLink(path?: string): boolean {
-  return Boolean(path && path.trim())
-}
-
-function isImageAsset(path?: string): boolean {
-  if (!path) {
-    return false
-  }
-
-  const value = path.toLowerCase()
-  return (
-    value.endsWith('.png') ||
-    value.endsWith('.jpg') ||
-    value.endsWith('.jpeg') ||
-    value.endsWith('.webp') ||
-    value.endsWith('.gif')
-  )
-}
-
-function isVideoAsset(path?: string): boolean {
-  if (!path) {
-    return false
-  }
-
-  const value = path.toLowerCase()
-  return value.endsWith('.mp4') || value.endsWith('.webm') || value.endsWith('.mov')
 }
 
 function stringifyPretty(value: unknown): string {
@@ -692,10 +654,10 @@ async function selectImageAsset(sceneId: string, assetRef: ImageAssetRef) {
 }
 async function runWorkflow() {
   resultText.value = ''
-  storyText.value = ''
-  storyboardText.value = ''
   currentWorkflowResponse.value = null
   currentWorkflowPayload.value = null
+  storyText.value = ''
+  storyboardText.value = ''
   imagePromptsText.value = ''
   imageAssetsText.value = ''
   imageReviewText.value = ''
@@ -801,514 +763,101 @@ onMounted(() => {
       <p class="desc">
         输入一个主题，系统按默认参数或可选配置生成故事、分镜、旁白、字幕与视频渲染计划。
       </p>
-            <section class="samples-panel">
-        <div class="samples-panel-head">
-          <div>
-            <h2 class="section-title">Real Sample Assets</h2>
-            <p class="samples-desc">
-              展示项目四当前已归档的真实可灵样片，总览 / 列表 / 详情三层查询已接入。
-            </p>
-          </div>
-
-          <button class="secondary-btn" :disabled="samplesLoading" @click="loadSampleAssets">
-            {{ samplesLoading ? 'Loading...' : 'Refresh Samples' }}
-          </button>
-        </div>
-
-        <p v-if="samplesErrorMessage" class="error">
-          样例资产加载失败：{{ samplesErrorMessage }}
-        </p>
-
-        <div v-if="samplesSummary" class="samples-summary-grid">
-          <div class="samples-metric">
-            <span class="metric-label">Providers</span>
-            <strong class="metric-value">
-              {{ (samplesSummary.providers || []).join(', ') || '-' }}
-            </strong>
-          </div>
-
-          <div class="samples-metric">
-            <span class="metric-label">Total Samples</span>
-            <strong class="metric-value">
-              {{ samplesSummary.total_sample_count ?? 0 }}
-            </strong>
-          </div>
-
-          <div class="samples-metric samples-metric-wide">
-            <span class="metric-label">Provider Stats</span>
-            <pre class="light-result compact-result">{{ providerStatsText }}</pre>
-          </div>
-        </div>
-
-        <div class="samples-layout">
-          <section class="samples-list-panel">
-            <h3 class="subsection-title">Kling Sample List</h3>
-
-            <p v-if="klingSamples.length === 0" class="hint">
-              当前没有可展示的样片记录。
-            </p>
-
-            <button
-              v-for="sample in klingSamples"
-              :key="sample.sample_id || sample.scene_id"
-              class="sample-list-item"
-              :class="{ active: sample.sample_id === selectedSampleId }"
-              @click="selectSample(sample.sample_id || '')"
-            >
-              <strong>{{ sample.sample_id || 'unknown-sample' }}</strong>
-              <span>scene_id: {{ sample.scene_id || '-' }}</span>
-              <span>status: {{ sample.status || '-' }}</span>
-            </button>
-          </section>
-
-          <section class="sample-detail-panel">
-            <h3 class="subsection-title">Sample Detail</h3>
-
-            <div v-if="selectedSampleDetail" class="sample-detail-content">
-              <div class="detail-row">
-                <span class="detail-label">sample_id</span>
-                <code>{{ selectedSampleDetail.sample_id || '-' }}</code>
-              </div>
-
-              <div class="detail-row">
-                <span class="detail-label">scene_id</span>
-                <code>{{ selectedSampleDetail.scene_id || '-' }}</code>
-              </div>
-
-              <div class="detail-row">
-                <span class="detail-label">generated_scene_id</span>
-                <code>{{ selectedSampleDetail.generated_scene_id || '-' }}</code>
-              </div>
-
-              <div class="detail-row">
-                <span class="detail-label">status</span>
-                <code>{{ selectedSampleDetail.status || '-' }}</code>
-              </div>
-
-              <div class="detail-block">
-                <span class="detail-label">notes</span>
-                <p class="detail-text">{{ selectedSampleDetail.notes || '-' }}</p>
-                <a
-                  v-if="hasAssetLink(selectedSampleDetail.assets?.notes)"
-                  class="asset-link"
-                  :href="toAssetHref(selectedSampleDetail.assets?.notes)"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Open notes file
-                </a>
-
-                <div class="notes-preview-block">
-                  <span class="detail-label">notes preview</span>
-                  <p v-if="selectedSampleNotesLoading" class="detail-text">Loading notes...</p>
-                  <pre v-else class="notes-preview">{{ selectedSampleNotesText || '-' }}</pre>
-                </div>
-              </div>
-
-              <div class="detail-block">
-                <span class="detail-label">clean_video</span>
-                <code>{{ selectedSampleDetail.assets?.clean_video || '-' }}</code>
-                <a
-                  v-if="hasAssetLink(selectedSampleDetail.assets?.clean_video)"
-                  class="asset-link"
-                  :href="toAssetHref(selectedSampleDetail.assets?.clean_video)"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Open clean video
-                </a>
-                <video
-                  v-if="isVideoAsset(selectedSampleDetail.assets?.clean_video)"
-                  class="asset-video"
-                  controls
-                  preload="metadata"
-                  :src="toAssetHref(selectedSampleDetail.assets?.clean_video)"
-                />
-              </div>
-
-              <div class="detail-block">
-                <span class="detail-label">watermarked_video</span>
-                <code>{{ selectedSampleDetail.assets?.watermarked_video || '-' }}</code>
-                <a
-                  v-if="hasAssetLink(selectedSampleDetail.assets?.watermarked_video)"
-                  class="asset-link"
-                  :href="toAssetHref(selectedSampleDetail.assets?.watermarked_video)"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Open watermarked video
-                </a>
-              </div>
-
-              <div class="detail-block">
-                <span class="detail-label">input_screenshot</span>
-                <code>{{ selectedSampleDetail.assets?.input_screenshot || '-' }}</code>
-                <a
-                  v-if="isImageAsset(selectedSampleDetail.assets?.input_screenshot)"
-                  class="asset-image-link"
-                  :href="toAssetHref(selectedSampleDetail.assets?.input_screenshot)"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <img
-                    class="asset-image asset-image-thumbnail"
-                    :src="toAssetHref(selectedSampleDetail.assets?.input_screenshot)"
-                    alt="input screenshot preview"
-                  />
-                </a>
-              </div>
-
-              <div class="detail-block">
-                <span class="detail-label">result_screenshots</span>
-                <ul class="asset-list asset-grid-list">
-                  <li
-                    v-for="path in selectedSampleDetail.assets?.result_screenshots || []"
-                    :key="path"
-                    class="asset-list-item"
-                  >
-                    <code>{{ path }}</code>
-                    <a
-                      v-if="isImageAsset(path)"
-                      class="asset-image-link"
-                      :href="toAssetHref(path)"
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      <img
-                        class="asset-image asset-image-thumbnail"
-                        :src="toAssetHref(path)"
-                        :alt="path"
-                      />
-                    </a>
-                  </li>
-                </ul>
-              </div>
-            </div>
-
-            <p v-else class="hint">请选择左侧样片查看详情。</p>
-          </section>
-        </div>
-      </section>
-
-      <label class="label" for="session-id">Session ID</label>
-      <input
-        id="session-id"
-        v-model="sessionId"
-        class="input"
-        type="text"
-        placeholder="请输入会话标识，例如 demo-session-001"
+      <SampleAssetsPanel
+        :samples-loading="samplesLoading"
+        :samples-error-message="samplesErrorMessage"
+        :samples-summary="samplesSummary"
+        :provider-stats-text="providerStatsText"
+        :kling-samples="klingSamples"
+        :selected-sample-id="selectedSampleId"
+        :selected-sample-detail="selectedSampleDetail"
+        :selected-sample-notes-text="selectedSampleNotesText"
+        :selected-sample-notes-loading="selectedSampleNotesLoading"
+        :api-base-url="apiBaseUrl"
+        @refresh="loadSampleAssets"
+        @select-sample="selectSample"
+      />    
+      <WorkflowRunPanel
+        :loading="loading"
+        :can-submit="canSubmit"
+        :error-message="errorMessage"
+        :session-id="sessionId"
+        :topic="topic"
+        :audience="audience"
+        :tone="tone"
+        :visual-style="visualStyle"
+        :character-style="characterStyle"
+        :voice-style="voiceStyle"
+        :voiceover-enabled="voiceoverEnabled"
+        :voice-mode="voiceMode"
+        :narrator-voice-style="narratorVoiceStyle"
+        :mother-voice-style="motherVoiceStyle"
+        :child-voice-style="childVoiceStyle"
+        :duration-sec="durationSec"
+        :language="language"
+        :subtitle-enabled="subtitleEnabled"
+        :video-provider="videoProvider"
+        :output-mode="outputMode"
+        :structured-characters-enabled="structuredCharactersEnabled"
+        :primary-character-display-name="primaryCharacterDisplayName"
+        :primary-character-species="primaryCharacterSpecies"
+        :primary-character-visual-traits="primaryCharacterVisualTraits"
+        :primary-character-forbidden-traits="primaryCharacterForbiddenTraits"
+        :secondary-character-display-name="secondaryCharacterDisplayName"
+        :secondary-character-species="secondaryCharacterSpecies"
+        :secondary-character-visual-traits="secondaryCharacterVisualTraits"
+        :secondary-character-forbidden-traits="secondaryCharacterForbiddenTraits"
+        :selected-steps="selectedSteps"
+        :step-options="STEP_OPTIONS"
+        @update:sessionId="sessionId = $event"
+        @update:topic="topic = $event"
+        @update:audience="audience = $event"
+        @update:tone="tone = $event"
+        @update:visualStyle="visualStyle = $event"
+        @update:characterStyle="characterStyle = $event"
+        @update:voiceStyle="voiceStyle = $event"
+        @update:voiceoverEnabled="voiceoverEnabled = $event"
+        @update:voiceMode="voiceMode = $event"
+        @update:narratorVoiceStyle="narratorVoiceStyle = $event"
+        @update:motherVoiceStyle="motherVoiceStyle = $event"
+        @update:childVoiceStyle="childVoiceStyle = $event"
+        @update:durationSec="durationSec = $event"
+        @update:language="language = $event"
+        @update:subtitleEnabled="subtitleEnabled = $event"
+        @update:videoProvider="videoProvider = $event"
+        @update:outputMode="outputMode = $event"
+        @update:structuredCharactersEnabled="structuredCharactersEnabled = $event"
+        @update:primaryCharacterDisplayName="primaryCharacterDisplayName = $event"
+        @update:primaryCharacterSpecies="primaryCharacterSpecies = $event"
+        @update:primaryCharacterVisualTraits="primaryCharacterVisualTraits = $event"
+        @update:primaryCharacterForbiddenTraits="primaryCharacterForbiddenTraits = $event"
+        @update:secondaryCharacterDisplayName="secondaryCharacterDisplayName = $event"
+        @update:secondaryCharacterSpecies="secondaryCharacterSpecies = $event"
+        @update:secondaryCharacterVisualTraits="secondaryCharacterVisualTraits = $event"
+        @update:secondaryCharacterForbiddenTraits="secondaryCharacterForbiddenTraits = $event"
+        @update:selectedSteps="selectedSteps = $event"
+        @run="runWorkflow"
       />
-
-      <label class="label" for="topic">Topic</label>
-      <textarea
-        id="topic"
-        v-model="topic"
-        class="textarea"
-        rows="4"
-        placeholder="请输入一个主题，例如：写一个关于小猫冒险的故事"
+      <InteractiveImageReview
+        :items="imageReviewSelectedAssets"
+        :api-base-url="apiBaseUrl"
+        :loading="loading"
+        :selecting-scene-id="selectingSceneId"
+        @select-asset="({ sceneId, assetRef }) => selectImageAsset(sceneId, assetRef)"
       />
-
-      <section class="config-panel">
-        <h2 class="section-title">Generation Config</h2>
-
-        <div class="config-grid">
-          <label class="field">
-            <span>Audience</span>
-            <input v-model="audience" class="input" type="text" />
-          </label>
-
-          <label class="field">
-            <span>Tone</span>
-            <input v-model="tone" class="input" type="text" />
-          </label>
-
-          <label class="field">
-            <span>Visual Style</span>
-            <input v-model="visualStyle" class="input" type="text" />
-          </label>
-
-          <label class="field">
-            <span>Character Style</span>
-            <input v-model="characterStyle" class="input" type="text" />
-          </label>
-
-                    <label class="field">
-            <span>Voice Style</span>
-            <input v-model="voiceStyle" class="input" type="text" />
-          </label>
-
-          <label class="checkbox-field">
-            <input v-model="voiceoverEnabled" type="checkbox" />
-            <span>Enable Voiceover</span>
-          </label>
-
-          <label class="field">
-            <span>Voice Mode</span>
-            <select v-model="voiceMode" class="input">
-              <option value="single">single</option>
-              <option value="multi">multi</option>
-            </select>
-          </label>
-
-          <label class="field">
-            <span>Narrator Voice</span>
-            <input v-model="narratorVoiceStyle" class="input" type="text" />
-          </label>
-
-          <label v-if="voiceMode === 'multi'" class="field">
-            <span>Mother Voice</span>
-            <input v-model="motherVoiceStyle" class="input" type="text" />
-          </label>
-
-          <label v-if="voiceMode === 'multi'" class="field">
-            <span>Child Voice</span>
-            <input v-model="childVoiceStyle" class="input" type="text" />
-          </label>
-
-          <label class="field">
-            <span>Duration (sec)</span>
-            <input v-model.number="durationSec" class="input" type="number" min="15" max="300" />
-          </label>
-
-          <label class="field">
-            <span>Language</span>
-            <input v-model="language" class="input" type="text" />
-          </label>
-
-          <label class="field">
-            <span>Video Provider</span>
-            <input v-model="videoProvider" class="input" type="text" />
-          </label>
-
-          <label class="field">
-            <span>Output Mode</span>
-            <input v-model="outputMode" class="input" type="text" />
-          </label>
-
-          <label class="checkbox-field">
-            <input v-model="subtitleEnabled" type="checkbox" />
-            <span>Enable Subtitles</span>
-          </label>
-        </div>
-      </section>
-
-      <section class="config-panel">
-        <h2 class="section-title">Character Finalization</h2>
-
-        <label class="checkbox-field">
-          <input v-model="structuredCharactersEnabled" type="checkbox" />
-          <span>Enable Structured Characters</span>
-        </label>
-
-        <div v-if="structuredCharactersEnabled" class="config-grid">
-          <label class="field">
-            <span>Primary Character Display Name</span>
-            <input v-model="primaryCharacterDisplayName" class="input" type="text" />
-          </label>
-
-          <label class="field">
-            <span>Primary Character Species</span>
-            <input v-model="primaryCharacterSpecies" class="input" type="text" />
-          </label>
-
-          <label class="field">
-            <span>Primary Visual Traits</span>
-            <textarea
-              v-model="primaryCharacterVisualTraits"
-              class="textarea"
-              rows="3"
-              placeholder="例如：long upright ears, white fur, red scarf"
-            />
-          </label>
-
-          <label class="field">
-            <span>Primary Forbidden Traits</span>
-            <textarea
-              v-model="primaryCharacterForbiddenTraits"
-              class="textarea"
-              rows="3"
-              placeholder="例如：cat ears, turtle shell"
-            />
-          </label>
-
-          <label class="field">
-            <span>Secondary Character Display Name</span>
-            <input v-model="secondaryCharacterDisplayName" class="input" type="text" />
-          </label>
-
-          <label class="field">
-            <span>Secondary Character Species</span>
-            <input v-model="secondaryCharacterSpecies" class="input" type="text" />
-          </label>
-
-          <label class="field">
-            <span>Secondary Visual Traits</span>
-            <textarea
-              v-model="secondaryCharacterVisualTraits"
-              class="textarea"
-              rows="3"
-              placeholder="例如：round shell, short legs, green shell"
-            />
-          </label>
-
-          <label class="field">
-            <span>Secondary Forbidden Traits</span>
-            <textarea
-              v-model="secondaryCharacterForbiddenTraits"
-              class="textarea"
-              rows="3"
-              placeholder="例如：rabbit ears, cat ears"
-            />
-          </label>
-        </div>
-      </section>
-
-      <section class="steps-panel">
-        <h2 class="section-title">Workflow Steps</h2>
-        <div class="steps-grid">
-          <label v-for="step in STEP_OPTIONS" :key="step.value" class="step-option">
-            <input v-model="selectedSteps" type="checkbox" :value="step.value" />
-            <span>{{ step.label }}</span>
-          </label>
-        </div>
-        <p v-if="selectedSteps.length === 0" class="hint">请至少选择一个 step。</p>
-      </section>
-
-      <button class="btn" :disabled="!canSubmit" @click="runWorkflow">
-        {{ loading ? '请求中...' : 'Run Workflow' }}
-      </button>
-
-      <p v-if="errorMessage" class="error">请求失败：{{ errorMessage }}</p>
-
-      <section v-if="storyText" class="story-panel">
-        <h2 class="section-title">Story Result</h2>
-        <p class="story-text">{{ storyText }}</p>
-      </section>
-
-      <section v-if="storyboardText" class="result-panel">
-        <h2 class="section-title">Storyboard</h2>
-        <pre class="light-result">{{ storyboardText }}</pre>
-      </section>
-            <section v-if="imagePromptsText" class="result-panel">
-        <h2 class="section-title">Image Prompts</h2>
-        <pre class="light-result">{{ imagePromptsText }}</pre>
-      </section>
-
-      <section v-if="imageAssetsText" class="result-panel">
-        <h2 class="section-title">Image Assets</h2>
-        <pre class="light-result">{{ imageAssetsText }}</pre>
-      </section>
-
-      <section v-if="imageReviewSelectedAssets.length > 0" class="result-panel">
-        <h2 class="section-title">Interactive Image Review</h2>
-
-        <div class="review-scene-grid">
-          <article
-            v-for="item in imageReviewSelectedAssets"
-            :key="item.scene_id || item.scene_title"
-            class="review-scene-card"
-          >
-            <div class="review-scene-head">
-              <div>
-                <strong>{{ item.scene_title || item.scene_id || 'unknown-scene' }}</strong>
-                <p class="detail-text">
-                  {{ item.selection_source || '-' }} / {{ item.selection_mode || '-' }}
-                </p>
-              </div>
-
-              <span class="summary-status">
-                {{ selectingSceneId === item.scene_id ? 'Switching...' : item.review_status || '-' }}
-              </span>
-            </div>
-
-            <div class="detail-block">
-              <span class="detail-label">Current Selected</span>
-              <code>{{ assetRefPath(item.selected_asset_ref) || '-' }}</code>
-
-              <a
-                v-if="isImageAsset(assetRefPath(item.selected_asset_ref))"
-                class="asset-image-link"
-                :href="toAssetHref(assetRefPath(item.selected_asset_ref))"
-                target="_blank"
-                rel="noreferrer"
-              >
-                <img
-                  class="asset-image asset-image-thumbnail review-selected-image"
-                  :src="toAssetHref(assetRefPath(item.selected_asset_ref))"
-                  :alt="item.scene_title || item.scene_id || 'selected-image'"
-                />
-              </a>
-            </div>
-
-            <div class="detail-block">
-              <span class="detail-label">Candidate Assets</span>
-
-              <div class="review-candidate-grid">
-                <button
-                  v-for="candidate in item.candidate_asset_refs || []"
-                  :key="candidate.relative_path || candidate.file_name || candidate.public_url"
-                  type="button"
-                  class="asset-select-card"
-                  :class="{
-                    active: isSameAssetRef(candidate, item.selected_asset_ref),
-                  }"
-                  :disabled="loading || selectingSceneId === item.scene_id"
-                  @click="selectImageAsset(item.scene_id || '', candidate)"
-                >
-                  <span class="detail-label">
-                    {{ isSameAssetRef(candidate, item.selected_asset_ref) ? 'Selected' : 'Click to Select' }}
-                  </span>
-
-                  <code>{{ candidate.file_name || '-' }}</code>
-
-                  <img
-                    v-if="isImageAsset(assetRefPath(candidate))"
-                    class="asset-image asset-image-thumbnail"
-                    :src="toAssetHref(assetRefPath(candidate))"
-                    :alt="candidate.file_name || 'candidate-image'"
-                  />
-                </button>
-              </div>
-            </div>
-          </article>
-        </div>
-      </section>
-
-      <section v-if="imageReviewText" class="result-panel">
-        <h2 class="section-title">Image Review / Asset Selection</h2>
-        <pre class="light-result">{{ imageReviewText }}</pre>
-      </section>
-
-      <section v-if="videoPromptsText" class="result-panel">
-        <h2 class="section-title">Video Prompts</h2>
-        <pre class="light-result">{{ videoPromptsText }}</pre>
-      </section>
-
-      <section v-if="narrationText" class="result-panel">
-        <h2 class="section-title">Narration</h2>
-        <pre class="light-result">{{ narrationText }}</pre>
-      </section>
-
-      <section v-if="subtitlesText" class="result-panel">
-        <h2 class="section-title">Subtitles Preview</h2>
-        <pre class="light-result">{{ subtitlesText }}</pre>
-      </section>
-
-      <section v-if="renderPlanText" class="result-panel">
-        <h2 class="section-title">Render Plan</h2>
-        <pre class="light-result">{{ renderPlanText }}</pre>
-      </section>
-
-      <section v-if="characterCandidatesText" class="result-panel">
-        <h2 class="section-title">Character Candidates</h2>
-        <pre class="light-result">{{ characterCandidatesText }}</pre>
-      </section>
-
-      <section v-if="characterManifestText" class="result-panel">
-        <h2 class="section-title">Character Manifest</h2>
-        <pre class="light-result">{{ characterManifestText }}</pre>
-      </section>
-
+      <WorkflowResultsPanel
+        :story-text="storyText"
+        :storyboard-text="storyboardText"
+        :image-prompts-text="imagePromptsText"
+        :image-assets-text="imageAssetsText"
+        :image-review-text="imageReviewText"
+        :video-prompts-text="videoPromptsText"
+        :narration-text="narrationText"
+        :subtitles-text="subtitlesText"
+        :render-plan-text="renderPlanText"
+        :character-candidates-text="characterCandidatesText"
+        :character-manifest-text="characterManifestText"
+      />
       <section
         v-if="mockAudioIndexUrl || mockAudioSceneGroups.length > 0 || mockAudioDirectoryText"
         class="result-panel"
@@ -1424,129 +973,10 @@ h1 {
   font-size: 15px;
 }
 
-.label {
-  display: block;
-  margin-bottom: 8px;
-  color: #111827;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.input {
-  width: 100%;
-  box-sizing: border-box;
-  border: 1px solid #d1d5db;
-  border-radius: 12px;
-  padding: 12px 14px;
-  margin-bottom: 16px;
-  font-size: 14px;
-  color: #111827;
-  background: #ffffff;
-}
-
-.textarea {
-  width: 100%;
-  box-sizing: border-box;
-  border: 1px solid #d1d5db;
-  border-radius: 12px;
-  padding: 12px 14px;
-  font-size: 15px;
-  line-height: 1.5;
-  resize: vertical;
-  background: #ffffff;
-  color: #111827;
-}
-
-.textarea:focus,
-.input:focus,
-.textarea:focus {
-  outline: none;
-  border-color: #111827;
-}
-
-.config-panel,
-.steps-panel,
-.story-panel,
-.result-panel,
-.summary-item {
-  margin-top: 20px;
-  padding: 16px;
-  border-radius: 14px;
-  background: #f8fafc;
-  border: 1px solid #e5e7eb;
-}
-
-.config-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.field {
-  display: block;
-}
-
-.field span,
-.checkbox-field span {
-  display: block;
-  margin-bottom: 8px;
-  color: #111827;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.checkbox-field {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-top: 28px;
-}
-
-.checkbox-field span {
-  margin-bottom: 0;
-  font-weight: 500;
-}
-
-.steps-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.step-option {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #111827;
-  font-size: 14px;
-}
-
 .hint {
   margin: 12px 0 0;
   color: #dc2626;
   font-size: 13px;
-}
-
-.btn {
-  margin-top: 16px;
-  border: none;
-  border-radius: 10px;
-  padding: 12px 18px;
-  font-size: 15px;
-  cursor: pointer;
-  background: #111827;
-  color: #ffffff;
-}
-
-.btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.7;
-}
-
-.error {
-  margin-top: 16px;
-  color: #dc2626;
-  font-size: 14px;
 }
 
 .summary-panel,
@@ -1582,14 +1012,6 @@ h1 {
   font-size: 16px;
   line-height: 1.4;
   color: #111827;
-}
-
-.story-text {
-  margin: 0;
-  color: #1f2937;
-  font-size: 15px;
-  line-height: 1.8;
-  white-space: pre-wrap;
 }
 
 .result {
