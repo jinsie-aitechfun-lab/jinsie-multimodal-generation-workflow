@@ -485,9 +485,19 @@ class WorkflowRunner:
             aggregated_outputs[name] = output
 
             if name == "image_assets" and isinstance(output, dict):
-                aggregated_outputs["image_review"] = self._build_image_review_from_assets(
-                    aggregated_outputs
-                )
+                image_assets_status = str(output.get("status") or "").strip().lower()
+
+                if image_assets_status in {"pending", "retrying"}:
+                    aggregated_outputs["image_review"] = {
+                        "enabled": False,
+                        "status": "pending",
+                        "reason": "waiting_for_image_assets",
+                        "selected_assets": [],
+                    }
+                else:
+                    aggregated_outputs["image_review"] = self._build_image_review_from_assets(
+                        aggregated_outputs
+                    )
 
         session_memory_summary = self._build_session_memory_summary(
             req.session_id,
@@ -987,7 +997,61 @@ class WorkflowRunner:
     def _api_image_fallback_to_pillow(self) -> bool:
         value = os.getenv("KLING_IMAGE_FALLBACK_TO_PILLOW", "true").strip().lower()
         return value in {"1", "true", "yes", "on"}
+    def _image_api_key(self) -> str:
+        image_key = os.getenv("SILICONFLOW_API_KEY", "").strip()
+        if image_key:
+            return image_key
+        return os.getenv("OPENAI_API_KEY", "").strip()
 
+    def _image_api_base_url(self) -> str:
+        value = os.getenv("SILICONFLOW_BASE_URL", "").strip()
+        if value:
+            return value.rstrip("/")
+
+        value = os.getenv("OPENAI_BASE_URL", "").strip()
+        if value:
+            return value.rstrip("/")
+
+        return "https://api.siliconflow.cn/v1"
+    def _image_429_strategy(self) -> str:
+        value = os.getenv("IMAGE_429_STRATEGY", "pillow_fallback").strip().lower()
+        if value in {"pending", "pillow_fallback"}:
+            return value
+        return "pillow_fallback"
+
+    def _is_rate_limit_error(self, error: Exception) -> bool:
+        text = str(error or "").lower()
+        return (
+            "429" in text
+            or "rate limit" in text
+            or "too many requests" in text
+            or "ipm limit" in text
+            or "ipd limit" in text
+        )
+
+    def _force_image_rate_limit(self) -> bool:
+        value = os.getenv("FORCE_IMAGE_RATE_LIMIT", "").strip().lower()
+        return value in {"1", "true", "yes", "on"}
+    def _build_pending_image_assets_result(
+        self,
+        *,
+        ctx: StepContext,
+        provider: str,
+        reason: str,
+        retry_after_sec: int = 60,
+    ) -> Dict[str, Any]:
+        return {
+            "enabled": False,
+            "run_id": ctx.run_id,
+            "provider": provider,
+            "status": "retrying",
+            "retryable": True,
+            "retry_after_sec": retry_after_sec,
+            "reason": "rate_limited",
+            "detail": reason,
+            "asset_count": 0,
+            "assets": [],
+        }
     def _normalized_video_provider(self, provider: str) -> str:
         value = provider.strip().lower()
         if not value:
@@ -3165,6 +3229,16 @@ class WorkflowRunner:
             try:
                 return self._run_api_image_assets(ctx, outputs)
             except Exception as e:
+                strategy = self._image_429_strategy()
+
+                if strategy == "pending" and self._is_rate_limit_error(e):
+                    return self._build_pending_image_assets_result(
+                        ctx=ctx,
+                        provider="api_image_generator",
+                        reason=str(e),
+                        retry_after_sec=60,
+                    )
+
                 fallback_provider = self._image_fallback_provider_name()
                 fallback_enabled = self._api_image_fallback_to_pillow()
 
@@ -3343,15 +3417,11 @@ class WorkflowRunner:
         if not self._api_image_enabled():
             raise RuntimeError("API_IMAGE_ENABLED is false")
 
-        api_key = os.getenv("SILICONFLOW_API_KEY", "").strip()
+        api_key = self._image_api_key()
         if not api_key:
-            raise RuntimeError("SILICONFLOW_API_KEY is not set")
+            raise RuntimeError("image api key is missing")
 
-        base_url = os.getenv(
-            "SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1"
-        ).strip()
-        if not base_url:
-            base_url = "https://api.siliconflow.cn/v1"
+        base_url = self._image_api_base_url()
 
         model = os.getenv("SILICONFLOW_IMAGE_MODEL", "Kwai-Kolors/Kolors").strip()
         if not model:
@@ -3496,6 +3566,8 @@ class WorkflowRunner:
     def _run_api_image_assets(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
+        if self._force_image_rate_limit():
+            raise RuntimeError("HTTP 429: IPM limit reached (forced for local testing)")
         sentence_shots = outputs.get("sentence_shots") or {}
         shot_items = sentence_shots.get("items") or []
 
@@ -3707,10 +3779,20 @@ class WorkflowRunner:
     def _run_video_prompts(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
+        image_assets = outputs.get("image_assets") or {}
+        image_assets_status = str(image_assets.get("status") or "").strip().lower()
+
+        if image_assets_status in {"pending", "retrying"}:
+            return {
+                "provider": self._normalized_video_provider(ctx.input.video_provider),
+                "status": "pending",
+                "reason": "waiting_for_image_assets",
+                "prompts": [],
+            }
+
         storyboard = outputs.get("storyboard") or {}
         scenes = storyboard.get("scenes") or []
         return self._build_video_provider_prompts(ctx, scenes, outputs)
-
     def _run_dialogue_script(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:

@@ -269,6 +269,17 @@ const imageReviewSelectedAssets = computed<ImageReviewSelectedAsset[]>(() => {
   return Array.isArray(selectedAssets) ? (selectedAssets as ImageReviewSelectedAsset[]) : []
 })
 
+const imageReviewItems = computed(() => {
+  const value = currentWorkflowResponse.value?.outputs?.image_review
+  if (!value || typeof value !== 'object') {
+    return []
+  }
+
+  const selectedAssets = (value as Record<string, unknown>).selected_assets
+  return Array.isArray(selectedAssets) ? selectedAssets : []
+})
+
+
 const hasReviewContent = computed(() => {
   return Boolean(
     imageReviewSelectedAssets.value.length > 0 ||
@@ -288,6 +299,30 @@ const hasReviewContent = computed(() => {
 
 const hasDebugContent = computed(() => {
   return Boolean(stepSummaries.value.length > 0 || resultText.value)
+})
+
+const imageAssetsPending = computed(() => {
+  const imageAssets = currentWorkflowResponse.value?.outputs?.image_assets
+  if (!imageAssets || typeof imageAssets !== 'object') {
+    return false
+  }
+
+  const status = (imageAssets as Record<string, unknown>).status
+  return status === 'pending' || status === 'retrying'
+})
+
+const imageAssetsPendingMessage = computed(() => {
+  const imageAssets = currentWorkflowResponse.value?.outputs?.image_assets
+  if (!imageAssets || typeof imageAssets !== 'object') {
+    return '真实图片生成中，请稍后重试。'
+  }
+
+  const retryAfterSec = (imageAssets as Record<string, unknown>).retry_after_sec
+  if (typeof retryAfterSec === 'number' && retryAfterSec > 0) {
+    return `真实图片生成中，图像服务当前限流，请约 ${retryAfterSec} 秒后重试。`
+  }
+
+  return '真实图片生成中，图像服务当前限流，请稍后重试。'
 })
 
 function assetRefPath(assetRef?: ImageAssetRef): string {
@@ -841,13 +876,21 @@ onMounted(() => {
         </p>
 
         <template v-else>
-          <InteractiveImageReview
-            :items="imageReviewSelectedAssets"
-            :api-base-url="apiBaseUrl"
-            :loading="loading"
-            :selecting-scene-id="selectingSceneId"
-            @select-asset="({ sceneId, assetRef }) => selectImageAsset(sceneId, assetRef)"
-          />
+          <section v-if="activeTab === 'review'">
+            <section v-if="imageAssetsPending" class="result-panel">
+              <h2 class="section-title">Interactive Image Review</h2>
+              <p class="detail-text">{{ imageAssetsPendingMessage }}</p>
+            </section>
+
+            <InteractiveImageReview
+              v-else
+              :items="imageReviewItems"
+              :api-base-url="apiBaseUrl"
+              :loading="loading"
+              :selecting-scene-id="selectingSceneId"
+              @select-asset="({ sceneId, assetRef }) => selectImageAsset(sceneId, assetRef)"
+            />
+          </section>
 
           <WorkflowResultsPanel
             :story-text="storyText"
