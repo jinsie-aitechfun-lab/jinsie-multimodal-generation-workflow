@@ -1553,7 +1553,10 @@ class WorkflowRunner:
                 continue
 
             scene_title = str(item.get("scene_title") or "").strip()
-            candidate_asset_refs = self._build_mock_candidate_asset_refs(item, provider)
+            candidate_asset_refs = item.get("candidate_asset_refs") or []
+            if not isinstance(candidate_asset_refs, list) or not candidate_asset_refs:
+                candidate_asset_refs = [self._image_asset_ref_from_item(item, provider)]
+
             selected_asset_ref = candidate_asset_refs[0]
 
             selected_assets.append(
@@ -3090,6 +3093,47 @@ class WorkflowRunner:
             "character_ids": self._character_ids_from_bindings(characters),
             "prompt": prompt_text,
         }
+    def _scene_candidate_variant(
+        self,
+        *,
+        scene: Dict[str, Any],
+        candidate_index: int,
+    ) -> Dict[str, Any]:
+        variant = dict(scene)
+
+        scene_title = str(scene.get("scene_title") or "").strip()
+        visual_description = str(scene.get("visual_description") or "").strip()
+        narration = str(scene.get("narration") or "").strip()
+        shot_type = str(scene.get("shot_type") or "medium").strip()
+
+        if candidate_index == 0:
+            variant["candidate_key"] = "candidate_a"
+            variant["candidate_label"] = "Primary Composition"
+            return variant
+
+        variant["candidate_key"] = "candidate_b"
+        variant["candidate_label"] = "Alternate Composition"
+
+        if shot_type == "wide":
+            variant["shot_type"] = "medium"
+        elif shot_type == "medium":
+            variant["shot_type"] = "close"
+        else:
+            variant["shot_type"] = "wide"
+
+        if scene_title:
+            variant["scene_title"] = f"{scene_title} Alt"
+
+        if visual_description:
+            variant["visual_description"] = (
+                f"{visual_description}; alternate composition, different framing, "
+                "slightly changed pose emphasis, secondary visual arrangement"
+            )
+
+        if narration:
+            variant["narration"] = narration
+
+        return variant
     
     def _run_image_assets(
         self, ctx: StepContext, outputs: Dict[str, Any]
@@ -3203,16 +3247,39 @@ class WorkflowRunner:
 
         for index, scene in enumerate(scenes, start=1):
             scene_id = str(scene.get("scene_id") or f"scene_{index:02d}")
-            file_name = f"{scene_id}.ppm"
-            output_path = run_dir / file_name
-            output_path.write_bytes(self._build_scene_ppm(ctx, scene, index))
-
             prompt_item = prompt_by_scene_id.get(scene_id) or {}
             asset_meta = self._image_asset_metadata(
                 scene=scene,
                 prompt_item=prompt_by_scene_id.get(scene_id) or {},
                 fallback_scene_title=str(scene.get("scene_title") or "").strip(),
             )
+            
+            candidate_asset_refs: List[Dict[str, Any]] = []
+            
+            for candidate_index, candidate_suffix in enumerate(["candidate_a", "candidate_b"]):
+                candidate_scene = self._scene_candidate_variant(
+                    scene=scene,
+                    candidate_index=candidate_index,
+                )
+
+                file_name = f"{scene_id}__{candidate_suffix}.ppm"
+                output_path = run_dir / file_name
+                output_path.write_bytes(
+                    self._build_scene_ppm(ctx, candidate_scene, index + candidate_index)
+                )
+
+                candidate_asset_refs.append(
+                    {
+                        "scene_id": scene_id,
+                        "file_name": file_name,
+                        "relative_path": f"assets/mock/image/{ctx.run_id}/{file_name}",
+                        "public_url": f"/assets/mock/image/{ctx.run_id}/{file_name}",
+                        "mime_type": "image/png",
+                        "provider": "pillow_storybook_renderer",
+                    }
+                )
+
+            primary_ref = candidate_asset_refs[0]
 
             assets.append(
                 {
@@ -3221,14 +3288,14 @@ class WorkflowRunner:
                     "characters": asset_meta["characters"],
                     "character_ids": asset_meta["character_ids"],
                     "prompt": asset_meta["prompt"],
-                    "file_name": file_name,
-                    "relative_path": f"assets/mock/image/{ctx.run_id}/{file_name}",
-                    "public_url": f"/assets/mock/image/{ctx.run_id}/{file_name}",
-                    "mime_type": "image/png",
+                    "file_name": primary_ref["file_name"],
+                    "relative_path": primary_ref["relative_path"],
+                    "public_url": primary_ref["public_url"],
+                    "mime_type": primary_ref["mime_type"],
                     "status": "generated",
+                    "candidate_asset_refs": candidate_asset_refs,
                 }
             )
-
         return {
             "enabled": True,
             "run_id": ctx.run_id,
@@ -3438,48 +3505,77 @@ class WorkflowRunner:
                     or prompt_by_scene_id.get(scene_id)
                     or {}
                 )
-                prompt = str(prompt_item.get("prompt") or "").strip()
+                base_prompt = str(prompt_item.get("prompt") or "").strip()
 
-                if not prompt:
+                if not base_prompt:
                     text = str(shot.get("text", "")).strip()
                     visual_description = str(shot.get("visual_description", "")).strip()
-                    prompt = visual_description or text or f"storybook shot {shot_id}"
-
-                file_name = f"{shot_id}.png"
-                output_path = run_dir / file_name
-
-                pseudo_scene = {
-                    "scene_id": shot_id,
-                    "scene_title": scene_title,
-                    "visual_description": str(shot.get("visual_description") or "").strip(),
-                    "narration": str(shot.get("text") or "").strip(),
-                    "duration_sec": 0,
-                    "shot_type": str(shot.get("shot_type") or "medium").strip(),
-                    "transition": str(shot.get("transition") or "fade").strip(),
-                    "characters": (
-                        prompt_item.get("characters")
-                        or (scene_by_id.get(scene_id) or {}).get("characters")
-                        or []
-                    ),
-                }
-
-                image_bytes = self._generate_api_image_bytes(
-                    prompt=prompt,
-                    scene=pseudo_scene,
-                    scene_index=index,
-                )
-                if not isinstance(image_bytes, (bytes, bytearray)):
-                    raise RuntimeError(
-                        f"api image provider returned invalid bytes for shot {shot_id}"
-                    )
-
-                output_path.write_bytes(bytes(image_bytes))
+                    base_prompt = visual_description or text or f"storybook shot {shot_id}"
 
                 asset_meta = self._image_asset_metadata(
                     scene=scene_by_id.get(scene_id) or {},
                     prompt_item=prompt_item,
                     fallback_scene_title=scene_title,
                 )
+
+                candidate_asset_refs: List[Dict[str, Any]] = []
+
+                for candidate_index, candidate_suffix in enumerate(["candidate_a", "candidate_b"]):
+                    candidate_prompt = base_prompt
+                    if candidate_index == 1:
+                        candidate_prompt = (
+                            f"{base_prompt}, alternate composition, different framing, "
+                            "slightly changed pose emphasis, secondary visual arrangement"
+                        )
+
+                    pseudo_scene = {
+                        "scene_id": shot_id,
+                        "scene_title": scene_title,
+                        "visual_description": str(shot.get("visual_description") or "").strip(),
+                        "narration": str(shot.get("text") or "").strip(),
+                        "duration_sec": 0,
+                        "shot_type": str(shot.get("shot_type") or "medium").strip(),
+                        "transition": str(shot.get("transition") or "fade").strip(),
+                        "characters": (
+                            prompt_item.get("characters")
+                            or (scene_by_id.get(scene_id) or {}).get("characters")
+                            or []
+                        ),
+                        "candidate_key": candidate_suffix,
+                        "candidate_label": (
+                            "Primary Composition"
+                            if candidate_index == 0
+                            else "Alternate Composition"
+                        ),
+                    }
+
+                    file_name = f"{shot_id}__{candidate_suffix}.png"
+                    output_path = run_dir / file_name
+
+                    image_bytes = self._generate_api_image_bytes(
+                        prompt=candidate_prompt,
+                        scene=pseudo_scene,
+                        scene_index=index + candidate_index,
+                    )
+                    if not isinstance(image_bytes, (bytes, bytearray)):
+                        raise RuntimeError(
+                            f"api image provider returned invalid bytes for shot {shot_id} ({candidate_suffix})"
+                        )
+
+                    output_path.write_bytes(bytes(image_bytes))
+
+                    candidate_asset_refs.append(
+                        {
+                            "scene_id": scene_id,
+                            "file_name": file_name,
+                            "relative_path": f"assets/mock/image/{ctx.run_id}/{file_name}",
+                            "public_url": f"/assets/mock/image/{ctx.run_id}/{file_name}",
+                            "mime_type": "image/png",
+                            "provider": "api_image_generator",
+                        }
+                    )
+
+                primary_ref = candidate_asset_refs[0]
 
                 assets.append(
                     {
@@ -3488,12 +3584,13 @@ class WorkflowRunner:
                         "scene_title": asset_meta["scene_title"],
                         "characters": asset_meta["characters"],
                         "character_ids": asset_meta["character_ids"],
-                        "prompt": prompt,
-                        "file_name": file_name,
-                        "relative_path": f"assets/mock/image/{ctx.run_id}/{file_name}",
-                        "public_url": f"/assets/mock/image/{ctx.run_id}/{file_name}",
-                        "mime_type": "image/png",
+                        "prompt": base_prompt,
+                        "file_name": primary_ref["file_name"],
+                        "relative_path": primary_ref["relative_path"],
+                        "public_url": primary_ref["public_url"],
+                        "mime_type": primary_ref["mime_type"],
                         "status": "generated",
+                        "candidate_asset_refs": candidate_asset_refs,
                     }
                 )
 
@@ -3508,40 +3605,14 @@ class WorkflowRunner:
         for index, scene in enumerate(scenes, start=1):
             scene_id = str(scene.get("scene_id") or f"scene_{index:02d}")
             prompt_item = prompt_by_scene_id.get(scene_id) or {}
-            prompt = str(prompt_item.get("prompt") or "").strip()
+            base_prompt = str(prompt_item.get("prompt") or "").strip()
 
-            if not prompt:
+            if not base_prompt:
                 visual_description = str(scene.get("visual_description") or "").strip()
                 narration = str(scene.get("narration") or "").strip()
-                prompt = (
+                base_prompt = (
                     visual_description or narration or f"storybook scene {scene_id}"
                 )
-
-            file_name = f"{scene_id}.png"
-            output_path = run_dir / file_name
-
-            pseudo_scene = {
-                "scene_id": scene_id,
-                "scene_title": str(scene.get("scene_title") or "").strip(),
-                "visual_description": str(scene.get("visual_description") or "").strip(),
-                "narration": str(scene.get("narration") or "").strip(),
-                "duration_sec": int(scene.get("duration_sec") or 0),
-                "shot_type": str(scene.get("shot_type") or "medium").strip(),
-                "transition": str(scene.get("transition") or "fade").strip(),
-                "characters": prompt_item.get("characters") or scene.get("characters") or [],
-            }
-
-            image_bytes = self._generate_api_image_bytes(
-                prompt=prompt,
-                scene=pseudo_scene,
-                scene_index=index,
-            )
-            if not isinstance(image_bytes, (bytes, bytearray)):
-                raise RuntimeError(
-                    f"api image provider returned invalid bytes for scene {scene_id}"
-                )
-
-            output_path.write_bytes(bytes(image_bytes))
 
             asset_meta = self._image_asset_metadata(
                 scene=scene,
@@ -3549,18 +3620,62 @@ class WorkflowRunner:
                 fallback_scene_title=str(scene.get("scene_title") or "").strip(),
             )
 
+            candidate_asset_refs: List[Dict[str, Any]] = []
+
+            for candidate_index, candidate_suffix in enumerate(["candidate_a", "candidate_b"]):
+                candidate_scene = self._scene_candidate_variant(
+                    scene=scene,
+                    candidate_index=candidate_index,
+                )
+
+                candidate_prompt = base_prompt
+                if candidate_index == 1:
+                    candidate_prompt = (
+                        f"{base_prompt}, alternate composition, different framing, "
+                        "slightly changed pose emphasis, secondary visual arrangement"
+                    )
+
+                file_name = f"{scene_id}__{candidate_suffix}.png"
+                output_path = run_dir / file_name
+
+                image_bytes = self._generate_api_image_bytes(
+                    prompt=candidate_prompt,
+                    scene=candidate_scene,
+                    scene_index=index + candidate_index,
+                )
+                if not isinstance(image_bytes, (bytes, bytearray)):
+                    raise RuntimeError(
+                        f"api image provider returned invalid bytes for scene {scene_id} ({candidate_suffix})"
+                    )
+
+                output_path.write_bytes(bytes(image_bytes))
+
+                candidate_asset_refs.append(
+                    {
+                        "scene_id": scene_id,
+                        "file_name": file_name,
+                        "relative_path": f"assets/mock/image/{ctx.run_id}/{file_name}",
+                        "public_url": f"/assets/mock/image/{ctx.run_id}/{file_name}",
+                        "mime_type": "image/png",
+                        "provider": "api_image_generator",
+                    }
+                )
+
+            primary_ref = candidate_asset_refs[0]
+
             assets.append(
                 {
                     "scene_id": scene_id,
                     "scene_title": asset_meta["scene_title"],
                     "characters": asset_meta["characters"],
                     "character_ids": asset_meta["character_ids"],
-                    "prompt": prompt,
-                    "file_name": file_name,
-                    "relative_path": f"assets/mock/image/{ctx.run_id}/{file_name}",
-                    "public_url": f"/assets/mock/image/{ctx.run_id}/{file_name}",
-                    "mime_type": "image/png",
+                    "prompt": base_prompt,
+                    "file_name": primary_ref["file_name"],
+                    "relative_path": primary_ref["relative_path"],
+                    "public_url": primary_ref["public_url"],
+                    "mime_type": primary_ref["mime_type"],
                     "status": "generated",
+                    "candidate_asset_refs": candidate_asset_refs,
                 }
             )
 
@@ -3571,7 +3686,6 @@ class WorkflowRunner:
             "asset_count": len(assets),
             "assets": assets,
         }
-    
     def _run_video_prompts(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
