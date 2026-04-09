@@ -235,6 +235,9 @@ const stepSummaries = ref<Array<{ name: string; status: string; preview: string 
 const currentWorkflowResponse = ref<WorkflowRunResponse | null>(null)
 const currentWorkflowPayload = ref<WorkflowRunPayload | null>(null)
 const selectingSceneId = ref('')
+type ViewTab = 'run' | 'review' | 'assets' | 'debug'
+const activeTab = ref<ViewTab>('run')
+
 const apiBaseUrl =
   (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() ||
   'http://127.0.0.1:8004'
@@ -258,6 +261,27 @@ const imageReviewSelectedAssets = computed<ImageReviewSelectedAsset[]>(() => {
 
   const selectedAssets = (value as Record<string, unknown>).selected_assets
   return Array.isArray(selectedAssets) ? (selectedAssets as ImageReviewSelectedAsset[]) : []
+})
+
+const hasReviewContent = computed(() => {
+  return Boolean(
+    imageReviewSelectedAssets.value.length > 0 ||
+      storyText.value ||
+      storyboardText.value ||
+      imagePromptsText.value ||
+      imageAssetsText.value ||
+      imageReviewText.value ||
+      videoPromptsText.value ||
+      narrationText.value ||
+      subtitlesText.value ||
+      renderPlanText.value ||
+      characterCandidatesText.value ||
+      characterManifestText.value
+  )
+})
+
+const hasDebugContent = computed(() => {
+  return Boolean(stepSummaries.value.length > 0 || resultText.value)
 })
 
 function assetRefPath(assetRef?: ImageAssetRef): string {
@@ -763,179 +787,232 @@ onMounted(() => {
       <p class="desc">
         输入一个主题，系统按默认参数或可选配置生成故事、分镜、旁白、字幕与视频渲染计划。
       </p>
-      <SampleAssetsPanel
-        :samples-loading="samplesLoading"
-        :samples-error-message="samplesErrorMessage"
-        :samples-summary="samplesSummary"
-        :provider-stats-text="providerStatsText"
-        :kling-samples="klingSamples"
-        :selected-sample-id="selectedSampleId"
-        :selected-sample-detail="selectedSampleDetail"
-        :selected-sample-notes-text="selectedSampleNotesText"
-        :selected-sample-notes-loading="selectedSampleNotesLoading"
-        :api-base-url="apiBaseUrl"
-        @refresh="loadSampleAssets"
-        @select-sample="selectSample"
-      />    
-      <WorkflowRunPanel
-        :loading="loading"
-        :can-submit="canSubmit"
-        :error-message="errorMessage"
-        :session-id="sessionId"
-        :topic="topic"
-        :audience="audience"
-        :tone="tone"
-        :visual-style="visualStyle"
-        :character-style="characterStyle"
-        :voice-style="voiceStyle"
-        :voiceover-enabled="voiceoverEnabled"
-        :voice-mode="voiceMode"
-        :narrator-voice-style="narratorVoiceStyle"
-        :mother-voice-style="motherVoiceStyle"
-        :child-voice-style="childVoiceStyle"
-        :duration-sec="durationSec"
-        :language="language"
-        :subtitle-enabled="subtitleEnabled"
-        :video-provider="videoProvider"
-        :output-mode="outputMode"
-        :structured-characters-enabled="structuredCharactersEnabled"
-        :primary-character-display-name="primaryCharacterDisplayName"
-        :primary-character-species="primaryCharacterSpecies"
-        :primary-character-visual-traits="primaryCharacterVisualTraits"
-        :primary-character-forbidden-traits="primaryCharacterForbiddenTraits"
-        :secondary-character-display-name="secondaryCharacterDisplayName"
-        :secondary-character-species="secondaryCharacterSpecies"
-        :secondary-character-visual-traits="secondaryCharacterVisualTraits"
-        :secondary-character-forbidden-traits="secondaryCharacterForbiddenTraits"
-        :selected-steps="selectedSteps"
-        :step-options="STEP_OPTIONS"
-        @update:sessionId="sessionId = $event"
-        @update:topic="topic = $event"
-        @update:audience="audience = $event"
-        @update:tone="tone = $event"
-        @update:visualStyle="visualStyle = $event"
-        @update:characterStyle="characterStyle = $event"
-        @update:voiceStyle="voiceStyle = $event"
-        @update:voiceoverEnabled="voiceoverEnabled = $event"
-        @update:voiceMode="voiceMode = $event"
-        @update:narratorVoiceStyle="narratorVoiceStyle = $event"
-        @update:motherVoiceStyle="motherVoiceStyle = $event"
-        @update:childVoiceStyle="childVoiceStyle = $event"
-        @update:durationSec="durationSec = $event"
-        @update:language="language = $event"
-        @update:subtitleEnabled="subtitleEnabled = $event"
-        @update:videoProvider="videoProvider = $event"
-        @update:outputMode="outputMode = $event"
-        @update:structuredCharactersEnabled="structuredCharactersEnabled = $event"
-        @update:primaryCharacterDisplayName="primaryCharacterDisplayName = $event"
-        @update:primaryCharacterSpecies="primaryCharacterSpecies = $event"
-        @update:primaryCharacterVisualTraits="primaryCharacterVisualTraits = $event"
-        @update:primaryCharacterForbiddenTraits="primaryCharacterForbiddenTraits = $event"
-        @update:secondaryCharacterDisplayName="secondaryCharacterDisplayName = $event"
-        @update:secondaryCharacterSpecies="secondaryCharacterSpecies = $event"
-        @update:secondaryCharacterVisualTraits="secondaryCharacterVisualTraits = $event"
-        @update:secondaryCharacterForbiddenTraits="secondaryCharacterForbiddenTraits = $event"
-        @update:selectedSteps="selectedSteps = $event"
-        @run="runWorkflow"
-      />
-      <InteractiveImageReview
-        :items="imageReviewSelectedAssets"
-        :api-base-url="apiBaseUrl"
-        :loading="loading"
-        :selecting-scene-id="selectingSceneId"
-        @select-asset="({ sceneId, assetRef }) => selectImageAsset(sceneId, assetRef)"
-      />
-      <WorkflowResultsPanel
-        :story-text="storyText"
-        :storyboard-text="storyboardText"
-        :image-prompts-text="imagePromptsText"
-        :image-assets-text="imageAssetsText"
-        :image-review-text="imageReviewText"
-        :video-prompts-text="videoPromptsText"
-        :narration-text="narrationText"
-        :subtitles-text="subtitlesText"
-        :render-plan-text="renderPlanText"
-        :character-candidates-text="characterCandidatesText"
-        :character-manifest-text="characterManifestText"
-      />
-      <section
-        v-if="mockAudioIndexUrl || mockAudioSceneGroups.length > 0 || mockAudioDirectoryText"
-        class="result-panel"
-      >
-        <h2 class="section-title">Mock Audio Assets</h2>
+      <div class="tabs-bar">
+        <button
+          class="tab-btn"
+          :class="{ active: activeTab === 'run' }"
+          @click="activeTab = 'run'"
+        >
+          Run
+        </button>
 
-        <div v-if="mockAudioIndexUrl" class="mock-audio-link-row">
-          <span class="mock-audio-label">Directory Index</span>
-          <a
-            class="asset-link"
-            :href="`${apiBaseUrl}${mockAudioIndexUrl}`"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Open index.json
-          </a>
-          <code>{{ mockAudioIndexUrl }}</code>
-        </div>
+        <button
+          class="tab-btn"
+          :class="{ active: activeTab === 'review' }"
+          @click="activeTab = 'review'"
+        >
+          Review
+        </button>
 
-        <div v-if="mockAudioSceneGroups.length > 0" class="mock-audio-scenes">
-          <article
-            v-for="group in mockAudioSceneGroups"
-            :key="group.scene_id || 'unknown-scene'"
-            class="mock-audio-scene-card"
-          >
-            <div class="mock-audio-scene-head">
-              <strong>{{ group.scene_id || 'unknown-scene' }}</strong>
-              <span>{{ (group.assets || []).length }} asset(s)</span>
-            </div>
+        <button
+          class="tab-btn"
+          :class="{ active: activeTab === 'assets' }"
+          @click="activeTab = 'assets'"
+        >
+          Assets
+        </button>
 
-            <ul class="mock-audio-asset-list">
-              <li
-                v-for="asset in group.assets || []"
-                :key="asset.asset_id || asset.segment_id || asset.file_name"
-                class="mock-audio-asset-item"
-              >
-                <div class="mock-audio-asset-main">
-                  <code>{{ asset.file_name || '-' }}</code>
-                  <span class="mock-audio-meta">
-                    {{ asset.speaker || '-' }} · {{ asset.duration_estimate_sec ?? 0 }}s
-                  </span>
-                </div>
-
-                <a
-                  v-if="asset.public_url"
-                  class="asset-link"
-                  :href="`${apiBaseUrl}${asset.public_url}`"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Open asset path
-                </a>
-              </li>
-            </ul>
-          </article>
-        </div>
-
-        <details v-if="mockAudioDirectoryText" class="mock-audio-details">
-          <summary>Directory Manifest JSON</summary>
-          <pre class="light-result compact-result">{{ mockAudioDirectoryText }}</pre>
-        </details>
+        <button
+          class="tab-btn"
+          :class="{ active: activeTab === 'debug' }"
+          @click="activeTab = 'debug'"
+        >
+          Debug
+        </button>
+      </div>
+      <section v-if="activeTab === 'run'">    
+        <WorkflowRunPanel
+          :loading="loading"
+          :can-submit="canSubmit"
+          :error-message="errorMessage"
+          :session-id="sessionId"
+          :topic="topic"
+          :audience="audience"
+          :tone="tone"
+          :visual-style="visualStyle"
+          :character-style="characterStyle"
+          :voice-style="voiceStyle"
+          :voiceover-enabled="voiceoverEnabled"
+          :voice-mode="voiceMode"
+          :narrator-voice-style="narratorVoiceStyle"
+          :mother-voice-style="motherVoiceStyle"
+          :child-voice-style="childVoiceStyle"
+          :duration-sec="durationSec"
+          :language="language"
+          :subtitle-enabled="subtitleEnabled"
+          :video-provider="videoProvider"
+          :output-mode="outputMode"
+          :structured-characters-enabled="structuredCharactersEnabled"
+          :primary-character-display-name="primaryCharacterDisplayName"
+          :primary-character-species="primaryCharacterSpecies"
+          :primary-character-visual-traits="primaryCharacterVisualTraits"
+          :primary-character-forbidden-traits="primaryCharacterForbiddenTraits"
+          :secondary-character-display-name="secondaryCharacterDisplayName"
+          :secondary-character-species="secondaryCharacterSpecies"
+          :secondary-character-visual-traits="secondaryCharacterVisualTraits"
+          :secondary-character-forbidden-traits="secondaryCharacterForbiddenTraits"
+          :selected-steps="selectedSteps"
+          :step-options="STEP_OPTIONS"
+          @update:sessionId="sessionId = $event"
+          @update:topic="topic = $event"
+          @update:audience="audience = $event"
+          @update:tone="tone = $event"
+          @update:visualStyle="visualStyle = $event"
+          @update:characterStyle="characterStyle = $event"
+          @update:voiceStyle="voiceStyle = $event"
+          @update:voiceoverEnabled="voiceoverEnabled = $event"
+          @update:voiceMode="voiceMode = $event"
+          @update:narratorVoiceStyle="narratorVoiceStyle = $event"
+          @update:motherVoiceStyle="motherVoiceStyle = $event"
+          @update:childVoiceStyle="childVoiceStyle = $event"
+          @update:durationSec="durationSec = $event"
+          @update:language="language = $event"
+          @update:subtitleEnabled="subtitleEnabled = $event"
+          @update:videoProvider="videoProvider = $event"
+          @update:outputMode="outputMode = $event"
+          @update:structuredCharactersEnabled="structuredCharactersEnabled = $event"
+          @update:primaryCharacterDisplayName="primaryCharacterDisplayName = $event"
+          @update:primaryCharacterSpecies="primaryCharacterSpecies = $event"
+          @update:primaryCharacterVisualTraits="primaryCharacterVisualTraits = $event"
+          @update:primaryCharacterForbiddenTraits="primaryCharacterForbiddenTraits = $event"
+          @update:secondaryCharacterDisplayName="secondaryCharacterDisplayName = $event"
+          @update:secondaryCharacterSpecies="secondaryCharacterSpecies = $event"
+          @update:secondaryCharacterVisualTraits="secondaryCharacterVisualTraits = $event"
+          @update:secondaryCharacterForbiddenTraits="secondaryCharacterForbiddenTraits = $event"
+          @update:selectedSteps="selectedSteps = $event"
+          @run="runWorkflow"
+        />
       </section>
+      <section v-if="activeTab === 'review'">
+        <p v-if="!hasReviewContent" class="empty-state">
+          请先在 Run 页签执行一次 workflow，然后回到 Review 查看选图和结果。
+        </p>
 
-      <section v-if="stepSummaries.length > 0" class="summary-panel">
-        <h2 class="section-title">Steps Summary</h2>
+        <template v-else>
+          <InteractiveImageReview
+            :items="imageReviewSelectedAssets"
+            :api-base-url="apiBaseUrl"
+            :loading="loading"
+            :selecting-scene-id="selectingSceneId"
+            @select-asset="({ sceneId, assetRef }) => selectImageAsset(sceneId, assetRef)"
+          />
 
-        <article v-for="item in stepSummaries" :key="item.name" class="summary-item">
-          <div class="summary-head">
-            <strong>{{ item.name }}</strong>
-            <span class="summary-status">{{ item.status }}</span>
+          <WorkflowResultsPanel
+            :story-text="storyText"
+            :storyboard-text="storyboardText"
+            :image-prompts-text="imagePromptsText"
+            :image-assets-text="imageAssetsText"
+            :image-review-text="imageReviewText"
+            :video-prompts-text="videoPromptsText"
+            :narration-text="narrationText"
+            :subtitles-text="subtitlesText"
+            :render-plan-text="renderPlanText"
+            :character-candidates-text="characterCandidatesText"
+            :character-manifest-text="characterManifestText"
+          />
+        </template>
+      </section>
+      <section v-if="activeTab === 'assets'">
+        <SampleAssetsPanel
+          :samples-loading="samplesLoading"
+          :samples-error-message="samplesErrorMessage"
+          :samples-summary="samplesSummary"
+          :provider-stats-text="providerStatsText"
+          :kling-samples="klingSamples"
+          :selected-sample-id="selectedSampleId"
+          :selected-sample-detail="selectedSampleDetail"
+          :selected-sample-notes-text="selectedSampleNotesText"
+          :selected-sample-notes-loading="selectedSampleNotesLoading"
+          :api-base-url="apiBaseUrl"
+          @refresh="loadSampleAssets"
+          @select-sample="selectSample"
+        />
+        <section
+          v-if="mockAudioIndexUrl || mockAudioSceneGroups.length > 0 || mockAudioDirectoryText"
+          class="result-panel"
+        >
+          <h2 class="section-title">Mock Audio Assets</h2>
+
+          <div v-if="mockAudioIndexUrl" class="mock-audio-link-row">
+            <span class="mock-audio-label">Directory Index</span>
+            <a
+              class="asset-link"
+              :href="`${apiBaseUrl}${mockAudioIndexUrl}`"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open index.json
+            </a>
+            <code>{{ mockAudioIndexUrl }}</code>
           </div>
-          <pre class="summary-preview">{{ item.preview }}</pre>
-        </article>
-      </section>
 
-      <section v-if="resultText" class="debug-panel">
-        <h2 class="section-title">Raw JSON</h2>
-        <pre class="result">{{ resultText }}</pre>
+          <div v-if="mockAudioSceneGroups.length > 0" class="mock-audio-scenes">
+            <article
+              v-for="group in mockAudioSceneGroups"
+              :key="group.scene_id || 'unknown-scene'"
+              class="mock-audio-scene-card"
+            >
+              <div class="mock-audio-scene-head">
+                <strong>{{ group.scene_id || 'unknown-scene' }}</strong>
+                <span>{{ (group.assets || []).length }} asset(s)</span>
+              </div>
+
+              <ul class="mock-audio-asset-list">
+                <li
+                  v-for="asset in group.assets || []"
+                  :key="asset.asset_id || asset.segment_id || asset.file_name"
+                  class="mock-audio-asset-item"
+                >
+                  <div class="mock-audio-asset-main">
+                    <code>{{ asset.file_name || '-' }}</code>
+                    <span class="mock-audio-meta">
+                      {{ asset.speaker || '-' }} · {{ asset.duration_estimate_sec ?? 0 }}s
+                    </span>
+                  </div>
+
+                  <a
+                    v-if="asset.public_url"
+                    class="asset-link"
+                    :href="`${apiBaseUrl}${asset.public_url}`"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Open asset path
+                  </a>
+                </li>
+              </ul>
+            </article>
+          </div>
+
+          <details v-if="mockAudioDirectoryText" class="mock-audio-details">
+            <summary>Directory Manifest JSON</summary>
+            <pre class="light-result compact-result">{{ mockAudioDirectoryText }}</pre>
+          </details>
+        </section>
+      </section>
+      <section v-if="activeTab === 'debug'">
+        <p v-if="!hasDebugContent" class="empty-state">
+          请先运行一次 workflow，生成 Steps Summary 和 Raw JSON 调试信息。
+        </p>
+
+        <template v-else>
+          <section v-if="stepSummaries.length > 0" class="summary-panel">
+            <h2 class="section-title">Steps Summary</h2>
+
+            <article v-for="item in stepSummaries" :key="item.name" class="summary-item">
+              <div class="summary-head">
+                <strong>{{ item.name }}</strong>
+                <span class="summary-status">{{ item.status }}</span>
+              </div>
+              <pre class="summary-preview">{{ item.preview }}</pre>
+            </article>
+          </section>
+
+          <section v-if="resultText" class="debug-panel">
+            <h2 class="section-title">Raw JSON</h2>
+            <pre class="result">{{ resultText }}</pre>
+          </section>
+        </template>
       </section>
     </section>
   </main>
@@ -971,6 +1048,40 @@ h1 {
   margin: 0 0 24px;
   color: #4b5563;
   font-size: 15px;
+}
+.tabs-bar {
+  display: flex;
+  gap: 12px;
+  margin: 0 0 24px;
+  flex-wrap: wrap;
+}
+
+.empty-state {
+  margin: 20px 0 0;
+  padding: 20px;
+  border: 1px dashed #d1d5db;
+  border-radius: 14px;
+  background: #f8fafc;
+  color: #6b7280;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.tab-btn {
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #111827;
+  border-radius: 999px;
+  padding: 10px 16px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.tab-btn.active {
+  background: #111827;
+  color: #ffffff;
+  border-color: #111827;
 }
 
 .hint {
@@ -1025,124 +1136,6 @@ h1 {
   line-height: 1.5;
 }
 
-.samples-panel {
-  margin: 24px 0;
-  padding: 20px;
-  border-radius: 16px;
-  background: #f8fafc;
-  border: 1px solid #e5e7eb;
-}
-
-.samples-panel-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-
-.samples-desc {
-  color: #4b5563;
-  font-size: 14px;
-  line-height: 1.6;
-}
-
-.secondary-btn {
-  border: 1px solid #d1d5db;
-  background: #ffffff;
-  color: #111827;
-  border-radius: 10px;
-  padding: 10px 14px;
-  cursor: pointer;
-  font-size: 14px;
-  white-space: nowrap;
-}
-
-.secondary-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.samples-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  margin-bottom: 16px;
-}
-
-.samples-metric {
-  padding: 14px;
-  border-radius: 12px;
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
-  text-align: left;
-}
-
-.samples-metric-wide {
-  grid-column: 1 / -1;
-}
-
-.metric-label {
-  display: block;
-  margin-bottom: 8px;
-  color: #6b7280;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.metric-value {
-  color: #111827;
-  font-size: 18px;
-}
-
-.samples-layout {
-  display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
-  gap: 16px;
-}
-
-.samples-list-panel,
-.sample-detail-panel {
-  padding: 16px;
-  border-radius: 14px;
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
-}
-
-.subsection-title {
-  margin: 0 0 12px;
-  color: #111827;
-  font-size: 18px;
-  text-align: left;
-}
-
-.sample-list-item {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  text-align: left;
-  border: 1px solid #e5e7eb;
-  background: #f8fafc;
-  color: #111827;
-  border-radius: 12px;
-  padding: 12px;
-  margin-bottom: 10px;
-  cursor: pointer;
-}
-
-.sample-list-item.active {
-  border-color: #111827;
-  background: #eef2ff;
-}
-
-.sample-detail-content {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  text-align: left;
-}
-
 .detail-row,
 .detail-block {
   display: flex;
@@ -1175,20 +1168,6 @@ h1 {
   max-height: 220px;
 }
 
-@media (max-width: 900px) {
-  .samples-panel-head {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .samples-summary-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .samples-layout {
-    grid-template-columns: 1fr;
-  }
-}
 .asset-link {
   display: inline-flex;
   align-items: center;
