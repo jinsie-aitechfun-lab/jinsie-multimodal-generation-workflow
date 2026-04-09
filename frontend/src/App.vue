@@ -2,7 +2,9 @@
 import { computed, onMounted, ref } from 'vue'
 import InteractiveImageReview from './components/InteractiveImageReview.vue'
 import WorkflowResultsPanel from './components/WorkflowResultsPanel.vue'
-import WorkflowRunPanel from './components/WorkflowRunPanel.vue'
+import WorkflowRunPanel, {
+  type WorkflowRunFormState,
+} from './components/WorkflowRunPanel.vue'
 import SampleAssetsPanel from './components/SampleAssetsPanel.vue'
 type StepName =
   | 'story'
@@ -144,6 +146,36 @@ type SamplesSummaryResponse = {
   >
 }
 
+const DEFAULT_WORKFLOW_FORM: WorkflowRunFormState = {
+  sessionId: 'demo-session-001',
+  topic: '写一个关于小猫冒险的故事',
+  audience: 'children',
+  tone: 'warm',
+  visualStyle: 'storybook',
+  characterStyle: 'animal',
+  voiceStyle: 'warm_female',
+  voiceoverEnabled: false,
+  voiceMode: 'single',
+  narratorVoiceStyle: 'warm_female',
+  motherVoiceStyle: 'warm_female',
+  childVoiceStyle: 'gentle_child',
+  durationSec: 60,
+  language: 'zh-CN',
+  subtitleEnabled: true,
+  videoProvider: 'mock',
+  outputMode: 'full_video',
+
+  structuredCharactersEnabled: true,
+  primaryCharacterDisplayName: '小兔子',
+  primaryCharacterSpecies: 'rabbit',
+  primaryCharacterVisualTraits: 'long upright ears, white fur, red scarf',
+  primaryCharacterForbiddenTraits: 'cat ears, turtle shell',
+  secondaryCharacterDisplayName: '小乌龟',
+  secondaryCharacterSpecies: 'turtle',
+  secondaryCharacterVisualTraits: 'round shell, short legs, green shell',
+  secondaryCharacterForbiddenTraits: 'rabbit ears, cat ears',
+}
+
 const STEP_OPTIONS: Array<{ label: string; value: StepName }> = [
   { label: 'Story', value: 'story' },
   { label: 'Storyboard', value: 'storyboard' },
@@ -181,19 +213,7 @@ const videoPromptsText = ref('')
 const narrationText = ref('')
 const subtitlesText = ref('')
 const renderPlanText = ref('')
-
-const structuredCharactersEnabled = ref(true)
-
-const primaryCharacterDisplayName = ref('小兔子')
-const primaryCharacterSpecies = ref('rabbit')
-const primaryCharacterVisualTraits = ref('long upright ears, white fur, red scarf')
-const primaryCharacterForbiddenTraits = ref('cat ears, turtle shell')
-
-const secondaryCharacterDisplayName = ref('小乌龟')
-const secondaryCharacterSpecies = ref('turtle')
-const secondaryCharacterVisualTraits = ref('round shell, short legs, green shell')
-const secondaryCharacterForbiddenTraits = ref('rabbit ears, cat ears')
-
+const workflowForm = ref<WorkflowRunFormState>({ ...DEFAULT_WORKFLOW_FORM })
 const characterCandidatesText = ref('')
 const characterManifestText = ref('')
 
@@ -210,24 +230,6 @@ const selectedSampleDetail = ref<KlingSample | null>(null)
 const selectedSampleNotesText = ref('')
 const selectedSampleNotesLoading = ref(false)
 
-const topic = ref('写一个关于小猫冒险的故事')
-const sessionId = ref('demo-session-001')
-const audience = ref('children')
-const tone = ref('warm')
-const visualStyle = ref('storybook')
-const characterStyle = ref('animal')
-const voiceStyle = ref('warm_female')
-const voiceoverEnabled = ref(false)
-const voiceMode = ref('single')
-const narratorVoiceStyle = ref('warm_female')
-const motherVoiceStyle = ref('warm_female')
-const childVoiceStyle = ref('gentle_child')
-const durationSec = ref(60)
-const language = ref('zh-CN')
-const subtitleEnabled = ref(true)
-const videoProvider = ref('mock')
-const outputMode = ref('full_video')
-
 const selectedSteps = ref<StepName[]>([...DEFAULT_STEPS])
 const stepSummaries = ref<Array<{ name: string; status: string; preview: string }>>(
   []
@@ -243,7 +245,11 @@ const apiBaseUrl =
   'http://127.0.0.1:8004'
 
 const canSubmit = computed(() => {
-  return topic.value.trim().length > 0 && selectedSteps.value.length > 0 && !loading.value
+  return (
+    workflowForm.value.topic.trim().length > 0 &&
+    selectedSteps.value.length > 0 &&
+    !loading.value
+  )
 })
 
 const providerStatsText = computed(() => {
@@ -431,7 +437,7 @@ function extractMockAudioState(data: WorkflowRunResponse) {
 
   mockAudioIndexUrl.value = audioOutput?.directory_manifest?.index_public_url || ''
   mockAudioSceneGroups.value = Array.isArray(audioOutput?.scene_asset_map)
-    ? audioOutput!.scene_asset_map || []
+    ? audioOutput.scene_asset_map || []
     : []
   mockAudioDirectoryText.value =
     audioOutput?.directory_manifest ? stringifyPretty(audioOutput.directory_manifest) : ''
@@ -637,7 +643,7 @@ async function selectImageAsset(sceneId: string, assetRef: ImageAssetRef) {
     video_provider:
       typeof currentWorkflowPayload.value.input?.video_provider === 'string'
         ? currentWorkflowPayload.value.input.video_provider
-        : videoProvider.value,
+        : workflowForm.value.videoProvider,
   }
 
   try {
@@ -686,34 +692,30 @@ async function runWorkflow() {
   imageAssetsText.value = ''
   imageReviewText.value = ''
   videoPromptsText.value = ''
-  characterCandidatesText.value = ''
-  characterManifestText.value = ''
   narrationText.value = ''
   subtitlesText.value = ''
   renderPlanText.value = ''
-
-  mockAudioIndexUrl.value = ''
-  mockAudioSceneGroups.value = []
-  mockAudioDirectoryText.value = ''
   stepSummaries.value = []
 
-  const structuredCharacters: StructuredCharacterInput[] = structuredCharactersEnabled.value
+  const form = workflowForm.value
+
+  const structuredCharacters: StructuredCharacterInput[] = form.structuredCharactersEnabled
     ? [
         {
-          display_name: primaryCharacterDisplayName.value.trim(),
-          species: primaryCharacterSpecies.value.trim(),
+          display_name: form.primaryCharacterDisplayName.trim(),
+          species: form.primaryCharacterSpecies.trim(),
           role_type: 'primary',
-          visual_traits: primaryCharacterVisualTraits.value.trim(),
-          forbidden_traits: primaryCharacterForbiddenTraits.value.trim(),
+          visual_traits: form.primaryCharacterVisualTraits.trim(),
+          forbidden_traits: form.primaryCharacterForbiddenTraits.trim(),
         },
-        ...(secondaryCharacterDisplayName.value.trim()
+        ...(form.secondaryCharacterDisplayName.trim()
           ? [
               {
-                display_name: secondaryCharacterDisplayName.value.trim(),
-                species: secondaryCharacterSpecies.value.trim(),
+                display_name: form.secondaryCharacterDisplayName.trim(),
+                species: form.secondaryCharacterSpecies.trim(),
                 role_type: 'secondary' as const,
-                visual_traits: secondaryCharacterVisualTraits.value.trim(),
-                forbidden_traits: secondaryCharacterForbiddenTraits.value.trim(),
+                visual_traits: form.secondaryCharacterVisualTraits.trim(),
+                forbidden_traits: form.secondaryCharacterForbiddenTraits.trim(),
               },
             ]
           : []),
@@ -722,28 +724,28 @@ async function runWorkflow() {
 
   const payload = {
     workflow_id: 'storybook-demo',
-    session_id: sessionId.value.trim() || 'demo-session-001',
+    session_id: form.sessionId.trim() || 'demo-session-001',
     input: {
-      topic: topic.value.trim(),
-      audience: audience.value,
-      tone: tone.value,
-      visual_style: visualStyle.value,
-      character_style: characterStyle.value,
-      structured_characters_enabled: structuredCharactersEnabled.value,
+      topic: form.topic.trim(),
+      audience: form.audience,
+      tone: form.tone,
+      visual_style: form.visualStyle,
+      character_style: form.characterStyle,
+      structured_characters_enabled: form.structuredCharactersEnabled,
       characters: structuredCharacters,
-      voice_style: voiceStyle.value,
-      voiceover_enabled: voiceoverEnabled.value,
-      voice_mode: voiceMode.value,
+      voice_style: form.voiceStyle,
+      voiceover_enabled: form.voiceoverEnabled,
+      voice_mode: form.voiceMode,
       speaker_profiles: {
-        narrator: narratorVoiceStyle.value,
-        mother: motherVoiceStyle.value,
-        child: childVoiceStyle.value,
+        narrator: form.narratorVoiceStyle,
+        mother: form.motherVoiceStyle,
+        child: form.childVoiceStyle,
       },
-      duration_sec: durationSec.value,
-      language: language.value,
-      subtitle_enabled: subtitleEnabled.value,
-      video_provider: videoProvider.value,
-      output_mode: outputMode.value,
+      duration_sec: form.durationSec,
+      language: form.language,
+      subtitle_enabled: form.subtitleEnabled,
+      video_provider: form.videoProvider,
+      output_mode: form.outputMode,
     },
     steps: selectedSteps.value.map((name) => ({ name })),
   }
@@ -764,7 +766,7 @@ async function runWorkflow() {
 
     const data: WorkflowRunResponse = await response.json()
     if (typeof data.session_id === 'string' && data.session_id.trim()) {
-      sessionId.value = data.session_id
+      workflowForm.value.sessionId = data.session_id
     }
 
     applyWorkflowResponse(data)
@@ -825,61 +827,11 @@ onMounted(() => {
           :loading="loading"
           :can-submit="canSubmit"
           :error-message="errorMessage"
-          :session-id="sessionId"
-          :topic="topic"
-          :audience="audience"
-          :tone="tone"
-          :visual-style="visualStyle"
-          :character-style="characterStyle"
-          :voice-style="voiceStyle"
-          :voiceover-enabled="voiceoverEnabled"
-          :voice-mode="voiceMode"
-          :narrator-voice-style="narratorVoiceStyle"
-          :mother-voice-style="motherVoiceStyle"
-          :child-voice-style="childVoiceStyle"
-          :duration-sec="durationSec"
-          :language="language"
-          :subtitle-enabled="subtitleEnabled"
-          :video-provider="videoProvider"
-          :output-mode="outputMode"
-          :structured-characters-enabled="structuredCharactersEnabled"
-          :primary-character-display-name="primaryCharacterDisplayName"
-          :primary-character-species="primaryCharacterSpecies"
-          :primary-character-visual-traits="primaryCharacterVisualTraits"
-          :primary-character-forbidden-traits="primaryCharacterForbiddenTraits"
-          :secondary-character-display-name="secondaryCharacterDisplayName"
-          :secondary-character-species="secondaryCharacterSpecies"
-          :secondary-character-visual-traits="secondaryCharacterVisualTraits"
-          :secondary-character-forbidden-traits="secondaryCharacterForbiddenTraits"
+          :form-state="workflowForm"
           :selected-steps="selectedSteps"
           :step-options="STEP_OPTIONS"
-          @update:sessionId="sessionId = $event"
-          @update:topic="topic = $event"
-          @update:audience="audience = $event"
-          @update:tone="tone = $event"
-          @update:visualStyle="visualStyle = $event"
-          @update:characterStyle="characterStyle = $event"
-          @update:voiceStyle="voiceStyle = $event"
-          @update:voiceoverEnabled="voiceoverEnabled = $event"
-          @update:voiceMode="voiceMode = $event"
-          @update:narratorVoiceStyle="narratorVoiceStyle = $event"
-          @update:motherVoiceStyle="motherVoiceStyle = $event"
-          @update:childVoiceStyle="childVoiceStyle = $event"
-          @update:durationSec="durationSec = $event"
-          @update:language="language = $event"
-          @update:subtitleEnabled="subtitleEnabled = $event"
-          @update:videoProvider="videoProvider = $event"
-          @update:outputMode="outputMode = $event"
-          @update:structuredCharactersEnabled="structuredCharactersEnabled = $event"
-          @update:primaryCharacterDisplayName="primaryCharacterDisplayName = $event"
-          @update:primaryCharacterSpecies="primaryCharacterSpecies = $event"
-          @update:primaryCharacterVisualTraits="primaryCharacterVisualTraits = $event"
-          @update:primaryCharacterForbiddenTraits="primaryCharacterForbiddenTraits = $event"
-          @update:secondaryCharacterDisplayName="secondaryCharacterDisplayName = $event"
-          @update:secondaryCharacterSpecies="secondaryCharacterSpecies = $event"
-          @update:secondaryCharacterVisualTraits="secondaryCharacterVisualTraits = $event"
-          @update:secondaryCharacterForbiddenTraits="secondaryCharacterForbiddenTraits = $event"
-          @update:selectedSteps="selectedSteps = $event"
+          @update:form-state="workflowForm = $event"
+          @update:selected-steps="selectedSteps = $event"
           @run="runWorkflow"
         />
       </section>

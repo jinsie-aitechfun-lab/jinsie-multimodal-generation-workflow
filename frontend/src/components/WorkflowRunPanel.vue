@@ -10,11 +10,7 @@ type StepName =
   | 'subtitles'
   | 'render_plan'
 
-const props = defineProps<{
-  loading: boolean
-  canSubmit: boolean
-  errorMessage: string
-
+export type WorkflowRunFormState = {
   sessionId: string
   topic: string
   audience: string
@@ -42,43 +38,32 @@ const props = defineProps<{
   secondaryCharacterSpecies: string
   secondaryCharacterVisualTraits: string
   secondaryCharacterForbiddenTraits: string
+}
 
+const props = defineProps<{
+  loading: boolean
+  canSubmit: boolean
+  errorMessage: string
+  formState: WorkflowRunFormState
   selectedSteps: StepName[]
   stepOptions: Array<{ label: string; value: StepName }>
 }>()
 
 const emit = defineEmits<{
-  (e: 'update:sessionId', value: string): void
-  (e: 'update:topic', value: string): void
-  (e: 'update:audience', value: string): void
-  (e: 'update:tone', value: string): void
-  (e: 'update:visualStyle', value: string): void
-  (e: 'update:characterStyle', value: string): void
-  (e: 'update:voiceStyle', value: string): void
-  (e: 'update:voiceoverEnabled', value: boolean): void
-  (e: 'update:voiceMode', value: string): void
-  (e: 'update:narratorVoiceStyle', value: string): void
-  (e: 'update:motherVoiceStyle', value: string): void
-  (e: 'update:childVoiceStyle', value: string): void
-  (e: 'update:durationSec', value: number): void
-  (e: 'update:language', value: string): void
-  (e: 'update:subtitleEnabled', value: boolean): void
-  (e: 'update:videoProvider', value: string): void
-  (e: 'update:outputMode', value: string): void
-
-  (e: 'update:structuredCharactersEnabled', value: boolean): void
-  (e: 'update:primaryCharacterDisplayName', value: string): void
-  (e: 'update:primaryCharacterSpecies', value: string): void
-  (e: 'update:primaryCharacterVisualTraits', value: string): void
-  (e: 'update:primaryCharacterForbiddenTraits', value: string): void
-  (e: 'update:secondaryCharacterDisplayName', value: string): void
-  (e: 'update:secondaryCharacterSpecies', value: string): void
-  (e: 'update:secondaryCharacterVisualTraits', value: string): void
-  (e: 'update:secondaryCharacterForbiddenTraits', value: string): void
-
+  (e: 'update:formState', value: WorkflowRunFormState): void
   (e: 'update:selectedSteps', value: StepName[]): void
   (e: 'run'): void
 }>()
+
+function updateFormState<K extends keyof WorkflowRunFormState>(
+  key: K,
+  value: WorkflowRunFormState[K]
+) {
+  emit('update:formState', {
+    ...props.formState,
+    [key]: value,
+  })
+}
 
 function updateSelectedStep(step: StepName, checked: boolean) {
   const current = [...props.selectedSteps]
@@ -102,21 +87,21 @@ function updateSelectedStep(step: StepName, checked: boolean) {
     <label class="label" for="session-id">Session ID</label>
     <input
       id="session-id"
-      :value="sessionId"
+      :value="formState.sessionId"
       class="input"
       type="text"
       placeholder="请输入会话标识，例如 demo-session-001"
-      @input="emit('update:sessionId', ($event.target as HTMLInputElement).value)"
+      @input="updateFormState('sessionId', ($event.target as HTMLInputElement).value)"
     />
 
     <label class="label" for="topic">Topic</label>
     <textarea
       id="topic"
-      :value="topic"
+      :value="formState.topic"
       class="textarea"
       rows="4"
       placeholder="请输入一个主题，例如：写一个关于小猫冒险的故事"
-      @input="emit('update:topic', ($event.target as HTMLTextAreaElement).value)"
+      @input="updateFormState('topic', ($event.target as HTMLTextAreaElement).value)"
     />
 
     <section class="config-panel">
@@ -126,58 +111,63 @@ function updateSelectedStep(step: StepName, checked: boolean) {
         <label class="field">
           <span>Audience</span>
           <input
-            :value="audience"
+            :value="formState.audience"
             class="input"
             type="text"
-            @input="emit('update:audience', ($event.target as HTMLInputElement).value)"
+            @input="updateFormState('audience', ($event.target as HTMLInputElement).value)"
           />
         </label>
 
         <label class="field">
           <span>Tone</span>
           <input
-            :value="tone"
+            :value="formState.tone"
             class="input"
             type="text"
-            @input="emit('update:tone', ($event.target as HTMLInputElement).value)"
+            @input="updateFormState('tone', ($event.target as HTMLInputElement).value)"
           />
         </label>
 
         <label class="field">
           <span>Visual Style</span>
           <input
-            :value="visualStyle"
+            :value="formState.visualStyle"
             class="input"
             type="text"
-            @input="emit('update:visualStyle', ($event.target as HTMLInputElement).value)"
+            @input="updateFormState('visualStyle', ($event.target as HTMLInputElement).value)"
           />
         </label>
 
         <label class="field">
           <span>Character Style</span>
           <input
-            :value="characterStyle"
+            :value="formState.characterStyle"
             class="input"
             type="text"
-            @input="emit('update:characterStyle', ($event.target as HTMLInputElement).value)"
+            @input="updateFormState('characterStyle', ($event.target as HTMLInputElement).value)"
           />
         </label>
 
         <label class="field">
           <span>Voice Style</span>
           <input
-            :value="voiceStyle"
+            :value="formState.voiceStyle"
             class="input"
             type="text"
-            @input="emit('update:voiceStyle', ($event.target as HTMLInputElement).value)"
+            @input="updateFormState('voiceStyle', ($event.target as HTMLInputElement).value)"
           />
         </label>
 
         <label class="checkbox-field">
           <input
-            :checked="voiceoverEnabled"
+            :checked="formState.voiceoverEnabled"
             type="checkbox"
-            @change="emit('update:voiceoverEnabled', ($event.target as HTMLInputElement).checked)"
+            @change="
+              updateFormState(
+                'voiceoverEnabled',
+                ($event.target as HTMLInputElement).checked
+              )
+            "
           />
           <span>Enable Voiceover</span>
         </label>
@@ -185,9 +175,9 @@ function updateSelectedStep(step: StepName, checked: boolean) {
         <label class="field">
           <span>Voice Mode</span>
           <select
-            :value="voiceMode"
+            :value="formState.voiceMode"
             class="input"
-            @change="emit('update:voiceMode', ($event.target as HTMLSelectElement).value)"
+            @change="updateFormState('voiceMode', ($event.target as HTMLSelectElement).value)"
           >
             <option value="single">single</option>
             <option value="multi">multi</option>
@@ -197,80 +187,96 @@ function updateSelectedStep(step: StepName, checked: boolean) {
         <label class="field">
           <span>Narrator Voice</span>
           <input
-            :value="narratorVoiceStyle"
+            :value="formState.narratorVoiceStyle"
             class="input"
             type="text"
-            @input="emit('update:narratorVoiceStyle', ($event.target as HTMLInputElement).value)"
+            @input="
+              updateFormState('narratorVoiceStyle', ($event.target as HTMLInputElement).value)
+            "
           />
         </label>
 
-        <label v-if="voiceMode === 'multi'" class="field">
+        <label v-if="formState.voiceMode === 'multi'" class="field">
           <span>Mother Voice</span>
           <input
-            :value="motherVoiceStyle"
+            :value="formState.motherVoiceStyle"
             class="input"
             type="text"
-            @input="emit('update:motherVoiceStyle', ($event.target as HTMLInputElement).value)"
+            @input="
+              updateFormState('motherVoiceStyle', ($event.target as HTMLInputElement).value)
+            "
           />
         </label>
 
-        <label v-if="voiceMode === 'multi'" class="field">
+        <label v-if="formState.voiceMode === 'multi'" class="field">
           <span>Child Voice</span>
           <input
-            :value="childVoiceStyle"
+            :value="formState.childVoiceStyle"
             class="input"
             type="text"
-            @input="emit('update:childVoiceStyle', ($event.target as HTMLInputElement).value)"
+            @input="
+              updateFormState('childVoiceStyle', ($event.target as HTMLInputElement).value)
+            "
           />
         </label>
 
         <label class="field">
           <span>Duration (sec)</span>
           <input
-            :value="durationSec"
+            :value="formState.durationSec"
             class="input"
             type="number"
             min="15"
             max="300"
-            @input="emit('update:durationSec', Number(($event.target as HTMLInputElement).value))"
+            @input="
+              updateFormState(
+                'durationSec',
+                Number(($event.target as HTMLInputElement).value)
+              )
+            "
           />
         </label>
 
         <label class="field">
           <span>Language</span>
           <input
-            :value="language"
+            :value="formState.language"
             class="input"
             type="text"
-            @input="emit('update:language', ($event.target as HTMLInputElement).value)"
+            @input="updateFormState('language', ($event.target as HTMLInputElement).value)"
           />
         </label>
 
         <label class="field">
           <span>Video Provider</span>
           <input
-            :value="videoProvider"
+            :value="formState.videoProvider"
             class="input"
             type="text"
-            @input="emit('update:videoProvider', ($event.target as HTMLInputElement).value)"
+            @input="updateFormState('videoProvider', ($event.target as HTMLInputElement).value)"
           />
         </label>
 
         <label class="field">
           <span>Output Mode</span>
           <input
-            :value="outputMode"
+            :value="formState.outputMode"
             class="input"
             type="text"
-            @input="emit('update:outputMode', ($event.target as HTMLInputElement).value)"
+            @input="updateFormState('outputMode', ($event.target as HTMLInputElement).value)"
           />
         </label>
 
         <label class="checkbox-field">
           <input
-            :checked="subtitleEnabled"
+            :checked="formState.subtitleEnabled"
             type="checkbox"
-            @change="emit('update:subtitleEnabled', ($event.target as HTMLInputElement).checked)"
+            @change="
+              updateFormState(
+                'subtitleEnabled',
+                ($event.target as HTMLInputElement).checked
+              )
+            "
           />
           <span>Enable Subtitles</span>
         </label>
@@ -282,11 +288,11 @@ function updateSelectedStep(step: StepName, checked: boolean) {
 
       <label class="checkbox-field">
         <input
-          :checked="structuredCharactersEnabled"
+          :checked="formState.structuredCharactersEnabled"
           type="checkbox"
           @change="
-            emit(
-              'update:structuredCharactersEnabled',
+            updateFormState(
+              'structuredCharactersEnabled',
               ($event.target as HTMLInputElement).checked
             )
           "
@@ -294,16 +300,16 @@ function updateSelectedStep(step: StepName, checked: boolean) {
         <span>Enable Structured Characters</span>
       </label>
 
-      <div v-if="structuredCharactersEnabled" class="config-grid">
+      <div v-if="formState.structuredCharactersEnabled" class="config-grid">
         <label class="field">
           <span>Primary Character Display Name</span>
           <input
-            :value="primaryCharacterDisplayName"
+            :value="formState.primaryCharacterDisplayName"
             class="input"
             type="text"
             @input="
-              emit(
-                'update:primaryCharacterDisplayName',
+              updateFormState(
+                'primaryCharacterDisplayName',
                 ($event.target as HTMLInputElement).value
               )
             "
@@ -313,12 +319,12 @@ function updateSelectedStep(step: StepName, checked: boolean) {
         <label class="field">
           <span>Primary Character Species</span>
           <input
-            :value="primaryCharacterSpecies"
+            :value="formState.primaryCharacterSpecies"
             class="input"
             type="text"
             @input="
-              emit(
-                'update:primaryCharacterSpecies',
+              updateFormState(
+                'primaryCharacterSpecies',
                 ($event.target as HTMLInputElement).value
               )
             "
@@ -328,13 +334,13 @@ function updateSelectedStep(step: StepName, checked: boolean) {
         <label class="field">
           <span>Primary Visual Traits</span>
           <textarea
-            :value="primaryCharacterVisualTraits"
+            :value="formState.primaryCharacterVisualTraits"
             class="textarea"
             rows="3"
             placeholder="例如：long upright ears, white fur, red scarf"
             @input="
-              emit(
-                'update:primaryCharacterVisualTraits',
+              updateFormState(
+                'primaryCharacterVisualTraits',
                 ($event.target as HTMLTextAreaElement).value
               )
             "
@@ -344,13 +350,13 @@ function updateSelectedStep(step: StepName, checked: boolean) {
         <label class="field">
           <span>Primary Forbidden Traits</span>
           <textarea
-            :value="primaryCharacterForbiddenTraits"
+            :value="formState.primaryCharacterForbiddenTraits"
             class="textarea"
             rows="3"
             placeholder="例如：cat ears, turtle shell"
             @input="
-              emit(
-                'update:primaryCharacterForbiddenTraits',
+              updateFormState(
+                'primaryCharacterForbiddenTraits',
                 ($event.target as HTMLTextAreaElement).value
               )
             "
@@ -360,12 +366,12 @@ function updateSelectedStep(step: StepName, checked: boolean) {
         <label class="field">
           <span>Secondary Character Display Name</span>
           <input
-            :value="secondaryCharacterDisplayName"
+            :value="formState.secondaryCharacterDisplayName"
             class="input"
             type="text"
             @input="
-              emit(
-                'update:secondaryCharacterDisplayName',
+              updateFormState(
+                'secondaryCharacterDisplayName',
                 ($event.target as HTMLInputElement).value
               )
             "
@@ -375,12 +381,12 @@ function updateSelectedStep(step: StepName, checked: boolean) {
         <label class="field">
           <span>Secondary Character Species</span>
           <input
-            :value="secondaryCharacterSpecies"
+            :value="formState.secondaryCharacterSpecies"
             class="input"
             type="text"
             @input="
-              emit(
-                'update:secondaryCharacterSpecies',
+              updateFormState(
+                'secondaryCharacterSpecies',
                 ($event.target as HTMLInputElement).value
               )
             "
@@ -390,13 +396,13 @@ function updateSelectedStep(step: StepName, checked: boolean) {
         <label class="field">
           <span>Secondary Visual Traits</span>
           <textarea
-            :value="secondaryCharacterVisualTraits"
+            :value="formState.secondaryCharacterVisualTraits"
             class="textarea"
             rows="3"
             placeholder="例如：round shell, short legs, green shell"
             @input="
-              emit(
-                'update:secondaryCharacterVisualTraits',
+              updateFormState(
+                'secondaryCharacterVisualTraits',
                 ($event.target as HTMLTextAreaElement).value
               )
             "
@@ -406,13 +412,13 @@ function updateSelectedStep(step: StepName, checked: boolean) {
         <label class="field">
           <span>Secondary Forbidden Traits</span>
           <textarea
-            :value="secondaryCharacterForbiddenTraits"
+            :value="formState.secondaryCharacterForbiddenTraits"
             class="textarea"
             rows="3"
             placeholder="例如：rabbit ears, cat ears"
             @input="
-              emit(
-                'update:secondaryCharacterForbiddenTraits',
+              updateFormState(
+                'secondaryCharacterForbiddenTraits',
                 ($event.target as HTMLTextAreaElement).value
               )
             "
@@ -525,18 +531,21 @@ function updateSelectedStep(step: StepName, checked: boolean) {
 .checkbox-field {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding-top: 28px;
+  gap: 10px;
+}
+
+.checkbox-field input {
+  width: 16px;
+  height: 16px;
 }
 
 .checkbox-field span {
   margin-bottom: 0;
-  font-weight: 500;
 }
 
 .steps-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -544,30 +553,41 @@ function updateSelectedStep(step: StepName, checked: boolean) {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #111827;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 10px 12px;
   font-size: 14px;
+  color: #111827;
+}
+
+.section-title {
+  margin: 0 0 16px;
+  color: #111827;
+  font-size: 18px;
+  text-align: left;
+}
+
+.btn {
+  margin-top: 20px;
+  border: none;
+  border-radius: 12px;
+  background: #111827;
+  color: #ffffff;
+  padding: 12px 18px;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .hint {
   margin: 12px 0 0;
   color: #dc2626;
   font-size: 13px;
-}
-
-.btn {
-  margin-top: 16px;
-  border: none;
-  border-radius: 10px;
-  padding: 12px 18px;
-  font-size: 15px;
-  cursor: pointer;
-  background: #111827;
-  color: #ffffff;
-}
-
-.btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.7;
 }
 
 .error {
