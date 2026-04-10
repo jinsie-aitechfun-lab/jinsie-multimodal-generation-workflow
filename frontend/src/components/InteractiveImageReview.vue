@@ -145,12 +145,32 @@ function onRefreshReview() {
 
 function placeholderStatusText(state: 'waiting' | 'refreshing' | 'done'): string {
   if (state === 'refreshing') {
-    return 'refreshing'
+    return '正在生成'
   }
   if (state === 'done') {
-    return 'ready'
+    return '已完成'
   }
-  return 'waiting'
+  return '等待生成'
+}
+
+function selectedStatusCopy(state: 'waiting' | 'refreshing' | 'done'): string {
+  if (state === 'refreshing') {
+    return '正在生成当前预览图'
+  }
+  if (state === 'done') {
+    return '当前预览图已生成'
+  }
+  return '等待生成当前预览图'
+}
+
+function candidateStatusCopy(state: 'waiting' | 'refreshing' | 'done', index: 'A' | 'B'): string {
+  if (state === 'refreshing') {
+    return `正在生成候选图 ${index}`
+  }
+  if (state === 'done') {
+    return `候选图 ${index} 已生成`
+  }
+  return `等待生成候选图 ${index}`
 }
 
 const renderEntries = computed<ReviewRenderEntry[]>(() => {
@@ -221,9 +241,23 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 
     <article v-if="showWaitingCard && renderEntries.length === 0" class="review-waiting-card">
       <div class="waiting-preview-frame">
-        <div class="waiting-preview-inner">
-          <div class="waiting-image-icon">🖼️</div>
-          <div class="waiting-shimmer"></div>
+        <div class="placeholder-card shimmer-active">
+          <div class="placeholder-art">
+            <div class="placeholder-badge">PLACEHOLDER</div>
+
+            <div class="placeholder-canvas">
+              <div class="placeholder-sky"></div>
+              <div class="placeholder-sun"></div>
+              <div class="placeholder-cloud placeholder-cloud-left"></div>
+              <div class="placeholder-cloud placeholder-cloud-right"></div>
+              <div class="placeholder-hill placeholder-hill-back"></div>
+              <div class="placeholder-hill placeholder-hill-front"></div>
+              <div class="placeholder-water"></div>
+              <div class="placeholder-tree placeholder-tree-left"></div>
+              <div class="placeholder-tree placeholder-tree-right"></div>
+              <div class="placeholder-caption-bar"></div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -273,59 +307,85 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
             </p>
 
             <p v-else class="detail-text scene-subtext">
-              progressive_scene_refresh / {{ entry.state }}
+              progressive_scene_refresh / {{ placeholderStatusText(entry.state) }}
             </p>
           </div>
 
           <span class="summary-status">
             {{
               entry.kind === 'item'
-                ? (selectingSceneId === entry.sceneId ? 'Switching...' : entry.item.review_status || '-')
+                ? (selectingSceneId === entry.sceneId ? '切换中' : entry.item.review_status || '-')
                 : placeholderStatusText(entry.state)
             }}
           </span>
         </div>
 
         <template v-if="entry.kind === 'item'">
-          <div class="detail-block">
-            <span class="detail-label detail-label-centered">Current Selected</span>
-
-            <div class="asset-code-wrap">
-              <code class="asset-code-text">
-                {{ assetRefPath(entry.item.selected_asset_ref) || '-' }}
-              </code>
-            </div>
-
-            <a
-              v-if="isImageAsset(assetRefPath(entry.item.selected_asset_ref))"
-              class="selected-image-link"
-              :href="toAssetHref(assetRefPath(entry.item.selected_asset_ref))"
-              target="_blank"
-              rel="noreferrer"
-            >
-              <div class="selected-preview-frame">
+          <div class="preview-row">
+            <div class="preview-card preview-card-selected">
+              <div class="preview-visual-frame">
                 <img
-                  class="selected-preview-image"
+                  v-if="isImageAsset(assetRefPath(entry.item.selected_asset_ref))"
+                  class="preview-visual-image"
                   :src="toAssetHref(assetRefPath(entry.item.selected_asset_ref))"
                   :alt="entry.sceneTitle || 'selected-image'"
                 />
-              </div>
-            </a>
+                <div v-else class="placeholder-card">
+                  <div class="placeholder-art">
+                    <div class="placeholder-badge">PLACEHOLDER</div>
 
-            <div v-else class="selected-preview-frame selected-preview-placeholder">
-              <div class="preview-placeholder-inner">
-                <span class="preview-placeholder-icon">🖼️</span>
-                <span class="preview-placeholder-text">Waiting for selected image</span>
+                    <div class="placeholder-canvas">
+                      <div class="placeholder-sky"></div>
+                      <div class="placeholder-sun"></div>
+                      <div class="placeholder-cloud placeholder-cloud-left"></div>
+                      <div class="placeholder-cloud placeholder-cloud-right"></div>
+                      <div class="placeholder-hill placeholder-hill-back"></div>
+                      <div class="placeholder-hill placeholder-hill-front"></div>
+                      <div class="placeholder-water"></div>
+                      <div class="placeholder-tree placeholder-tree-left"></div>
+                      <div class="placeholder-tree placeholder-tree-right"></div>
+                      <div class="placeholder-caption-bar"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="preview-info-panel">
+                <div class="preview-info-head">
+                  <span class="preview-title">当前预览</span>
+                  <span class="preview-state-tag preview-state-tag-done">已生成</span>
+                </div>
+
+                <div class="asset-code-wrap asset-code-wrap-compact">
+                  <code class="asset-code-text">
+                    {{ assetRefPath(entry.item.selected_asset_ref) || '-' }}
+                  </code>
+                </div>
+
+                <a
+                  v-if="isImageAsset(assetRefPath(entry.item.selected_asset_ref))"
+                  class="selected-open-link"
+                  :href="toAssetHref(assetRefPath(entry.item.selected_asset_ref))"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open original
+                </a>
               </div>
             </div>
           </div>
 
-          <div class="detail-block">
-            <span class="detail-label detail-label-centered">Candidate Assets</span>
+          <div class="detail-block detail-block-tight">
+            <div class="candidate-header">
+              <span class="preview-title">候选图</span>
+              <span class="candidate-count">
+                {{ (entry.item.candidate_asset_refs || []).length || 2 }} candidates
+              </span>
+            </div>
 
             <div class="review-candidate-grid">
               <button
-                v-for="candidate in entry.item.candidate_asset_refs || []"
+                v-for="(candidate, index) in entry.item.candidate_asset_refs || []"
                 :key="candidate.relative_path || candidate.file_name || candidate.public_url"
                 type="button"
                 class="asset-select-card"
@@ -335,31 +395,55 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                 :disabled="loading || selectingSceneId === entry.sceneId"
                 @click="onSelect(entry.sceneId, candidate)"
               >
-                <div class="candidate-card-head">
-                  <span class="candidate-status-text">
-                    {{
-                      isSameAssetRef(candidate, entry.item.selected_asset_ref)
-                        ? 'Selected'
-                        : 'Click to Select'
-                    }}
-                  </span>
+                <div class="preview-card preview-card-candidate">
+                  <div class="preview-visual-frame preview-visual-frame-candidate">
+                    <img
+                      v-if="isImageAsset(assetRefPath(candidate))"
+                      class="preview-visual-image"
+                      :src="toAssetHref(assetRefPath(candidate))"
+                      :alt="candidate.file_name || 'candidate-image'"
+                    />
 
-                  <code class="candidate-file-chip">{{ candidate.file_name || '-' }}</code>
-                </div>
+                    <div v-else class="placeholder-card">
+                      <div class="placeholder-art">
+                        <div class="placeholder-badge">PLACEHOLDER</div>
 
-                <div class="candidate-preview-frame">
-                  <img
-                    v-if="isImageAsset(assetRefPath(candidate))"
-                    class="candidate-preview-image"
-                    :src="toAssetHref(assetRefPath(candidate))"
-                    :alt="candidate.file_name || 'candidate-image'"
-                  />
-
-                  <div v-else class="candidate-preview-placeholder">
-                    <div class="preview-placeholder-inner">
-                      <span class="preview-placeholder-icon">🖼️</span>
-                      <span class="preview-placeholder-text">Waiting for candidate</span>
+                        <div class="placeholder-canvas">
+                          <div class="placeholder-sky"></div>
+                          <div class="placeholder-sun"></div>
+                          <div class="placeholder-cloud placeholder-cloud-left"></div>
+                          <div class="placeholder-cloud placeholder-cloud-right"></div>
+                          <div class="placeholder-hill placeholder-hill-back"></div>
+                          <div class="placeholder-hill placeholder-hill-front"></div>
+                          <div class="placeholder-water"></div>
+                          <div class="placeholder-tree placeholder-tree-left"></div>
+                          <div class="placeholder-tree placeholder-tree-right"></div>
+                          <div class="placeholder-caption-bar"></div>
+                        </div>
+                      </div>
                     </div>
+                  </div>
+
+                  <div class="preview-info-panel">
+                    <div class="preview-info-head">
+                      <span class="preview-title">候选图 {{ index === 0 ? 'A' : 'B' }}</span>
+                      <span
+                        class="preview-state-tag"
+                        :class="
+                          isSameAssetRef(candidate, entry.item.selected_asset_ref)
+                            ? 'preview-state-tag-done'
+                            : 'preview-state-tag-waiting'
+                        "
+                      >
+                        {{
+                          isSameAssetRef(candidate, entry.item.selected_asset_ref)
+                            ? '已选中'
+                            : '可切换'
+                        }}
+                      </span>
+                    </div>
+
+                    <code class="candidate-file-chip">{{ candidate.file_name || '-' }}</code>
                   </div>
                 </div>
               </button>
@@ -368,15 +452,35 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                 v-if="(entry.item.candidate_asset_refs || []).length === 0"
                 class="asset-select-card asset-select-card-static"
               >
-                <div class="candidate-card-head">
-                  <span class="candidate-status-text">Waiting</span>
-                  <code class="candidate-file-chip">candidate-a</code>
-                </div>
+                <div class="preview-card preview-card-candidate">
+                  <div class="preview-visual-frame preview-visual-frame-candidate">
+                    <div class="placeholder-card">
+                      <div class="placeholder-art">
+                        <div class="placeholder-badge">PLACEHOLDER</div>
 
-                <div class="candidate-preview-frame candidate-preview-placeholder">
-                  <div class="preview-placeholder-inner">
-                    <span class="preview-placeholder-icon">🖼️</span>
-                    <span class="preview-placeholder-text">Waiting for candidate</span>
+                        <div class="placeholder-canvas">
+                          <div class="placeholder-sky"></div>
+                          <div class="placeholder-sun"></div>
+                          <div class="placeholder-cloud placeholder-cloud-left"></div>
+                          <div class="placeholder-cloud placeholder-cloud-right"></div>
+                          <div class="placeholder-hill placeholder-hill-back"></div>
+                          <div class="placeholder-hill placeholder-hill-front"></div>
+                          <div class="placeholder-water"></div>
+                          <div class="placeholder-tree placeholder-tree-left"></div>
+                          <div class="placeholder-tree placeholder-tree-right"></div>
+                          <div class="placeholder-caption-bar"></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="preview-info-panel">
+                    <div class="preview-info-head">
+                      <span class="preview-title">候选图 A</span>
+                      <span class="preview-state-tag preview-state-tag-waiting">等待</span>
+                    </div>
+
+                    <div class="placeholder-status-copy">等待生成候选图 A</div>
                   </div>
                 </div>
               </div>
@@ -385,15 +489,35 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                 v-if="(entry.item.candidate_asset_refs || []).length === 0"
                 class="asset-select-card asset-select-card-static"
               >
-                <div class="candidate-card-head">
-                  <span class="candidate-status-text">Waiting</span>
-                  <code class="candidate-file-chip">candidate-b</code>
-                </div>
+                <div class="preview-card preview-card-candidate">
+                  <div class="preview-visual-frame preview-visual-frame-candidate">
+                    <div class="placeholder-card">
+                      <div class="placeholder-art">
+                        <div class="placeholder-badge">PLACEHOLDER</div>
 
-                <div class="candidate-preview-frame candidate-preview-placeholder">
-                  <div class="preview-placeholder-inner">
-                    <span class="preview-placeholder-icon">🖼️</span>
-                    <span class="preview-placeholder-text">Waiting for candidate</span>
+                        <div class="placeholder-canvas">
+                          <div class="placeholder-sky"></div>
+                          <div class="placeholder-sun"></div>
+                          <div class="placeholder-cloud placeholder-cloud-left"></div>
+                          <div class="placeholder-cloud placeholder-cloud-right"></div>
+                          <div class="placeholder-hill placeholder-hill-back"></div>
+                          <div class="placeholder-hill placeholder-hill-front"></div>
+                          <div class="placeholder-water"></div>
+                          <div class="placeholder-tree placeholder-tree-left"></div>
+                          <div class="placeholder-tree placeholder-tree-right"></div>
+                          <div class="placeholder-caption-bar"></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="preview-info-panel">
+                    <div class="preview-info-head">
+                      <span class="preview-title">候选图 B</span>
+                      <span class="preview-state-tag preview-state-tag-waiting">等待</span>
+                    </div>
+
+                    <div class="placeholder-status-copy">等待生成候选图 B</div>
                   </div>
                 </div>
               </div>
@@ -402,71 +526,157 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
         </template>
 
         <template v-else>
-          <div class="detail-block">
-            <span class="detail-label detail-label-centered">Current Selected</span>
+          <div class="preview-row">
+            <div class="preview-card preview-card-selected">
+              <div
+                class="preview-visual-frame"
+                :class="{ 'shimmer-active': entry.state === 'refreshing' }"
+              >
+                <div class="placeholder-card">
+                  <div class="placeholder-art">
+                    <div class="placeholder-badge">PLACEHOLDER</div>
 
-            <div class="asset-code-wrap">
-              <code class="asset-code-text">pending://{{ entry.sceneId }}/selected</code>
-            </div>
+                    <div class="placeholder-canvas">
+                      <div class="placeholder-sky"></div>
+                      <div class="placeholder-sun"></div>
+                      <div class="placeholder-cloud placeholder-cloud-left"></div>
+                      <div class="placeholder-cloud placeholder-cloud-right"></div>
+                      <div class="placeholder-hill placeholder-hill-back"></div>
+                      <div class="placeholder-hill placeholder-hill-front"></div>
+                      <div class="placeholder-water"></div>
+                      <div class="placeholder-tree placeholder-tree-left"></div>
+                      <div class="placeholder-tree placeholder-tree-right"></div>
+                      <div class="placeholder-caption-bar"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
 
-            <div class="selected-preview-frame selected-preview-placeholder">
-              <div class="preview-placeholder-inner">
-                <span class="preview-placeholder-icon">🖼️</span>
-                <span class="preview-placeholder-text">
-                  {{
-                    entry.state === 'refreshing'
-                      ? 'Generating selected image...'
-                      : 'Waiting for selected image'
-                  }}
-                </span>
+              <div class="preview-info-panel">
+                <div class="preview-info-head">
+                  <span class="preview-title">当前预览</span>
+                  <span
+                    class="preview-state-tag"
+                    :class="
+                      entry.state === 'refreshing'
+                        ? 'preview-state-tag-refreshing'
+                        : 'preview-state-tag-waiting'
+                    "
+                  >
+                    {{ entry.state === 'refreshing' ? '生成中' : '等待中' }}
+                  </span>
+                </div>
+
+                <div class="asset-code-wrap asset-code-wrap-compact">
+                  <code class="asset-code-text">pending://{{ entry.sceneId }}/selected</code>
+                </div>
+
+                <div class="placeholder-status-copy">
+                  {{ selectedStatusCopy(entry.state) }}
+                </div>
               </div>
             </div>
           </div>
 
-          <div class="detail-block">
-            <span class="detail-label detail-label-centered">Candidate Assets</span>
+          <div class="detail-block detail-block-tight">
+            <div class="candidate-header">
+              <span class="preview-title">候选图</span>
+              <span class="candidate-count">2 candidates</span>
+            </div>
 
             <div class="review-candidate-grid">
               <div class="asset-select-card asset-select-card-static">
-                <div class="candidate-card-head">
-                  <span class="candidate-status-text">
-                    {{ entry.state === 'refreshing' ? 'Refreshing' : 'Waiting' }}
-                  </span>
-                  <code class="candidate-file-chip">{{ entry.sceneId }}__candidate_a.png</code>
-                </div>
+                <div class="preview-card preview-card-candidate">
+                  <div
+                    class="preview-visual-frame preview-visual-frame-candidate"
+                    :class="{ 'shimmer-active': entry.state === 'refreshing' }"
+                  >
+                    <div class="placeholder-card">
+                      <div class="placeholder-art">
+                        <div class="placeholder-badge">PLACEHOLDER</div>
 
-                <div class="candidate-preview-frame candidate-preview-placeholder">
-                  <div class="preview-placeholder-inner">
-                    <span class="preview-placeholder-icon">🖼️</span>
-                    <span class="preview-placeholder-text">
-                      {{
-                        entry.state === 'refreshing'
-                          ? 'Generating candidate A...'
-                          : 'Waiting for candidate'
-                      }}
-                    </span>
+                        <div class="placeholder-canvas">
+                          <div class="placeholder-sky"></div>
+                          <div class="placeholder-sun"></div>
+                          <div class="placeholder-cloud placeholder-cloud-left"></div>
+                          <div class="placeholder-cloud placeholder-cloud-right"></div>
+                          <div class="placeholder-hill placeholder-hill-back"></div>
+                          <div class="placeholder-hill placeholder-hill-front"></div>
+                          <div class="placeholder-water"></div>
+                          <div class="placeholder-tree placeholder-tree-left"></div>
+                          <div class="placeholder-tree placeholder-tree-right"></div>
+                          <div class="placeholder-caption-bar"></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="preview-info-panel">
+                    <div class="preview-info-head">
+                      <span class="preview-title">候选图 A</span>
+                      <span
+                        class="preview-state-tag"
+                        :class="
+                          entry.state === 'refreshing'
+                            ? 'preview-state-tag-refreshing'
+                            : 'preview-state-tag-waiting'
+                        "
+                      >
+                        {{ entry.state === 'refreshing' ? '生成中' : '等待中' }}
+                      </span>
+                    </div>
+
+                    <div class="placeholder-status-copy">
+                      {{ candidateStatusCopy(entry.state, 'A') }}
+                    </div>
                   </div>
                 </div>
               </div>
 
               <div class="asset-select-card asset-select-card-static">
-                <div class="candidate-card-head">
-                  <span class="candidate-status-text">
-                    {{ entry.state === 'refreshing' ? 'Refreshing' : 'Waiting' }}
-                  </span>
-                  <code class="candidate-file-chip">{{ entry.sceneId }}__candidate_b.png</code>
-                </div>
+                <div class="preview-card preview-card-candidate">
+                  <div
+                    class="preview-visual-frame preview-visual-frame-candidate"
+                    :class="{ 'shimmer-active': entry.state === 'refreshing' }"
+                  >
+                    <div class="placeholder-card">
+                      <div class="placeholder-art">
+                        <div class="placeholder-badge">PLACEHOLDER</div>
 
-                <div class="candidate-preview-frame candidate-preview-placeholder">
-                  <div class="preview-placeholder-inner">
-                    <span class="preview-placeholder-icon">🖼️</span>
-                    <span class="preview-placeholder-text">
-                      {{
-                        entry.state === 'refreshing'
-                          ? 'Generating candidate B...'
-                          : 'Waiting for candidate'
-                      }}
-                    </span>
+                        <div class="placeholder-canvas">
+                          <div class="placeholder-sky"></div>
+                          <div class="placeholder-sun"></div>
+                          <div class="placeholder-cloud placeholder-cloud-left"></div>
+                          <div class="placeholder-cloud placeholder-cloud-right"></div>
+                          <div class="placeholder-hill placeholder-hill-back"></div>
+                          <div class="placeholder-hill placeholder-hill-front"></div>
+                          <div class="placeholder-water"></div>
+                          <div class="placeholder-tree placeholder-tree-left"></div>
+                          <div class="placeholder-tree placeholder-tree-right"></div>
+                          <div class="placeholder-caption-bar"></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="preview-info-panel">
+                    <div class="preview-info-head">
+                      <span class="preview-title">候选图 B</span>
+                      <span
+                        class="preview-state-tag"
+                        :class="
+                          entry.state === 'refreshing'
+                            ? 'preview-state-tag-refreshing'
+                            : 'preview-state-tag-waiting'
+                        "
+                      >
+                        {{ entry.state === 'refreshing' ? '生成中' : '等待中' }}
+                      </span>
+                    </div>
+
+                    <div class="placeholder-status-copy">
+                      {{ candidateStatusCopy(entry.state, 'B') }}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -481,14 +691,14 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 <style scoped>
 .result-panel {
   margin-top: 20px;
-  padding: 16px;
+  padding: 14px;
   border-radius: 14px;
   background: #f8fafc;
   border: 1px solid #e5e7eb;
 }
 
 .section-title {
-  margin: 0 0 12px;
+  margin: 0 0 10px;
   font-size: 16px;
   line-height: 1.4;
   color: #111827;
@@ -497,8 +707,8 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 
 .summary-status {
   color: #2563eb;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 700;
   flex-shrink: 0;
 }
 
@@ -508,36 +718,36 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   gap: 10px;
 }
 
-.detail-label {
-  color: #6b7280;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.detail-label-centered {
-  text-align: center;
+.detail-block-tight {
+  margin-top: 12px;
 }
 
 .detail-text {
   color: #111827;
-  line-height: 1.6;
+  line-height: 1.5;
 }
 
 .scene-subtext {
-  margin: 8px 0 0;
-  font-size: 16px;
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: #64748b;
 }
 
 .asset-code-wrap {
   padding: 10px 12px;
-  border-radius: 6px;
+  border-radius: 8px;
   background: #f3f1eb;
+}
+
+.asset-code-wrap-compact {
+  padding: 8px 10px;
 }
 
 .asset-code-text {
   display: block;
   color: #111827;
-  line-height: 1.5;
+  line-height: 1.45;
+  font-size: 12px;
   white-space: pre-wrap;
   word-break: break-all;
   overflow-wrap: anywhere;
@@ -545,12 +755,12 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 
 .review-scene-grid {
   display: grid;
-  gap: 16px;
+  gap: 14px;
 }
 
 .review-scene-card {
-  padding: 16px;
-  border-radius: 14px;
+  padding: 14px;
+  border-radius: 16px;
   background: #ffffff;
   border: 1px solid #e5e7eb;
 }
@@ -568,7 +778,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .scene-meta-block {
@@ -578,58 +788,158 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 .scene-title-text {
   display: block;
   color: #111827;
-  font-size: 18px;
-  line-height: 1.4;
+  font-size: 17px;
+  line-height: 1.35;
   word-break: break-word;
 }
 
-.selected-image-link {
-  display: inline-block;
-  width: fit-content;
-  text-decoration: none;
+.preview-row {
+  display: flex;
+  flex-direction: column;
 }
 
-.selected-preview-frame {
-  width: 176px;
-  height: 280px;
-  border-radius: 16px;
+.preview-card {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 14px;
+  align-items: stretch;
+  padding: 10px;
+  border-radius: 14px;
+  background: #fbfcfe;
+  border: 1px solid #e6ebf2;
+}
+
+.preview-card-selected,
+.preview-card-candidate {
+  min-height: 184px;
+}
+
+.preview-visual-frame {
+  width: 132px;
+  min-height: 164px;
+  border-radius: 12px;
   overflow: hidden;
   border: 1px solid #d7dee8;
-  background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+  background: #eef2f6;
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
 }
 
-.selected-preview-image {
+.preview-visual-frame-candidate {
+  min-height: 164px;
+}
+
+.preview-visual-image {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
+.preview-info-panel {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.preview-info-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.preview-title {
+  color: #475569;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.preview-state-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.preview-state-tag-done {
+  background: #e8f7ee;
+  color: #15803d;
+}
+
+.preview-state-tag-waiting {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.preview-state-tag-refreshing {
+  background: #eaf2ff;
+  color: #2563eb;
+}
+
+.selected-open-link {
+  width: fit-content;
+  font-size: 12px;
+  font-weight: 600;
+  color: #2563eb;
+  text-decoration: none;
+}
+
+.selected-open-link:hover {
+  text-decoration: underline;
+}
+
+.placeholder-status-copy {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.candidate-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.candidate-count {
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .review-candidate-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  grid-template-columns: repeat(2, minmax(280px, 1fr));
   gap: 12px;
-  margin-top: 8px;
 }
 
 .asset-select-card {
   appearance: none;
-  border: 1px solid #d1d5db;
+  border: 1px solid #dbe1ea;
   background: #ffffff;
-  border-radius: 12px;
-  padding: 12px;
+  border-radius: 14px;
+  padding: 0;
   text-align: left;
   cursor: pointer;
   transition:
     border-color 0.2s ease,
     box-shadow 0.2s ease,
     transform 0.2s ease;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  overflow: hidden;
 }
 
 .asset-select-card:hover:not(:disabled) {
@@ -645,133 +955,239 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 
 .asset-select-card:disabled {
   cursor: not-allowed;
-  opacity: 0.65;
+  opacity: 0.7;
 }
 
 .asset-select-card-static {
   cursor: default;
 }
 
-.candidate-card-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.candidate-status-text {
-  color: #6b7280;
-  font-size: 13px;
-  font-weight: 600;
-  flex-shrink: 0;
-}
-
 .candidate-file-chip {
   display: inline-block;
+  max-width: 100%;
   padding: 4px 8px;
   border-radius: 6px;
   background: #f3f1eb;
   color: #4b5563;
   font-size: 12px;
-  line-height: 1.4;
+  line-height: 1.35;
   word-break: break-all;
 }
 
-.candidate-preview-frame {
-  width: 100%;
-  aspect-ratio: 16 / 10;
-  border-radius: 14px;
-  overflow: hidden;
-  border: 1px solid #e5e7eb;
-  background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.candidate-preview-image {
-  display: block;
+.placeholder-card {
+  position: relative;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  background: linear-gradient(180deg, #eef2f6 0%, #e5eaef 100%);
 }
 
-.selected-preview-placeholder,
-.candidate-preview-placeholder {
-  background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+.placeholder-art {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
-.preview-placeholder-inner {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  color: #94a3b8;
-  text-align: center;
-  padding: 16px;
+.placeholder-badge {
+  position: absolute;
+  top: 46%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 3;
+  padding: 0;
+  background: transparent;
+  color: rgba(100, 116, 139, 0.92);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  border-radius: 0;
+  box-shadow: none;
+}
+.placeholder-canvas {
+  position: absolute;
+  inset: 16px 14px 14px 14px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #f3f5f7;
+  border: 1px solid #d7dee5;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
 }
 
-.preview-placeholder-icon {
-  font-size: 24px;
-  line-height: 1;
+.placeholder-sky {
+  position: absolute;
+  inset: 0 0 38% 0;
+  background: linear-gradient(180deg, #e9edf1 0%, #dde4ea 100%);
 }
 
-.preview-placeholder-text {
-  font-size: 12px;
-  font-weight: 600;
+.placeholder-cloud {
+  position: absolute;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.placeholder-cloud::before,
+.placeholder-cloud::after {
+  content: '';
+  position: absolute;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.placeholder-cloud-left {
+  top: 22%;
+  left: 18%;
+  width: 34px;
+}
+
+.placeholder-cloud-left::before {
+  width: 16px;
+  height: 16px;
+  left: 4px;
+  bottom: 2px;
+}
+
+.placeholder-cloud-left::after {
+  width: 14px;
+  height: 14px;
+  right: 5px;
+  bottom: 1px;
+}
+
+.placeholder-cloud-right {
+  top: 18%;
+  right: 16%;
+  width: 28px;
+}
+
+.placeholder-cloud-right::before {
+  width: 13px;
+  height: 13px;
+  left: 2px;
+  bottom: 1px;
+}
+
+.placeholder-cloud-right::after {
+  width: 12px;
+  height: 12px;
+  right: 3px;
+  bottom: 1px;
+}
+
+.placeholder-hill {
+  position: absolute;
+  bottom: 24%;
+  border-radius: 50% 50% 0 0;
+}
+
+.placeholder-hill-back {
+  left: -6%;
+  width: 76%;
+  height: 24%;
+  background: #cfd6dd;
+}
+
+.placeholder-hill-front {
+  right: -8%;
+  width: 84%;
+  height: 30%;
+  background: #bcc6cf;
+}
+
+.placeholder-water {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 24%;
+  background: linear-gradient(180deg, #b8c2cb 0%, #aeb9c3 100%);
+}
+
+.placeholder-sun {
+  position: absolute;
+  top: 16%;
+  right: 18%;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #c7d0d8;
+  box-shadow: 0 0 0 6px rgba(199, 208, 216, 0.26);
+}
+
+.placeholder-tree {
+  position: absolute;
+  bottom: 18%;
+  width: 6px;
+  background: #97a5b2;
+  border-radius: 999px;
+}
+
+.placeholder-tree::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 70%;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #c9d1d8;
+  transform: translateX(-50%);
+}
+
+.placeholder-tree-left {
+  left: 20%;
+  height: 18%;
+}
+
+.placeholder-tree-right {
+  right: 22%;
+  height: 15%;
+}
+
+.placeholder-caption-bar {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 10px;
+  height: 8px;
+  border-radius: 999px;
+  background: #d8dfe6;
+}
+.shimmer-active::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    110deg,
+    rgba(255, 255, 255, 0) 18%,
+    rgba(255, 255, 255, 0.58) 46%,
+    rgba(255, 255, 255, 0) 74%
+  );
+  transform: translateX(-120%);
+  animation: reviewShimmer 1.6s linear infinite;
+  pointer-events: none;
 }
 
 .review-waiting-card {
   display: grid;
-  grid-template-columns: 220px 1fr;
-  gap: 24px;
+  grid-template-columns: 180px 1fr;
+  gap: 20px;
   align-items: center;
-  padding: 20px;
+  padding: 18px;
   border-radius: 16px;
   background: #ffffff;
   border: 1px solid #e5e7eb;
 }
 
 .waiting-preview-frame {
-  width: 220px;
-  aspect-ratio: 9 / 16;
-  border-radius: 18px;
+  width: 180px;
+  height: 220px;
+  border-radius: 16px;
   border: 1px solid #dbe3ee;
-  background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
-  padding: 12px;
-  box-sizing: border-box;
-}
-
-.waiting-preview-inner {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  border-radius: 14px;
+  background: #eef2f6;
   overflow: hidden;
-  background: linear-gradient(180deg, #f1f5f9 0%, #e5edf6 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.waiting-image-icon {
   position: relative;
-  z-index: 2;
-  font-size: 28px;
-  opacity: 0.7;
-}
-
-.waiting-shimmer {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    110deg,
-    rgba(255, 255, 255, 0) 20%,
-    rgba(255, 255, 255, 0.55) 50%,
-    rgba(255, 255, 255, 0) 80%
-  );
-  transform: translateX(-100%);
-  animation: shimmerMove 1.8s linear infinite;
 }
 
 .waiting-copy {
@@ -789,14 +1205,14 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 .waiting-message {
   margin: 0;
   color: #475569;
-  line-height: 1.7;
-  font-size: 15px;
+  line-height: 1.65;
+  font-size: 14px;
 }
 
 .waiting-actions {
   display: flex;
   gap: 12px;
-  margin-top: 6px;
+  margin-top: 4px;
 }
 
 .refresh-button {
@@ -823,16 +1239,9 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   cursor: not-allowed;
 }
 
-@keyframes shimmerMove {
+@keyframes reviewShimmer {
   100% {
-    transform: translateX(100%);
-  }
-}
-
-@media (max-width: 1100px) {
-  .selected-preview-frame {
-    width: 200px;
-    height: 300px;
+    transform: translateX(120%);
   }
 }
 
@@ -843,7 +1252,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 
   .waiting-preview-frame {
     width: 100%;
-    max-width: 260px;
+    max-width: 180px;
   }
 
   .review-candidate-grid {
@@ -854,20 +1263,27 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
     flex-direction: column;
     align-items: flex-start;
   }
+
+  .preview-card {
+    grid-template-columns: 1fr;
+  }
+
+  .preview-visual-frame {
+    width: 132px;
+  }
 }
 
 @media (max-width: 640px) {
   .review-scene-card {
-    padding: 16px;
+    padding: 12px;
   }
 
   .scene-subtext {
-    font-size: 14px;
+    font-size: 13px;
   }
 
-  .selected-preview-frame {
-    width: 180px;
-    height: 280px;
+  .preview-card {
+    padding: 10px;
   }
 }
 </style>
