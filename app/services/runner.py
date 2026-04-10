@@ -94,6 +94,7 @@ class WorkflowRunner:
             "final_video": self._run_final_video,
         }
         self._session_store: Dict[str, Dict[str, Any]] = {}
+        self._run_store: Dict[str, Dict[str, Any]] = {}
 
     def get_real_kling_samples_manifest(self) -> Dict[str, Any]:
         manifest = self._build_real_samples_manifest()
@@ -478,26 +479,32 @@ class WorkflowRunner:
             if handler is None:
                 raise UnknownStepError(f"Unknown step: {name}")
 
-            output = handler(ctx, aggregated_outputs)
+            if name == "image_assets":
+                output = self._build_deferred_image_assets_output(ctx)
+            else:
+                output = handler(ctx, aggregated_outputs)
+
             step_results.append(
                 StepResult(name=name, status="COMPLETED", output=output)
             )
             aggregated_outputs[name] = output
 
-            if name == "image_assets" and isinstance(output, dict):
-                image_assets_status = str(output.get("status") or "").strip().lower()
+            if name == "image_assets":
+                aggregated_outputs["image_review"] = self._build_pending_image_review(
+                    reason="waiting_for_manual_refresh"
+                )
+            elif name == "video_prompts":
+                video_prompt_status = str(output.get("status") or "").strip().lower()
+                if video_prompt_status == "pending" and "image_review" not in aggregated_outputs:
+                    aggregated_outputs["image_review"] = self._build_pending_image_review()
 
-                if image_assets_status in {"pending", "retrying"}:
-                    aggregated_outputs["image_review"] = {
-                        "enabled": False,
-                        "status": "pending",
-                        "reason": "waiting_for_image_assets",
-                        "selected_assets": [],
-                    }
-                else:
-                    aggregated_outputs["image_review"] = self._build_image_review_from_assets(
-                        aggregated_outputs
-                    )
+        self._save_run_context(
+            workflow_id=req.workflow_id,
+            session_id=req.session_id,
+            run_id=run_id,
+            outputs=aggregated_outputs,
+            workflow_input=req.input.model_dump(),
+        )
 
         session_memory_summary = self._build_session_memory_summary(
             req.session_id,
@@ -898,8 +905,64 @@ class WorkflowRunner:
             "last_story": outputs.get("story") or {},
             "last_storyboard": outputs.get("storyboard") or {},
             "last_render_plan": outputs.get("render_plan") or {},
+        }  
+    def _get_run_context(self, run_id: str) -> Optional[Dict[str, Any]]:
+        normalized_run_id = str(run_id or "").strip()
+        if not normalized_run_id:
+            return None
+        return self._run_store.get(normalized_run_id)
+
+    def _save_run_context(
+        self,
+        *,
+        workflow_id: str,
+        session_id: Optional[str],
+        run_id: str,
+        outputs: Dict[str, Any],
+        workflow_input: Dict[str, Any],
+    ) -> None:
+        normalized_run_id = str(run_id or "").strip()
+        if not normalized_run_id:
+            return
+
+        self._run_store[normalized_run_id] = {
+            "workflow_id": workflow_id,
+            "session_id": session_id,
+            "workflow_input": dict(workflow_input or {}),
+            "storyboard": outputs.get("storyboard") or {},
+            "sentence_shots": outputs.get("sentence_shots") or {},
+            "image_prompts": outputs.get("image_prompts") or {},
+            "image_assets": outputs.get("image_assets") or {},
+            "image_review": outputs.get("image_review") or {},
+            "video_prompts": outputs.get("video_prompts") or {},
         }
 
+    def _build_deferred_image_assets_output(
+        self,
+        ctx: StepContext,
+    ) -> Dict[str, Any]:
+        return {
+            "enabled": False,
+            "run_id": ctx.run_id,
+            "provider": self._image_provider_name(),
+            "status": "pending",
+            "reason": "deferred_to_refresh",
+            "detail": "image asset generation is deferred to /v1/image-review/refresh",
+            "asset_count": 0,
+            "assets": [],
+        }
+
+    def _build_pending_image_review(
+        self,
+        *,
+        reason: str = "waiting_for_image_assets",
+    ) -> Dict[str, Any]:
+        return {
+            "enabled": False,
+            "status": "pending",
+            "reason": reason,
+            "selected_assets": [],
+        }
     def _build_session_memory_summary(
         self,
         session_id: Optional[str],
@@ -1682,6 +1745,215 @@ class WorkflowRunner:
         return self._build_image_review_from_assets(
             {"image_assets": image_assets_output}
         )
+    def _build_image_review_item_from_asset(
+        self,
+        asset: Dict[str, Any],
+        provider: str,
+    ) -> Dict[str, Any]:
+        scene_id = str(asset.get("scene_id") or "").strip()
+        scene_title = str(asset.get("scene_title") or "").strip()
+
+        candidate_asset_refs = asset.get("candidate_asset_refs") or []
+        if not isinstance(candidate_asset_refs, list) or not candidate_asset_refs:
+            candidate_asset_refs = [self._image_asset_ref_from_item(asset, provider)]
+
+        selected_asset_ref = candidate_asset_refs[0] if candidate_asset_refs else {}
+
+        return {
+            "scene_id": scene_id,
+            "scene_title": scene_title,
+            "review_status": "auto_selected",
+            "selection_mode": "default_first_pass",
+            "selection_source": "default_auto_selection",
+            "selection_reason": "default_selected_from_image_assets",
+            "selected_asset_ref": selected_asset_ref,
+            "candidate_asset_refs": candidate_asset_refs,
+            "characters": asset.get("characters") or [],
+            "character_ids": asset.get("character_ids") or [],
+            "prompt": str(asset.get("prompt") or "").strip(),
+        }
+
+    def _upsert_image_review_item(
+        self,
+        image_review: Dict[str, Any],
+        scene_review_item: Dict[str, Any],
+        provider: str,
+    ) -> Dict[str, Any]:
+        updated_review = dict(image_review or {})
+        selected_assets = updated_review.get("selected_assets") or []
+
+        if not isinstance(selected_assets, list):
+            selected_assets = []
+
+        target_scene_id = str(scene_review_item.get("scene_id") or "").strip()
+        if not target_scene_id:
+            raise ValueError("scene_review_item.scene_id is required")
+
+        updated_items: List[Dict[str, Any]] = []
+        replaced = False
+
+        for item in selected_assets:
+            if not isinstance(item, dict):
+                continue
+
+            item_scene_id = str(item.get("scene_id") or "").strip()
+            if item_scene_id == target_scene_id:
+                updated_items.append(dict(scene_review_item))
+                replaced = True
+            else:
+                updated_items.append(dict(item))
+
+        if not replaced:
+            updated_items.append(dict(scene_review_item))
+
+        updated_review["enabled"] = True
+        updated_review["mode"] = "selection_contract"
+        updated_review["provider"] = provider
+        updated_review["selected_assets"] = updated_items
+        updated_review["selected_count"] = len(updated_items)
+        updated_review["asset_count"] = len(updated_items)
+
+        return updated_review
+
+    def _scene_index_by_id(
+        self,
+        scenes: List[Dict[str, Any]],
+    ) -> Dict[str, int]:
+        mapping: Dict[str, int] = {}
+        for index, scene in enumerate(scenes, start=1):
+            scene_id = str(scene.get("scene_id") or "").strip()
+            if scene_id:
+                mapping[scene_id] = index
+        return mapping
+
+    def _run_single_scene_api_image_asset(
+        self,
+        ctx: StepContext,
+        outputs: Dict[str, Any],
+        scene: Dict[str, Any],
+        scene_index: int,
+    ) -> Dict[str, Any]:
+        if self._force_image_rate_limit():
+            raise RuntimeError("HTTP 429: IPM limit reached (forced for local testing)")
+
+        storyboard = outputs.get("storyboard") or {}
+        scenes = storyboard.get("scenes") or []
+        prompt_by_scene_id, _ = self._image_prompt_item_maps(outputs)
+
+        run_dir = self._ensure_image_run_dir(ctx.run_id)
+        scene_id = str(scene.get("scene_id") or f"scene_{scene_index:02d}")
+        prompt_item = prompt_by_scene_id.get(scene_id) or {}
+        base_prompt = str(prompt_item.get("prompt") or "").strip()
+
+        if not base_prompt:
+            visual_description = str(scene.get("visual_description") or "").strip()
+            narration = str(scene.get("narration") or "").strip()
+            base_prompt = visual_description or narration or f"storybook scene {scene_id}"
+
+        asset_meta = self._image_asset_metadata(
+            scene=scene,
+            prompt_item=prompt_item,
+            fallback_scene_title=str(scene.get("scene_title") or "").strip(),
+        )
+
+        candidate_asset_refs: List[Dict[str, Any]] = []
+
+        for candidate_index, candidate_suffix in enumerate(["candidate_a", "candidate_b"]):
+            candidate_scene = self._scene_candidate_variant(
+                scene=scene,
+                candidate_index=candidate_index,
+            )
+
+            candidate_prompt = base_prompt
+            if candidate_index == 1:
+                candidate_prompt = (
+                    f"{base_prompt}, alternate composition, different framing, "
+                    "slightly changed pose emphasis, secondary visual arrangement"
+                )
+
+            file_name = f"{scene_id}__{candidate_suffix}.png"
+            output_path = run_dir / file_name
+
+            image_bytes = self._generate_api_image_bytes(
+                prompt=candidate_prompt,
+                scene=candidate_scene,
+                scene_index=scene_index + candidate_index,
+            )
+            if not isinstance(image_bytes, (bytes, bytearray)):
+                raise RuntimeError(
+                    f"api image provider returned invalid bytes for scene {scene_id} ({candidate_suffix})"
+                )
+
+            output_path.write_bytes(bytes(image_bytes))
+
+            candidate_asset_refs.append(
+                {
+                    "scene_id": scene_id,
+                    "file_name": file_name,
+                    "relative_path": f"assets/mock/image/{ctx.run_id}/{file_name}",
+                    "public_url": f"/assets/mock/image/{ctx.run_id}/{file_name}",
+                    "mime_type": "image/png",
+                    "provider": "api_image_generator",
+                }
+            )
+
+        primary_ref = candidate_asset_refs[0]
+
+        return {
+            "scene_id": scene_id,
+            "scene_title": asset_meta["scene_title"],
+            "characters": asset_meta["characters"],
+            "character_ids": asset_meta["character_ids"],
+            "prompt": base_prompt,
+            "file_name": primary_ref["file_name"],
+            "relative_path": primary_ref["relative_path"],
+            "public_url": primary_ref["public_url"],
+            "mime_type": primary_ref["mime_type"],
+            "status": "generated",
+            "candidate_asset_refs": candidate_asset_refs,
+        }
+
+    def _run_single_scene_image_asset(
+        self,
+        ctx: StepContext,
+        outputs: Dict[str, Any],
+        scene: Dict[str, Any],
+        scene_index: int,
+    ) -> Dict[str, Any]:
+        provider = self._image_provider_name()
+
+        if provider == "pillow_storybook_renderer":
+            raise RuntimeError("single-scene pillow path is not implemented in this phase")
+
+        if provider == "api_image_generator":
+            try:
+                asset = self._run_single_scene_api_image_asset(
+                    ctx=ctx,
+                    outputs=outputs,
+                    scene=scene,
+                    scene_index=scene_index,
+                )
+                return {
+                    "enabled": True,
+                    "run_id": ctx.run_id,
+                    "provider": "api_image_generator",
+                    "asset_count": 1,
+                    "assets": [asset],
+                }
+            except Exception as e:
+                strategy = self._image_429_strategy()
+                if strategy == "pending" and self._is_rate_limit_error(e):
+                    return self._build_pending_image_assets_result(
+                        ctx=ctx,
+                        provider="api_image_generator",
+                        reason=str(e),
+                        retry_after_sec=60,
+                    )
+                raise RuntimeError(
+                    f"single scene image asset generation failed with provider={provider}: {e}"
+                ) from e
+
+        raise RuntimeError(f"unknown image provider: {provider}")
     def _video_prompt_scene_metadata(
         self,
         scene: Dict[str, Any],
@@ -1919,6 +2191,247 @@ class WorkflowRunner:
             "session_id": session_id,
             "run_id": run_id,
             "scene_id": scene_id,
+            "image_review": updated_image_review,
+            "video_prompts": video_prompts,
+        }
+    
+    def refresh_image_review_scene(
+        self,
+        workflow_id: str,
+        session_id: Optional[str],
+        run_id: str,
+        scene_id: str,
+        storyboard: Dict[str, Any],
+        workflow_input: Dict[str, Any],
+        image_review: Dict[str, Any],
+        video_provider: str = "mock",
+    ) -> Dict[str, Any]:
+        normalized_scene_id = str(scene_id or "").strip()
+        if not normalized_scene_id:
+            raise ValueError("scene_id is required")
+
+        storyboard_scenes = (storyboard or {}).get("scenes") or []
+        if not isinstance(storyboard_scenes, list) or not storyboard_scenes:
+            raise ValueError("storyboard.scenes is required")
+
+        scene_index_by_id = self._scene_index_by_id(storyboard_scenes)
+        target_scene = None
+        for item in storyboard_scenes:
+            if str(item.get("scene_id") or "").strip() == normalized_scene_id:
+                target_scene = item
+                break
+
+        if target_scene is None:
+            raise ValueError(f"scene_id not found in storyboard: {normalized_scene_id}")
+
+        try:
+            normalized_input = WorkflowInput(
+                **{
+                    **(workflow_input or {}),
+                    "video_provider": (
+                        str(video_provider or "").strip()
+                        or str((workflow_input or {}).get("video_provider") or "").strip()
+                        or "mock"
+                    ),
+                }
+            )
+        except Exception as e:
+            raise ValueError(f"invalid workflow_input: {e}") from e
+
+        ctx = StepContext(
+            workflow_id=workflow_id,
+            session_id=session_id,
+            run_id=run_id,
+            input=normalized_input,
+        )
+
+        outputs: Dict[str, Any] = {
+            "storyboard": {
+                "scenes": storyboard_scenes,
+            },
+            "image_review": dict(image_review or {}),
+        }
+
+        single_scene_assets = self._run_single_scene_image_asset(
+            ctx=ctx,
+            outputs=outputs,
+            scene=target_scene,
+            scene_index=scene_index_by_id.get(normalized_scene_id, 1),
+        )
+        outputs["image_assets"] = single_scene_assets
+
+        image_assets_status = str(single_scene_assets.get("status") or "").strip().lower()
+        if image_assets_status in {"pending", "retrying"}:
+            updated_image_review = dict(image_review or {})
+            scene_review_item: Dict[str, Any] = {}
+        else:
+            provider = str(single_scene_assets.get("provider") or "").strip()
+            assets = single_scene_assets.get("assets") or []
+            first_asset = assets[0] if isinstance(assets, list) and assets else {}
+            if not isinstance(first_asset, dict) or not first_asset:
+                raise RuntimeError("single scene image asset is missing")
+            scene_review_item = self._build_image_review_item_from_asset(
+                first_asset,
+                provider=provider,
+            )
+            updated_image_review = self._upsert_image_review_item(
+                image_review=image_review,
+                scene_review_item=scene_review_item,
+                provider=provider,
+            )
+
+        outputs["image_review"] = updated_image_review
+
+        merged_assets: List[Dict[str, Any]] = []
+        selected_assets = updated_image_review.get("selected_assets") or []
+        if isinstance(selected_assets, list):
+            for item in selected_assets:
+                if not isinstance(item, dict):
+                    continue
+                selected_asset_ref = item.get("selected_asset_ref") or {}
+                merged_assets.append(
+                    {
+                        "scene_id": item.get("scene_id"),
+                        "scene_title": item.get("scene_title"),
+                        "characters": item.get("characters") or [],
+                        "character_ids": item.get("character_ids") or [],
+                        "prompt": item.get("prompt") or "",
+                        "file_name": selected_asset_ref.get("file_name"),
+                        "relative_path": selected_asset_ref.get("relative_path"),
+                        "public_url": selected_asset_ref.get("public_url"),
+                        "mime_type": selected_asset_ref.get("mime_type"),
+                        "status": "generated",
+                        "candidate_asset_refs": item.get("candidate_asset_refs") or [],
+                    }
+                )
+
+        outputs["image_assets"] = {
+            "enabled": True,
+            "run_id": run_id,
+            "provider": str(single_scene_assets.get("provider") or self._image_provider_name()),
+            "asset_count": len(merged_assets),
+            "assets": merged_assets,
+        }
+
+        video_prompts = self._run_video_prompts(ctx, outputs)
+
+        return {
+            "workflow_id": workflow_id,
+            "session_id": session_id,
+            "run_id": run_id,
+            "scene_id": normalized_scene_id,
+            "scene_image_asset": single_scene_assets,
+            "scene_review_item": scene_review_item if image_assets_status not in {"pending", "retrying"} else {},
+            "image_review": updated_image_review,
+            "video_prompts": video_prompts,
+        }
+    def refresh_image_review(
+        self,
+        workflow_id: str,
+        session_id: Optional[str],
+        run_id: str,
+        storyboard: Dict[str, Any],
+        workflow_input: Dict[str, Any],
+        image_review: Dict[str, Any],
+        video_provider: str = "mock",
+    ) -> Dict[str, Any]:
+        normalized_run_id = str(run_id or "").strip()
+        if not normalized_run_id:
+            raise ValueError("run_id is required")
+
+        stored_context = self._get_run_context(normalized_run_id) or {}
+
+        resolved_workflow_id = (
+            str(workflow_id or "").strip()
+            or str(stored_context.get("workflow_id") or "").strip()
+        )
+        if not resolved_workflow_id:
+            raise ValueError("workflow_id is required")
+
+        resolved_session_id = session_id
+        if resolved_session_id is None:
+            stored_session_id = stored_context.get("session_id")
+            if isinstance(stored_session_id, str) and stored_session_id.strip():
+                resolved_session_id = stored_session_id.strip()
+
+        resolved_storyboard = storyboard or stored_context.get("storyboard") or {}
+        storyboard_scenes = (resolved_storyboard or {}).get("scenes") or []
+        if not isinstance(storyboard_scenes, list) or not storyboard_scenes:
+            raise ValueError("storyboard.scenes is required")
+
+        stored_workflow_input = stored_context.get("workflow_input") or {}
+        merged_workflow_input = {
+            **stored_workflow_input,
+            **(workflow_input or {}),
+        }
+
+        try:
+            normalized_input = WorkflowInput(
+                **{
+                    **merged_workflow_input,
+                    "video_provider": (
+                        str(video_provider or "").strip()
+                        or str(merged_workflow_input.get("video_provider") or "").strip()
+                        or "mock"
+                    ),
+                }
+            )
+        except Exception as e:
+            raise ValueError(f"invalid workflow_input: {e}") from e
+
+        ctx = StepContext(
+            workflow_id=resolved_workflow_id,
+            session_id=resolved_session_id,
+            run_id=normalized_run_id,
+            input=normalized_input,
+        )
+
+        outputs: Dict[str, Any] = {
+            "storyboard": {
+                "scenes": storyboard_scenes,
+            },
+        }
+
+        stored_sentence_shots = stored_context.get("sentence_shots") or {}
+        if stored_sentence_shots:
+            outputs["sentence_shots"] = stored_sentence_shots
+
+        stored_image_prompts = stored_context.get("image_prompts") or {}
+        if stored_image_prompts:
+            outputs["image_prompts"] = stored_image_prompts
+
+        previous_image_review = image_review or stored_context.get("image_review") or {}
+        if previous_image_review:
+            outputs["image_review"] = previous_image_review
+
+        image_assets = self._run_image_assets(ctx, outputs)
+        outputs["image_assets"] = image_assets
+
+        image_assets_status = str(image_assets.get("status") or "").strip().lower()
+        if image_assets_status in {"pending", "retrying"}:
+            updated_image_review = self._build_pending_image_review(
+                reason="waiting_for_image_assets"
+            )
+        else:
+            updated_image_review = self._build_default_image_review(image_assets)
+
+        outputs["image_review"] = updated_image_review
+        video_prompts = self._run_video_prompts(ctx, outputs)
+        outputs["video_prompts"] = video_prompts
+
+        self._save_run_context(
+            workflow_id=resolved_workflow_id,
+            session_id=resolved_session_id,
+            run_id=normalized_run_id,
+            outputs=outputs,
+            workflow_input=normalized_input.model_dump(),
+        )
+
+        return {
+            "workflow_id": resolved_workflow_id,
+            "session_id": resolved_session_id,
+            "run_id": normalized_run_id,
+            "image_assets": image_assets,
             "image_review": updated_image_review,
             "video_prompts": video_prompts,
         }

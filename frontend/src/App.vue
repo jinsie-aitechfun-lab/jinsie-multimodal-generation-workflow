@@ -74,6 +74,13 @@ type ImageReviewSelectResponse = {
   timestamp?: string
 }
 
+type ReviewWaitingState =
+  | 'idle'
+  | 'deferred_pending'
+  | 'refreshing'
+  | 'rate_limited_retrying'
+  | 'ready'
+
 type StructuredCharacterInput = {
   display_name: string
   species: string
@@ -144,6 +151,24 @@ type SamplesSummaryResponse = {
       available_scene_ids?: string[]
     }
   >
+}
+
+type ImageReviewRefreshSceneResponse = {
+  workflow_id?: string
+  session_id?: string
+  run_id?: string
+  scene_id?: string
+  scene_image_asset?: Record<string, unknown>
+  scene_review_item?: Record<string, unknown>
+  image_review?: Record<string, unknown>
+  video_prompts?: Record<string, unknown>
+  timestamp?: string
+}
+
+type ReviewPlaceholderItem = {
+  scene_id: string
+  scene_title: string
+  state: 'waiting' | 'refreshing' | 'done'
 }
 
 const DEFAULT_WORKFLOW_FORM: WorkflowRunFormState = {
@@ -237,6 +262,11 @@ const stepSummaries = ref<Array<{ name: string; status: string; preview: string 
 const currentWorkflowResponse = ref<WorkflowRunResponse | null>(null)
 const currentWorkflowPayload = ref<WorkflowRunPayload | null>(null)
 const selectingSceneId = ref('')
+const refreshingImageReview = ref(false)
+const sceneRefreshQueue = ref<string[]>([])
+const sceneRefreshingId = ref('')
+const reviewPlaceholders = ref<ReviewPlaceholderItem[]>([])
+let imageReviewAutoRefreshTimer: number | null = null
 type ViewTab = 'run' | 'review' | 'assets' | 'debug'
 const activeTab = ref<ViewTab>('run')
 
@@ -301,28 +331,35 @@ const hasDebugContent = computed(() => {
   return Boolean(stepSummaries.value.length > 0 || resultText.value)
 })
 
-const imageAssetsPending = computed(() => {
-  const imageAssets = currentWorkflowResponse.value?.outputs?.image_assets
-  if (!imageAssets || typeof imageAssets !== 'object') {
-    return false
-  }
 
-  const status = (imageAssets as Record<string, unknown>).status
-  return status === 'pending' || status === 'retrying'
+const imageAssetsOutput = computed<Record<string, unknown>>(() => {
+  const imageAssets = currentWorkflowResponse.value?.outputs?.image_assets
+  return imageAssets && typeof imageAssets === 'object'
+    ? (imageAssets as Record<string, unknown>)
+    : {}
 })
 
-const imageAssetsPendingMessage = computed(() => {
-  const imageAssets = currentWorkflowResponse.value?.outputs?.image_assets
-  if (!imageAssets || typeof imageAssets !== 'object') {
-    return '真实图片生成中，请稍后重试。'
+const reviewWaitingState = computed<ReviewWaitingState>(() => {
+  if (imageReviewSelectedAssets.value.length > 0) {
+    return 'ready'
   }
 
-  const retryAfterSec = (imageAssets as Record<string, unknown>).retry_after_sec
-  if (typeof retryAfterSec === 'number' && retryAfterSec > 0) {
-    return `真实图片生成中，图像服务当前限流，请约 ${retryAfterSec} 秒后重试。`
+  if (refreshingImageReview.value) {
+    return 'refreshing'
   }
 
-  return '真实图片生成中，图像服务当前限流，请稍后重试。'
+  const imageAssetsStatus = String(imageAssetsOutput.value.status || '').trim()
+  const imageAssetsReason = String(imageAssetsOutput.value.reason || '').trim()
+
+  if (imageAssetsStatus === 'retrying') {
+    return 'rate_limited_retrying'
+  }
+
+  if (imageAssetsStatus === 'pending' && imageAssetsReason === 'deferred_to_refresh') {
+    return 'deferred_pending'
+  }
+
+  return 'idle'
 })
 
 function assetRefPath(assetRef?: ImageAssetRef): string {
@@ -538,8 +575,49 @@ function applyWorkflowResponse(data: WorkflowRunResponse) {
   characterManifestText.value = extractCharacterManifestText(data)
   resultText.value = stringifyPretty(data)
   currentWorkflowResponse.value = data
+  syncReviewPlaceholders(data)
 }
 
+function buildReviewPlaceholdersFromStoryboard(data: WorkflowRunResponse): ReviewPlaceholderItem[] {
+  const storyboard = data.outputs?.storyboard as Record<string, unknown> | undefined
+  const scenesValue = storyboard?.scenes
+  const scenes = Array.isArray(scenesValue) ? scenesValue : []
+
+  const imageReview = data.outputs?.image_review as Record<string, unknown> | undefined
+  const selectedAssetsValue = imageReview?.selected_assets
+  const selectedAssets = Array.isArray(selectedAssetsValue) ? selectedAssetsValue : []
+
+  const doneSceneIds = new Set(
+    selectedAssets
+      .map((item: unknown) =>
+        item && typeof item === 'object'
+          ? String((item as Record<string, unknown>).scene_id || '')
+          : '',
+      )
+      .filter(Boolean),
+  )
+
+  return scenes.map((scene: unknown) => {
+    const sceneRecord = scene as Record<string, unknown>
+    const sceneId = String(sceneRecord.scene_id || '')
+    const sceneTitle = String(sceneRecord.scene_title || sceneId || 'unknown-scene')
+    return {
+      scene_id: sceneId,
+      scene_title: sceneTitle,
+      state: doneSceneIds.has(sceneId) ? 'done' : 'waiting',
+    }
+  })
+}
+
+function syncReviewPlaceholders(data: WorkflowRunResponse) {
+  reviewPlaceholders.value = buildReviewPlaceholdersFromStoryboard(data)
+}
+
+function markPlaceholderState(sceneId: string, state: 'waiting' | 'refreshing' | 'done') {
+  reviewPlaceholders.value = reviewPlaceholders.value.map((item) =>
+    item.scene_id === sceneId ? { ...item, state } : item,
+  )
+}
 async function fetchSamplesSummary() {
   const response = await fetch(`${apiBaseUrl}/v1/samples/summary`)
   if (!response.ok) {
@@ -717,7 +795,133 @@ async function selectImageAsset(sceneId: string, assetRef: ImageAssetRef) {
     selectingSceneId.value = ''
   }
 }
+function clearImageReviewAutoRefreshTimer() {
+  if (imageReviewAutoRefreshTimer !== null) {
+    window.clearTimeout(imageReviewAutoRefreshTimer)
+    imageReviewAutoRefreshTimer = null
+  }
+}
+
+async function refreshImageReviewScene(sceneId: string) {
+  if (!currentWorkflowResponse.value || !currentWorkflowPayload.value) {
+    return
+  }
+
+  const outputs = currentWorkflowResponse.value.outputs || {}
+  const storyboard = outputs.storyboard
+  const imageReview = outputs.image_review
+
+  if (!storyboard || typeof storyboard !== 'object') {
+    errorMessage.value = '当前缺少 storyboard 数据。'
+    return
+  }
+
+  sceneRefreshingId.value = sceneId
+  markPlaceholderState(sceneId, 'refreshing')
+
+  const payload = {
+    workflow_id: currentWorkflowResponse.value.workflow_id || currentWorkflowPayload.value.workflow_id,
+    session_id:
+      currentWorkflowResponse.value.session_id || currentWorkflowPayload.value.session_id,
+    run_id: currentWorkflowResponse.value.run_id || '',
+    scene_id: sceneId,
+    storyboard,
+    workflow_input: currentWorkflowPayload.value.input,
+    image_review: imageReview && typeof imageReview === 'object' ? imageReview : {},
+    video_provider:
+      typeof currentWorkflowPayload.value.input?.video_provider === 'string'
+        ? currentWorkflowPayload.value.input.video_provider
+        : workflowForm.value.videoProvider,
+  }
+
+  const response = await fetch(`${apiBaseUrl}/v1/image-review/refresh-scene`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`)
+  }
+
+  const data: ImageReviewRefreshSceneResponse = await response.json()
+
+  const mergedResponse: WorkflowRunResponse = {
+    ...(currentWorkflowResponse.value || {}),
+    workflow_id: data.workflow_id || currentWorkflowResponse.value.workflow_id,
+    session_id: data.session_id || currentWorkflowResponse.value.session_id,
+    run_id: data.run_id || currentWorkflowResponse.value.run_id,
+    outputs: {
+      ...(currentWorkflowResponse.value.outputs || {}),
+      image_review:
+        data.image_review || currentWorkflowResponse.value.outputs?.image_review || {},
+      video_prompts:
+        data.video_prompts || currentWorkflowResponse.value.outputs?.video_prompts || {},
+    },
+  }
+
+  applyWorkflowResponse(mergedResponse)
+  markPlaceholderState(sceneId, 'done')
+}
+
+async function refreshImageReview() {
+  if (!currentWorkflowResponse.value || !currentWorkflowPayload.value) {
+    return
+  }
+
+  if (refreshingImageReview.value) {
+    return
+  }
+
+  const storyboard = currentWorkflowResponse.value.outputs?.storyboard as Record<string, unknown> | undefined
+  const scenesValue = storyboard?.scenes
+  const scenes = Array.isArray(scenesValue) ? scenesValue : []
+  if (scenes.length === 0) {
+    errorMessage.value = '当前缺少 storyboard.scenes 数据。'
+    return
+  }
+
+  const imageReview = currentWorkflowResponse.value.outputs?.image_review as Record<string, unknown> | undefined
+  const selectedAssetsValue = imageReview?.selected_assets
+  const selectedAssets = Array.isArray(selectedAssetsValue) ? selectedAssetsValue : []
+
+  const doneSceneIds = new Set(
+    selectedAssets
+      .map((item: unknown) =>
+        item && typeof item === 'object'
+          ? String((item as Record<string, unknown>).scene_id || '')
+          : '',
+      )
+      .filter(Boolean),
+  )
+
+  sceneRefreshQueue.value = scenes
+    .map((scene) => String((scene as Record<string, unknown>).scene_id || ''))
+    .filter((sceneId) => sceneId && !doneSceneIds.has(sceneId))
+
+  if (sceneRefreshQueue.value.length === 0) {
+    return
+  }
+
+  refreshingImageReview.value = true
+  errorMessage.value = ''
+
+  try {
+    for (const sceneId of sceneRefreshQueue.value) {
+      await refreshImageReviewScene(sceneId)
+    }
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '候选图分场景刷新失败'
+  } finally {
+    sceneRefreshingId.value = ''
+    sceneRefreshQueue.value = []
+    refreshingImageReview.value = false
+  }
+}
 async function runWorkflow() {
+  clearImageReviewAutoRefreshTimer()
   resultText.value = ''
   currentWorkflowResponse.value = null
   currentWorkflowPayload.value = null
@@ -806,6 +1010,13 @@ async function runWorkflow() {
 
     applyWorkflowResponse(data)
 
+    if (reviewWaitingState.value === 'deferred_pending') {
+      clearImageReviewAutoRefreshTimer()
+      imageReviewAutoRefreshTimer = window.setTimeout(() => {
+        void refreshImageReview()
+      }, 1200)
+    }
+
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Request failed'
   } finally {
@@ -877,17 +1088,12 @@ onMounted(() => {
 
         <template v-else>
           <section v-if="activeTab === 'review'">
-            <section v-if="imageAssetsPending" class="result-panel">
-              <h2 class="section-title">Interactive Image Review</h2>
-              <p class="detail-text">{{ imageAssetsPendingMessage }}</p>
-            </section>
-
             <InteractiveImageReview
-              v-else
               :items="imageReviewItems"
+              :placeholders="reviewPlaceholders"
               :api-base-url="apiBaseUrl"
-              :loading="loading"
-              :selecting-scene-id="selectingSceneId"
+              :loading="loading || refreshingImageReview"
+              :selecting-scene-id="selectingSceneId || sceneRefreshingId"
               @select-asset="({ sceneId, assetRef }) => selectImageAsset(sceneId, assetRef)"
             />
           </section>
