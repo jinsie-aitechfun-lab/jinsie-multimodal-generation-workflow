@@ -5,6 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.schemas.workflow import (
+    ImageReviewRefreshRequest,
+    ImageReviewRefreshResponse,
     ImageReviewSelectRequest,
     ImageReviewSelectResponse,
     WorkflowRunRequest,
@@ -70,6 +72,8 @@ def run_workflow(req: WorkflowRunRequest):
     except Exception as e:
         print("[workflow] runtime error", repr(e))
         raise
+
+
 @app.post("/v1/image-review/select", response_model=ImageReviewSelectResponse)
 def select_image_review_asset(req: ImageReviewSelectRequest):
     print("[image-review] selection request received", req.workflow_id, req.scene_id)
@@ -100,4 +104,35 @@ def select_image_review_asset(req: ImageReviewSelectRequest):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         print("[image-review] runtime error", repr(e))
+        raise
+
+
+@app.post("/v1/image-review/refresh", response_model=ImageReviewRefreshResponse)
+def refresh_image_review(req: ImageReviewRefreshRequest):
+    print("[image-review] refresh request received", req.workflow_id, req.run_id)
+    try:
+        result = _runner.refresh_image_review(
+            workflow_id=req.workflow_id,
+            session_id=req.session_id,
+            run_id=req.run_id,
+            storyboard=req.storyboard,
+            workflow_input=req.workflow_input,
+            image_review=req.image_review,
+            video_provider=req.video_provider,
+        )
+        print("[image-review] refresh completed", req.run_id)
+        return ImageReviewRefreshResponse(
+            workflow_id=result["workflow_id"],
+            session_id=result.get("session_id"),
+            run_id=result["run_id"],
+            image_assets=result["image_assets"],
+            image_review=result["image_review"],
+            video_prompts=result["video_prompts"],
+            timestamp=ImageReviewRefreshResponse.now_timestamp(),
+        )
+    except ValueError as e:
+        print("[image-review] refresh bad request", str(e))
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        print("[image-review] refresh runtime error", repr(e))
         raise

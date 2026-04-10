@@ -74,6 +74,23 @@ type ImageReviewSelectResponse = {
   timestamp?: string
 }
 
+type ImageReviewRefreshResponse = {
+  workflow_id?: string
+  session_id?: string
+  run_id?: string
+  image_assets?: Record<string, unknown>
+  image_review?: Record<string, unknown>
+  video_prompts?: Record<string, unknown>
+  timestamp?: string
+}
+
+type ReviewWaitingState =
+  | 'idle'
+  | 'deferred_pending'
+  | 'refreshing'
+  | 'rate_limited_retrying'
+  | 'ready'
+
 type StructuredCharacterInput = {
   display_name: string
   species: string
@@ -237,6 +254,8 @@ const stepSummaries = ref<Array<{ name: string; status: string; preview: string 
 const currentWorkflowResponse = ref<WorkflowRunResponse | null>(null)
 const currentWorkflowPayload = ref<WorkflowRunPayload | null>(null)
 const selectingSceneId = ref('')
+const refreshingImageReview = ref(false)
+let imageReviewAutoRefreshTimer: number | null = null
 type ViewTab = 'run' | 'review' | 'assets' | 'debug'
 const activeTab = ref<ViewTab>('run')
 
@@ -301,30 +320,74 @@ const hasDebugContent = computed(() => {
   return Boolean(stepSummaries.value.length > 0 || resultText.value)
 })
 
-const imageAssetsPending = computed(() => {
-  const imageAssets = currentWorkflowResponse.value?.outputs?.image_assets
-  if (!imageAssets || typeof imageAssets !== 'object') {
-    return false
-  }
 
-  const status = (imageAssets as Record<string, unknown>).status
-  return status === 'pending' || status === 'retrying'
+const imageAssetsOutput = computed<Record<string, unknown>>(() => {
+  const imageAssets = currentWorkflowResponse.value?.outputs?.image_assets
+  return imageAssets && typeof imageAssets === 'object'
+    ? (imageAssets as Record<string, unknown>)
+    : {}
 })
 
-const imageAssetsPendingMessage = computed(() => {
-  const imageAssets = currentWorkflowResponse.value?.outputs?.image_assets
-  if (!imageAssets || typeof imageAssets !== 'object') {
-    return '真实图片生成中，请稍后重试。'
+const reviewWaitingState = computed<ReviewWaitingState>(() => {
+  if (imageReviewSelectedAssets.value.length > 0) {
+    return 'ready'
   }
 
-  const retryAfterSec = (imageAssets as Record<string, unknown>).retry_after_sec
-  if (typeof retryAfterSec === 'number' && retryAfterSec > 0) {
-    return `真实图片生成中，图像服务当前限流，请约 ${retryAfterSec} 秒后重试。`
+  if (refreshingImageReview.value) {
+    return 'refreshing'
   }
 
-  return '真实图片生成中，图像服务当前限流，请稍后重试。'
+  const imageAssetsStatus = String(imageAssetsOutput.value.status || '').trim()
+  const imageAssetsReason = String(imageAssetsOutput.value.reason || '').trim()
+
+  if (imageAssetsStatus === 'retrying') {
+    return 'rate_limited_retrying'
+  }
+
+  if (imageAssetsStatus === 'pending' && imageAssetsReason === 'deferred_to_refresh') {
+    return 'deferred_pending'
+  }
+
+  return 'idle'
 })
 
+const showImageReviewWaitingCard = computed(() => {
+  return reviewWaitingState.value !== 'idle' && reviewWaitingState.value !== 'ready'
+})
+
+const reviewWaitingTitle = computed(() => {
+  switch (reviewWaitingState.value) {
+    case 'refreshing':
+      return '正在生成候选图'
+    case 'rate_limited_retrying':
+      return '图像服务繁忙'
+    case 'deferred_pending':
+      return '候选图待获取'
+    default:
+      return '候选图准备中'
+  }
+})
+
+const reviewWaitingMessage = computed(() => {
+  const retryAfterSec = imageAssetsOutput.value.retry_after_sec
+
+  if (reviewWaitingState.value === 'refreshing') {
+    return '正在请求真实图片，请稍候，成功后会自动切换为候选图列表。'
+  }
+
+  if (reviewWaitingState.value === 'rate_limited_retrying') {
+    if (typeof retryAfterSec === 'number' && retryAfterSec > 0) {
+      return `图像服务当前繁忙，建议约 ${retryAfterSec} 秒后重试，也可以手动立即重试。`
+    }
+    return '图像服务当前繁忙，请稍后重试。'
+  }
+
+  if (reviewWaitingState.value === 'deferred_pending') {
+    return '主流程已完成，真实候选图尚未生成。你可以点击“立即刷新结果”，系统也会自动尝试获取。'
+  }
+
+  return '候选图尚未生成。'
+})
 function assetRefPath(assetRef?: ImageAssetRef): string {
   if (!assetRef) {
     return ''
@@ -717,7 +780,102 @@ async function selectImageAsset(sceneId: string, assetRef: ImageAssetRef) {
     selectingSceneId.value = ''
   }
 }
+function clearImageReviewAutoRefreshTimer() {
+  if (imageReviewAutoRefreshTimer !== null) {
+    window.clearTimeout(imageReviewAutoRefreshTimer)
+    imageReviewAutoRefreshTimer = null
+  }
+}
+
+async function refreshImageReview() {
+  if (!currentWorkflowResponse.value || !currentWorkflowPayload.value) {
+    return
+  }
+
+  if (refreshingImageReview.value) {
+    return
+  }
+
+  const outputs = currentWorkflowResponse.value.outputs || {}
+  const storyboard = outputs.storyboard
+  const imageReview = outputs.image_review
+
+  if (!storyboard || typeof storyboard !== 'object') {
+    errorMessage.value = '当前缺少 storyboard 数据。'
+    return
+  }
+
+  refreshingImageReview.value = true
+  errorMessage.value = ''
+
+  const payload = {
+    workflow_id: currentWorkflowResponse.value.workflow_id || currentWorkflowPayload.value.workflow_id,
+    session_id:
+      currentWorkflowResponse.value.session_id || currentWorkflowPayload.value.session_id,
+    run_id: currentWorkflowResponse.value.run_id || '',
+    storyboard,
+    workflow_input: currentWorkflowPayload.value.input,
+    image_review: imageReview && typeof imageReview === 'object' ? imageReview : {},
+    video_provider:
+      typeof currentWorkflowPayload.value.input?.video_provider === 'string'
+        ? currentWorkflowPayload.value.input.video_provider
+        : workflowForm.value.videoProvider,
+  }
+
+  try {
+    const response = await fetch(`${apiBaseUrl}/v1/image-review/refresh`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+
+    const data: ImageReviewRefreshResponse = await response.json()
+
+    const mergedResponse: WorkflowRunResponse = {
+      ...(currentWorkflowResponse.value || {}),
+      workflow_id: data.workflow_id || currentWorkflowResponse.value.workflow_id,
+      session_id: data.session_id || currentWorkflowResponse.value.session_id,
+      run_id: data.run_id || currentWorkflowResponse.value.run_id,
+      outputs: {
+        ...(currentWorkflowResponse.value.outputs || {}),
+        image_assets:
+          data.image_assets || currentWorkflowResponse.value.outputs?.image_assets || {},
+        image_review:
+          data.image_review || currentWorkflowResponse.value.outputs?.image_review || {},
+        video_prompts:
+          data.video_prompts || currentWorkflowResponse.value.outputs?.video_prompts || {},
+      },
+    }
+
+    applyWorkflowResponse(mergedResponse)
+
+    const nextImageAssets =
+      mergedResponse.outputs?.image_assets &&
+      typeof mergedResponse.outputs.image_assets === 'object'
+        ? (mergedResponse.outputs.image_assets as Record<string, unknown>)
+        : {}
+
+    const nextStatus = String(nextImageAssets.status || '').trim()
+    if (nextStatus === 'retrying') {
+      clearImageReviewAutoRefreshTimer()
+      imageReviewAutoRefreshTimer = window.setTimeout(() => {
+        void refreshImageReview()
+      }, 8000)
+    }
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '候选图刷新失败'
+  } finally {
+    refreshingImageReview.value = false
+  }
+}
 async function runWorkflow() {
+  clearImageReviewAutoRefreshTimer()
   resultText.value = ''
   currentWorkflowResponse.value = null
   currentWorkflowPayload.value = null
@@ -805,6 +963,12 @@ async function runWorkflow() {
     }
 
     applyWorkflowResponse(data)
+    if (reviewWaitingState.value === 'deferred_pending') {
+      clearImageReviewAutoRefreshTimer()
+      imageReviewAutoRefreshTimer = window.setTimeout(() => {
+        void refreshImageReview()
+      }, 1200)
+    }
 
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Request failed'
@@ -877,18 +1041,19 @@ onMounted(() => {
 
         <template v-else>
           <section v-if="activeTab === 'review'">
-            <section v-if="imageAssetsPending" class="result-panel">
-              <h2 class="section-title">Interactive Image Review</h2>
-              <p class="detail-text">{{ imageAssetsPendingMessage }}</p>
-            </section>
-
             <InteractiveImageReview
-              v-else
               :items="imageReviewItems"
               :api-base-url="apiBaseUrl"
               :loading="loading"
               :selecting-scene-id="selectingSceneId"
               @select-asset="({ sceneId, assetRef }) => selectImageAsset(sceneId, assetRef)"
+              :waiting-state="reviewWaitingState"
+              :waiting-title="reviewWaitingTitle"
+              :waiting-message="reviewWaitingMessage"
+              :show-waiting-card="showImageReviewWaitingCard"
+              :refreshing="refreshingImageReview"
+              :can-refresh="Boolean(currentWorkflowResponse && currentWorkflowPayload)"
+              @refresh-review="refreshImageReview"
             />
           </section>
 

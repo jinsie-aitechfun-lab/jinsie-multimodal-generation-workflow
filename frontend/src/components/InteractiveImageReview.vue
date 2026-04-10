@@ -22,11 +22,24 @@ type ImageReviewSelectedAsset = {
   prompt?: string
 }
 
+type ReviewWaitingState =
+  | 'idle'
+  | 'deferred_pending'
+  | 'refreshing'
+  | 'rate_limited_retrying'
+  | 'ready'
+
 const props = defineProps<{
   items: ImageReviewSelectedAsset[]
   apiBaseUrl: string
   loading: boolean
   selectingSceneId: string
+  waitingState?: ReviewWaitingState
+  waitingTitle?: string
+  waitingMessage?: string
+  showWaitingCard?: boolean
+  refreshing?: boolean
+  canRefresh?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -37,6 +50,7 @@ const emit = defineEmits<{
       assetRef: ImageAssetRef
     }
   ): void
+  (e: 'refresh-review'): void
 }>()
 
 function toAssetHref(path?: string): string {
@@ -100,13 +114,50 @@ function onSelect(sceneId: string, assetRef: ImageAssetRef) {
     assetRef,
   })
 }
+
+function onRefreshReview() {
+  emit('refresh-review')
+}
 </script>
 
 <template>
-  <section v-if="items.length > 0" class="result-panel">
+  <section v-if="items.length > 0 || showWaitingCard" class="result-panel">
     <h2 class="section-title">Interactive Image Review</h2>
 
-    <div class="review-scene-grid">
+    <article v-if="showWaitingCard && items.length === 0" class="review-waiting-card">
+      <div class="waiting-preview-frame">
+        <div class="waiting-preview-inner">
+          <div class="waiting-image-icon">🖼️</div>
+          <div class="waiting-shimmer"></div>
+        </div>
+      </div>
+
+      <div class="waiting-copy">
+        <h3 class="waiting-title">{{ waitingTitle || '候选图准备中' }}</h3>
+        <p class="waiting-message">
+          {{ waitingMessage || '候选图尚未生成，请稍后刷新。' }}
+        </p>
+
+        <div class="waiting-actions">
+          <button
+            type="button"
+            class="refresh-button"
+            :disabled="loading || refreshing || !canRefresh"
+            @click="onRefreshReview"
+          >
+            {{
+              refreshing
+                ? '正在刷新...'
+                : waitingState === 'rate_limited_retrying'
+                  ? '立即重试'
+                  : '立即刷新结果'
+            }}
+          </button>
+        </div>
+      </div>
+    </article>
+
+    <div v-if="items.length > 0" class="review-scene-grid">
       <article
         v-for="item in items"
         :key="item.scene_id || item.scene_title"
@@ -258,40 +309,167 @@ function onSelect(sceneId: string, assetRef: ImageAssetRef) {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .review-candidate-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 12px;
+  margin-top: 8px;
 }
 
 .asset-select-card {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  width: 100%;
-  padding: 12px;
-  border-radius: 12px;
+  appearance: none;
   border: 1px solid #d1d5db;
-  background: #f8fafc;
-  cursor: pointer;
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 12px;
   text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.asset-select-card:hover:not(:disabled) {
+  border-color: #94a3b8;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
 }
 
 .asset-select-card.active {
-  border-color: #111827;
-  background: #eef2ff;
+  border-color: #0f172a;
+  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.08);
 }
 
 .asset-select-card:disabled {
   cursor: not-allowed;
-  opacity: 0.7;
+  opacity: 0.65;
 }
 
 .review-selected-image {
   max-width: 280px;
+  max-height: 220px;
+}
+
+.review-waiting-card {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 24px;
+  align-items: center;
+  padding: 20px;
+  border-radius: 16px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+}
+
+.waiting-preview-frame {
+  width: 220px;
+  aspect-ratio: 9 / 16;
+  border-radius: 18px;
+  border: 1px solid #dbe3ee;
+  background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+  padding: 12px;
+  box-sizing: border-box;
+}
+
+.waiting-preview-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 14px;
+  overflow: hidden;
+  background: linear-gradient(180deg, #f1f5f9 0%, #e5edf6 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.waiting-image-icon {
+  position: relative;
+  z-index: 2;
+  font-size: 28px;
+  opacity: 0.7;
+}
+
+.waiting-shimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    110deg,
+    rgba(255, 255, 255, 0) 20%,
+    rgba(255, 255, 255, 0.55) 50%,
+    rgba(255, 255, 255, 0) 80%
+  );
+  transform: translateX(-100%);
+  animation: shimmerMove 1.8s linear infinite;
+}
+
+.waiting-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.waiting-title {
+  margin: 0;
+  font-size: 18px;
+  color: #111827;
+}
+
+.waiting-message {
+  margin: 0;
+  color: #475569;
+  line-height: 1.7;
+  font-size: 15px;
+}
+
+.waiting-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.refresh-button {
+  appearance: none;
+  border: 1px solid #0f172a;
+  background: #0f172a;
+  color: #ffffff;
+  border-radius: 999px;
+  padding: 10px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+.refresh-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.refresh-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@keyframes shimmerMove {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@media (max-width: 900px) {
+  .review-waiting-card {
+    grid-template-columns: 1fr;
+  }
+
+  .waiting-preview-frame {
+    width: 100%;
+    max-width: 260px;
+  }
 }
 </style>
