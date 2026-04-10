@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+
 type ImageAssetRef = {
   scene_id?: string
   file_name?: string
@@ -22,6 +24,12 @@ type ImageReviewSelectedAsset = {
   prompt?: string
 }
 
+type ReviewPlaceholderItem = {
+  scene_id: string
+  scene_title: string
+  state: 'waiting' | 'refreshing' | 'done'
+}
+
 type ReviewWaitingState =
   | 'idle'
   | 'deferred_pending'
@@ -29,8 +37,24 @@ type ReviewWaitingState =
   | 'rate_limited_retrying'
   | 'ready'
 
+type ReviewRenderEntry =
+  | {
+      kind: 'item'
+      sceneId: string
+      sceneTitle: string
+      state: 'done'
+      item: ImageReviewSelectedAsset
+    }
+  | {
+      kind: 'placeholder'
+      sceneId: string
+      sceneTitle: string
+      state: 'waiting' | 'refreshing' | 'done'
+    }
+
 const props = defineProps<{
   items: ImageReviewSelectedAsset[]
+  placeholders?: ReviewPlaceholderItem[]
   apiBaseUrl: string
   loading: boolean
   selectingSceneId: string
@@ -118,13 +142,84 @@ function onSelect(sceneId: string, assetRef: ImageAssetRef) {
 function onRefreshReview() {
   emit('refresh-review')
 }
+
+function placeholderStatusText(state: 'waiting' | 'refreshing' | 'done'): string {
+  if (state === 'refreshing') {
+    return 'refreshing'
+  }
+  if (state === 'done') {
+    return 'ready'
+  }
+  return 'waiting'
+}
+
+const renderEntries = computed<ReviewRenderEntry[]>(() => {
+  const itemMap = new Map<string, ImageReviewSelectedAsset>()
+
+  for (const item of props.items || []) {
+    const sceneId = String(item.scene_id || '').trim()
+    if (sceneId) {
+      itemMap.set(sceneId, item)
+    }
+  }
+
+  const entries: ReviewRenderEntry[] = []
+
+  for (const placeholder of props.placeholders || []) {
+    const sceneId = String(placeholder.scene_id || '').trim()
+    const sceneTitle = String(placeholder.scene_title || sceneId || 'unknown-scene').trim()
+
+    if (!sceneId) {
+      continue
+    }
+
+    const matchedItem = itemMap.get(sceneId)
+    if (matchedItem) {
+      entries.push({
+        kind: 'item',
+        sceneId,
+        sceneTitle,
+        state: 'done',
+        item: matchedItem,
+      })
+      itemMap.delete(sceneId)
+    } else {
+      entries.push({
+        kind: 'placeholder',
+        sceneId,
+        sceneTitle,
+        state: placeholder.state,
+      })
+    }
+  }
+
+  for (const item of props.items || []) {
+    const sceneId = String(item.scene_id || '').trim()
+    if (!sceneId || !itemMap.has(sceneId)) {
+      continue
+    }
+
+    entries.push({
+      kind: 'item',
+      sceneId,
+      sceneTitle: String(item.scene_title || sceneId || 'unknown-scene').trim(),
+      state: 'done',
+      item,
+    })
+  }
+
+  return entries
+})
 </script>
 
 <template>
-  <section v-if="items.length > 0 || showWaitingCard" class="result-panel">
+  <section
+    v-if="renderEntries.length > 0 || showWaitingCard"
+    class="result-panel"
+  >
     <h2 class="section-title">Interactive Image Review</h2>
 
-    <article v-if="showWaitingCard && items.length === 0" class="review-waiting-card">
+    <article v-if="showWaitingCard && renderEntries.length === 0" class="review-waiting-card">
       <div class="waiting-preview-frame">
         <div class="waiting-preview-inner">
           <div class="waiting-image-icon">🖼️</div>
@@ -157,74 +252,227 @@ function onRefreshReview() {
       </div>
     </article>
 
-    <div v-if="items.length > 0" class="review-scene-grid">
+    <div v-if="renderEntries.length > 0" class="review-scene-grid">
       <article
-        v-for="item in items"
-        :key="item.scene_id || item.scene_title"
+        v-for="entry in renderEntries"
+        :key="entry.sceneId"
         class="review-scene-card"
+        :class="{
+          'review-scene-card-placeholder': entry.kind === 'placeholder',
+          'review-scene-card-refreshing': entry.kind === 'placeholder' && entry.state === 'refreshing',
+        }"
       >
         <div class="review-scene-head">
-          <div>
-            <strong>{{ item.scene_title || item.scene_id || 'unknown-scene' }}</strong>
-            <p class="detail-text">
-              {{ item.selection_source || '-' }} / {{ item.selection_mode || '-' }}
+          <div class="scene-meta-block">
+            <strong class="scene-title-text">
+              {{ entry.sceneTitle }}
+            </strong>
+
+            <p v-if="entry.kind === 'item'" class="detail-text scene-subtext">
+              {{ entry.item.selection_source || '-' }} / {{ entry.item.selection_mode || '-' }}
+            </p>
+
+            <p v-else class="detail-text scene-subtext">
+              progressive_scene_refresh / {{ entry.state }}
             </p>
           </div>
 
           <span class="summary-status">
-            {{ selectingSceneId === item.scene_id ? 'Switching...' : item.review_status || '-' }}
+            {{
+              entry.kind === 'item'
+                ? (selectingSceneId === entry.sceneId ? 'Switching...' : entry.item.review_status || '-')
+                : placeholderStatusText(entry.state)
+            }}
           </span>
         </div>
 
-        <div class="detail-block">
-          <span class="detail-label">Current Selected</span>
-          <code>{{ assetRefPath(item.selected_asset_ref) || '-' }}</code>
+        <template v-if="entry.kind === 'item'">
+          <div class="detail-block">
+            <span class="detail-label detail-label-centered">Current Selected</span>
 
-          <a
-            v-if="isImageAsset(assetRefPath(item.selected_asset_ref))"
-            class="asset-image-link"
-            :href="toAssetHref(assetRefPath(item.selected_asset_ref))"
-            target="_blank"
-            rel="noreferrer"
-          >
-            <img
-              class="asset-image asset-image-thumbnail review-selected-image"
-              :src="toAssetHref(assetRefPath(item.selected_asset_ref))"
-              :alt="item.scene_title || item.scene_id || 'selected-image'"
-            />
-          </a>
-        </div>
+            <div class="asset-code-wrap">
+              <code class="asset-code-text">
+                {{ assetRefPath(entry.item.selected_asset_ref) || '-' }}
+              </code>
+            </div>
 
-        <div class="detail-block">
-          <span class="detail-label">Candidate Assets</span>
-
-          <div class="review-candidate-grid">
-            <button
-              v-for="candidate in item.candidate_asset_refs || []"
-              :key="candidate.relative_path || candidate.file_name || candidate.public_url"
-              type="button"
-              class="asset-select-card"
-              :class="{
-                active: isSameAssetRef(candidate, item.selected_asset_ref),
-              }"
-              :disabled="loading || selectingSceneId === item.scene_id"
-              @click="onSelect(item.scene_id || '', candidate)"
+            <a
+              v-if="isImageAsset(assetRefPath(entry.item.selected_asset_ref))"
+              class="selected-image-link"
+              :href="toAssetHref(assetRefPath(entry.item.selected_asset_ref))"
+              target="_blank"
+              rel="noreferrer"
             >
-              <span class="detail-label">
-                {{ isSameAssetRef(candidate, item.selected_asset_ref) ? 'Selected' : 'Click to Select' }}
-              </span>
+              <div class="selected-preview-frame">
+                <img
+                  class="selected-preview-image"
+                  :src="toAssetHref(assetRefPath(entry.item.selected_asset_ref))"
+                  :alt="entry.sceneTitle || 'selected-image'"
+                />
+              </div>
+            </a>
 
-              <code>{{ candidate.file_name || '-' }}</code>
-
-              <img
-                v-if="isImageAsset(assetRefPath(candidate))"
-                class="asset-image asset-image-thumbnail"
-                :src="toAssetHref(assetRefPath(candidate))"
-                :alt="candidate.file_name || 'candidate-image'"
-              />
-            </button>
+            <div v-else class="selected-preview-frame selected-preview-placeholder">
+              <div class="preview-placeholder-inner">
+                <span class="preview-placeholder-icon">🖼️</span>
+                <span class="preview-placeholder-text">Waiting for selected image</span>
+              </div>
+            </div>
           </div>
-        </div>
+
+          <div class="detail-block">
+            <span class="detail-label detail-label-centered">Candidate Assets</span>
+
+            <div class="review-candidate-grid">
+              <button
+                v-for="candidate in entry.item.candidate_asset_refs || []"
+                :key="candidate.relative_path || candidate.file_name || candidate.public_url"
+                type="button"
+                class="asset-select-card"
+                :class="{
+                  active: isSameAssetRef(candidate, entry.item.selected_asset_ref),
+                }"
+                :disabled="loading || selectingSceneId === entry.sceneId"
+                @click="onSelect(entry.sceneId, candidate)"
+              >
+                <div class="candidate-card-head">
+                  <span class="candidate-status-text">
+                    {{
+                      isSameAssetRef(candidate, entry.item.selected_asset_ref)
+                        ? 'Selected'
+                        : 'Click to Select'
+                    }}
+                  </span>
+
+                  <code class="candidate-file-chip">{{ candidate.file_name || '-' }}</code>
+                </div>
+
+                <div class="candidate-preview-frame">
+                  <img
+                    v-if="isImageAsset(assetRefPath(candidate))"
+                    class="candidate-preview-image"
+                    :src="toAssetHref(assetRefPath(candidate))"
+                    :alt="candidate.file_name || 'candidate-image'"
+                  />
+
+                  <div v-else class="candidate-preview-placeholder">
+                    <div class="preview-placeholder-inner">
+                      <span class="preview-placeholder-icon">🖼️</span>
+                      <span class="preview-placeholder-text">Waiting for candidate</span>
+                    </div>
+                  </div>
+                </div>
+              </button>
+
+              <div
+                v-if="(entry.item.candidate_asset_refs || []).length === 0"
+                class="asset-select-card asset-select-card-static"
+              >
+                <div class="candidate-card-head">
+                  <span class="candidate-status-text">Waiting</span>
+                  <code class="candidate-file-chip">candidate-a</code>
+                </div>
+
+                <div class="candidate-preview-frame candidate-preview-placeholder">
+                  <div class="preview-placeholder-inner">
+                    <span class="preview-placeholder-icon">🖼️</span>
+                    <span class="preview-placeholder-text">Waiting for candidate</span>
+                  </div>
+                </div>
+              </div>
+
+              <div
+                v-if="(entry.item.candidate_asset_refs || []).length === 0"
+                class="asset-select-card asset-select-card-static"
+              >
+                <div class="candidate-card-head">
+                  <span class="candidate-status-text">Waiting</span>
+                  <code class="candidate-file-chip">candidate-b</code>
+                </div>
+
+                <div class="candidate-preview-frame candidate-preview-placeholder">
+                  <div class="preview-placeholder-inner">
+                    <span class="preview-placeholder-icon">🖼️</span>
+                    <span class="preview-placeholder-text">Waiting for candidate</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <template v-else>
+          <div class="detail-block">
+            <span class="detail-label detail-label-centered">Current Selected</span>
+
+            <div class="asset-code-wrap">
+              <code class="asset-code-text">pending://{{ entry.sceneId }}/selected</code>
+            </div>
+
+            <div class="selected-preview-frame selected-preview-placeholder">
+              <div class="preview-placeholder-inner">
+                <span class="preview-placeholder-icon">🖼️</span>
+                <span class="preview-placeholder-text">
+                  {{
+                    entry.state === 'refreshing'
+                      ? 'Generating selected image...'
+                      : 'Waiting for selected image'
+                  }}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div class="detail-block">
+            <span class="detail-label detail-label-centered">Candidate Assets</span>
+
+            <div class="review-candidate-grid">
+              <div class="asset-select-card asset-select-card-static">
+                <div class="candidate-card-head">
+                  <span class="candidate-status-text">
+                    {{ entry.state === 'refreshing' ? 'Refreshing' : 'Waiting' }}
+                  </span>
+                  <code class="candidate-file-chip">{{ entry.sceneId }}__candidate_a.png</code>
+                </div>
+
+                <div class="candidate-preview-frame candidate-preview-placeholder">
+                  <div class="preview-placeholder-inner">
+                    <span class="preview-placeholder-icon">🖼️</span>
+                    <span class="preview-placeholder-text">
+                      {{
+                        entry.state === 'refreshing'
+                          ? 'Generating candidate A...'
+                          : 'Waiting for candidate'
+                      }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="asset-select-card asset-select-card-static">
+                <div class="candidate-card-head">
+                  <span class="candidate-status-text">
+                    {{ entry.state === 'refreshing' ? 'Refreshing' : 'Waiting' }}
+                  </span>
+                  <code class="candidate-file-chip">{{ entry.sceneId }}__candidate_b.png</code>
+                </div>
+
+                <div class="candidate-preview-frame candidate-preview-placeholder">
+                  <div class="preview-placeholder-inner">
+                    <span class="preview-placeholder-icon">🖼️</span>
+                    <span class="preview-placeholder-text">
+                      {{
+                        entry.state === 'refreshing'
+                          ? 'Generating candidate B...'
+                          : 'Waiting for candidate'
+                      }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
       </article>
     </div>
   </section>
@@ -244,18 +492,20 @@ function onRefreshReview() {
   font-size: 16px;
   line-height: 1.4;
   color: #111827;
+  text-align: center;
 }
 
 .summary-status {
   color: #2563eb;
   font-size: 13px;
   font-weight: 600;
+  flex-shrink: 0;
 }
 
 .detail-block {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
 }
 
 .detail-label {
@@ -264,32 +514,33 @@ function onRefreshReview() {
   font-weight: 600;
 }
 
+.detail-label-centered {
+  text-align: center;
+}
+
 .detail-text {
   color: #111827;
   line-height: 1.6;
 }
 
-.asset-image {
+.scene-subtext {
+  margin: 8px 0 0;
+  font-size: 16px;
+}
+
+.asset-code-wrap {
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: #f3f1eb;
+}
+
+.asset-code-text {
   display: block;
-  width: 100%;
-  max-width: 520px;
-  border-radius: 10px;
-  border: 1px solid #e5e7eb;
-  background: #ffffff;
-  margin-top: 8px;
-}
-
-.asset-image-link {
-  display: inline-block;
-  width: fit-content;
-  margin-top: 8px;
-}
-
-.asset-image-thumbnail {
-  max-width: 240px;
-  max-height: 180px;
-  object-fit: cover;
-  cursor: pointer;
+  color: #111827;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 
 .review-scene-grid {
@@ -304,6 +555,14 @@ function onRefreshReview() {
   border: 1px solid #e5e7eb;
 }
 
+.review-scene-card-placeholder {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.review-scene-card-refreshing {
+  border-color: #cbd5e1;
+}
+
 .review-scene-head {
   display: flex;
   align-items: flex-start;
@@ -312,9 +571,46 @@ function onRefreshReview() {
   margin-bottom: 14px;
 }
 
+.scene-meta-block {
+  min-width: 0;
+}
+
+.scene-title-text {
+  display: block;
+  color: #111827;
+  font-size: 18px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.selected-image-link {
+  display: inline-block;
+  width: fit-content;
+  text-decoration: none;
+}
+
+.selected-preview-frame {
+  width: 176px;
+  height: 280px;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid #d7dee8;
+  background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.selected-preview-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .review-candidate-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
   gap: 12px;
   margin-top: 8px;
 }
@@ -331,6 +627,9 @@ function onRefreshReview() {
     border-color 0.2s ease,
     box-shadow 0.2s ease,
     transform 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .asset-select-card:hover:not(:disabled) {
@@ -349,9 +648,77 @@ function onRefreshReview() {
   opacity: 0.65;
 }
 
-.review-selected-image {
-  max-width: 280px;
-  max-height: 220px;
+.asset-select-card-static {
+  cursor: default;
+}
+
+.candidate-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.candidate-status-text {
+  color: #6b7280;
+  font-size: 13px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.candidate-file-chip {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: #f3f1eb;
+  color: #4b5563;
+  font-size: 12px;
+  line-height: 1.4;
+  word-break: break-all;
+}
+
+.candidate-preview-frame {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+  background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.candidate-preview-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.selected-preview-placeholder,
+.candidate-preview-placeholder {
+  background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+}
+
+.preview-placeholder-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: #94a3b8;
+  text-align: center;
+  padding: 16px;
+}
+
+.preview-placeholder-icon {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.preview-placeholder-text {
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .review-waiting-card {
@@ -462,6 +829,13 @@ function onRefreshReview() {
   }
 }
 
+@media (max-width: 1100px) {
+  .selected-preview-frame {
+    width: 200px;
+    height: 300px;
+  }
+}
+
 @media (max-width: 900px) {
   .review-waiting-card {
     grid-template-columns: 1fr;
@@ -470,6 +844,30 @@ function onRefreshReview() {
   .waiting-preview-frame {
     width: 100%;
     max-width: 260px;
+  }
+
+  .review-candidate-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .review-scene-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 640px) {
+  .review-scene-card {
+    padding: 16px;
+  }
+
+  .scene-subtext {
+    font-size: 14px;
+  }
+
+  .selected-preview-frame {
+    width: 180px;
+    height: 280px;
   }
 }
 </style>

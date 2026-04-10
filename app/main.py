@@ -7,6 +7,8 @@ from fastapi.staticfiles import StaticFiles
 from app.schemas.workflow import (
     ImageReviewRefreshRequest,
     ImageReviewRefreshResponse,
+    ImageReviewRefreshSceneRequest,
+    ImageReviewRefreshSceneResponse,
     ImageReviewSelectRequest,
     ImageReviewSelectResponse,
     WorkflowRunRequest,
@@ -106,9 +108,70 @@ def select_image_review_asset(req: ImageReviewSelectRequest):
         print("[image-review] runtime error", repr(e))
         raise
 
-
 @app.post("/v1/image-review/refresh", response_model=ImageReviewRefreshResponse)
 def refresh_image_review(req: ImageReviewRefreshRequest):
+    print("[image-review] refresh request received", req.workflow_id, req.run_id)
+    try:
+        result = _runner.refresh_image_review(
+            workflow_id=req.workflow_id,
+            session_id=req.session_id,
+            run_id=req.run_id,
+            storyboard=req.storyboard,
+            workflow_input=req.workflow_input,
+            image_review=req.image_review,
+            video_provider=req.video_provider,
+        )
+        print("[image-review] refresh completed", req.run_id)
+        return ImageReviewRefreshResponse(
+            workflow_id=result["workflow_id"],
+            session_id=result.get("session_id"),
+            run_id=result["run_id"],
+            image_assets=result["image_assets"],
+            image_review=result["image_review"],
+            video_prompts=result["video_prompts"],
+            timestamp=ImageReviewRefreshResponse.now_timestamp(),
+        )
+    except ValueError as e:
+        print("[image-review] refresh bad request", str(e))
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        print("[image-review] refresh runtime error", repr(e))
+        raise
+
+
+@app.post("/v1/image-review/refresh-scene", response_model=ImageReviewRefreshSceneResponse)
+def refresh_image_review_scene(req: ImageReviewRefreshSceneRequest):
+    print("[image-review] refresh-scene request received", req.workflow_id, req.run_id, req.scene_id)
+    try:
+        result = _runner.refresh_image_review_scene(
+            workflow_id=req.workflow_id,
+            session_id=req.session_id,
+            run_id=req.run_id,
+            scene_id=req.scene_id,
+            storyboard=req.storyboard,
+            workflow_input=req.workflow_input,
+            image_review=req.image_review,
+            video_provider=req.video_provider,
+        )
+        print("[image-review] refresh-scene completed", req.run_id, req.scene_id)
+        return ImageReviewRefreshSceneResponse(
+            workflow_id=result["workflow_id"],
+            session_id=result.get("session_id"),
+            run_id=result["run_id"],
+            scene_id=result["scene_id"],
+            scene_image_asset=result["scene_image_asset"],
+            scene_review_item=result["scene_review_item"],
+            image_review=result["image_review"],
+            video_prompts=result["video_prompts"],
+            timestamp=ImageReviewRefreshSceneResponse.now_timestamp(),
+        )
+    except ValueError as e:
+        print("[image-review] refresh-scene bad request", str(e))
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        print("[image-review] refresh-scene runtime error", repr(e))
+        raise
+
     print("[image-review] refresh request received", req.workflow_id, req.run_id)
     try:
         result = _runner.refresh_image_review(

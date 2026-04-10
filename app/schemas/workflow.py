@@ -236,3 +236,34 @@ class ImageReviewRefreshResponse(BaseModel):
             .isoformat()
             .replace("+00:00", "Z")
         )
+        
+class ImageReviewRefreshSceneRequest(BaseModel):
+    workflow_id: str
+    session_id: Optional[str] = None
+    run_id: str
+    scene_id: str
+    storyboard: Dict[str, Any] = Field(default_factory=dict)
+    workflow_input: Dict[str, Any] = Field(default_factory=dict)
+    image_review: Dict[str, Any] = Field(default_factory=dict)
+    video_provider: str = Field(default="mock")
+
+
+class ImageReviewRefreshSceneResponse(BaseModel):
+    workflow_id: str
+    session_id: Optional[str] = None
+    run_id: str
+    scene_id: str
+    scene_image_asset: Dict[str, Any] = Field(default_factory=dict)
+    scene_review_item: Dict[str, Any] = Field(default_factory=dict)
+    image_review: Dict[str, Any] = Field(default_factory=dict)
+    video_prompts: Dict[str, Any] = Field(default_factory=dict)
+    timestamp: str
+
+    @staticmethod
+    def now_timestamp() -> str:
+        return (
+            datetime.now(timezone.utc)
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
