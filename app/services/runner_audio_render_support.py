@@ -552,7 +552,19 @@ class RunnerAudioRenderSupport:
             if image_asset is None:
                 continue
 
-            image_path = PROJECT_ROOT / str(image_asset.get("relative_path"))
+            selected_asset_ref = image_asset.get("selected_asset_ref") or {}
+            resolved_relative_path = ""
+
+            if isinstance(selected_asset_ref, dict) and selected_asset_ref:
+                resolved_relative_path = str(selected_asset_ref.get("relative_path") or "").strip()
+
+            if not resolved_relative_path:
+                resolved_relative_path = str(image_asset.get("relative_path") or "").strip()
+
+            if not resolved_relative_path:
+                continue
+
+            image_path = PROJECT_ROOT / resolved_relative_path
             duration_sec = float(item.get("duration_sec") or 0.0)
             if duration_sec <= 0:
                 duration_sec = float(item.get("duration_estimate_sec") or 3.0)

@@ -1259,6 +1259,30 @@ class WorkflowRunner:
             "voice_style": character_profiles["narrator"],
         }
 
+    def _resolved_image_asset_ref(self, asset: Dict[str, Any]) -> Dict[str, Any]:
+        selected_asset_ref = asset.get("selected_asset_ref") or {}
+        if isinstance(selected_asset_ref, dict) and selected_asset_ref:
+            return selected_asset_ref
+
+        candidate_asset_refs = asset.get("candidate_asset_refs") or []
+        if isinstance(candidate_asset_refs, list) and candidate_asset_refs:
+            first_ref = candidate_asset_refs[0]
+            if isinstance(first_ref, dict):
+                return first_ref
+
+        fallback = {
+            "scene_id": asset.get("scene_id"),
+            "shot_id": asset.get("shot_id"),
+            "file_name": asset.get("file_name"),
+            "relative_path": asset.get("relative_path"),
+            "public_url": asset.get("public_url"),
+            "mime_type": asset.get("mime_type"),
+            "provider": asset.get("provider"),
+        }
+        return {
+            key: value for key, value in fallback.items()
+            if value is not None and value != ""
+        }
     def _build_dialogue_line(
         self,
         *,
@@ -2302,6 +2326,7 @@ class WorkflowRunner:
                         "relative_path": selected_asset_ref.get("relative_path"),
                         "public_url": selected_asset_ref.get("public_url"),
                         "mime_type": selected_asset_ref.get("mime_type"),
+                        "selected_asset_ref": dict(selected_asset_ref) if isinstance(selected_asset_ref, dict) else {},
                         "status": "generated",
                         "candidate_asset_refs": item.get("candidate_asset_refs") or [],
                     }
@@ -3895,6 +3920,7 @@ class WorkflowRunner:
                     "characters": asset_meta["characters"],
                     "character_ids": asset_meta["character_ids"],
                     "prompt": asset_meta["prompt"],
+                    "selected_asset_ref": dict(primary_ref),
                     "file_name": primary_ref["file_name"],
                     "relative_path": primary_ref["relative_path"],
                     "public_url": primary_ref["public_url"],
@@ -4190,6 +4216,7 @@ class WorkflowRunner:
                         "characters": asset_meta["characters"],
                         "character_ids": asset_meta["character_ids"],
                         "prompt": base_prompt,
+                        "selected_asset_ref": dict(primary_ref),
                         "file_name": primary_ref["file_name"],
                         "relative_path": primary_ref["relative_path"],
                         "public_url": primary_ref["public_url"],
@@ -4275,6 +4302,7 @@ class WorkflowRunner:
                     "characters": asset_meta["characters"],
                     "character_ids": asset_meta["character_ids"],
                     "prompt": base_prompt,
+                    "selected_asset_ref": dict(primary_ref),
                     "file_name": primary_ref["file_name"],
                     "relative_path": primary_ref["relative_path"],
                     "public_url": primary_ref["public_url"],
