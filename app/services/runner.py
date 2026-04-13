@@ -20,6 +20,9 @@ from app.schemas.workflow import (
     WorkflowRunResponse,
 )
 from app.services.runner_audio_render_support import RunnerAudioRenderSupport
+from app.services.image_provider_queue import ImageProviderQueue
+from app.services.image_provider_adapter import ApiImageGeneratorAdapter
+from app.services.image_provider_types import ImageGenerationTask
 
 
 class UnknownStepError(Exception):
@@ -1903,9 +1906,6 @@ class WorkflowRunner:
         scene: Dict[str, Any],
         scene_index: int,
     ) -> Dict[str, Any]:
-        if self._force_image_rate_limit():
-            raise RuntimeError("HTTP 429: IPM limit reached (forced for local testing)")
-
         storyboard = outputs.get("storyboard") or {}
         scenes = storyboard.get("scenes") or []
         prompt_by_scene_id, _ = self._image_prompt_item_maps(outputs)
@@ -1927,6 +1927,7 @@ class WorkflowRunner:
         )
 
         candidate_asset_refs: List[Dict[str, Any]] = []
+        adapter = ApiImageGeneratorAdapter(self)
 
         for candidate_index, candidate_suffix in enumerate(["candidate_a", "candidate_b"]):
             candidate_scene = self._scene_candidate_variant(
@@ -1944,11 +1945,23 @@ class WorkflowRunner:
             file_name = f"{scene_id}__{candidate_suffix}.png"
             output_path = run_dir / file_name
 
-            image_bytes = self._generate_api_image_bytes(
+            task = ImageGenerationTask(
+                run_id=ctx.run_id,
+                item_id=scene_id,
+                scene_id=scene_id,
                 prompt=candidate_prompt,
-                scene=candidate_scene,
-                scene_index=scene_index + candidate_index,
+                candidate_suffix=candidate_suffix,
+                output_path=output_path,
+                relative_path=f"assets/mock/image/{ctx.run_id}/{file_name}",
+                public_url=f"/assets/mock/image/{ctx.run_id}/{file_name}",
+                prompt_metadata={
+                    "ctx": ctx,
+                    "scene": candidate_scene,
+                    "scene_index": scene_index + candidate_index,
+                },
             )
+
+            image_bytes = adapter.generate(task)
             if not isinstance(image_bytes, (bytes, bytearray)):
                 raise RuntimeError(
                     f"api image provider returned invalid bytes for scene {scene_id} ({candidate_suffix})"
@@ -1960,8 +1973,8 @@ class WorkflowRunner:
                 {
                     "scene_id": scene_id,
                     "file_name": file_name,
-                    "relative_path": f"assets/mock/image/{ctx.run_id}/{file_name}",
-                    "public_url": f"/assets/mock/image/{ctx.run_id}/{file_name}",
+                    "relative_path": task.relative_path,
+                    "public_url": task.public_url,
                     "mime_type": "image/png",
                     "provider": "api_image_generator",
                 }
@@ -1982,7 +1995,7 @@ class WorkflowRunner:
             "status": "generated",
             "candidate_asset_refs": candidate_asset_refs,
         }
-
+    
     def _run_single_scene_image_asset(
         self,
         ctx: StepContext,
@@ -3804,217 +3817,19 @@ class WorkflowRunner:
     def _run_image_assets(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
-        provider = self._image_provider_name()
-
-        if provider == "pillow_storybook_renderer":
-            return self._run_pillow_image_assets(ctx, outputs)
-
-        if provider == "api_image_generator":
-            try:
-                return self._run_api_image_assets(ctx, outputs)
-            except Exception as e:
-                strategy = self._image_429_strategy()
-
-                if strategy == "pending" and self._is_rate_limit_error(e):
-                    return self._build_pending_image_assets_result(
-                        ctx=ctx,
-                        provider="api_image_generator",
-                        reason=str(e),
-                        retry_after_sec=60,
-                    )
-
-                fallback_provider = self._image_fallback_provider_name()
-                fallback_enabled = self._api_image_fallback_to_pillow()
-
-                if (
-                    fallback_enabled
-                    and fallback_provider == "pillow_storybook_renderer"
-                ):
-                    fallback_result = self._run_pillow_image_assets(ctx, outputs)
-                    fallback_result["fallback"] = {
-                        "from_provider": "api_image_generator",
-                        "to_provider": "pillow_storybook_renderer",
-                        "reason": str(e),
-                    }
-                    return fallback_result
-
-                raise RuntimeError(
-                    f"image asset generation failed with provider={provider}: {e}"
-                ) from e
-
-        raise RuntimeError(f"unknown image provider: {provider}")
-
+        queue = ImageProviderQueue(self)
+        return queue.run(ctx=ctx, outputs=outputs)
+    
     def _run_pillow_image_assets(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
-        sentence_shots = outputs.get("sentence_shots") or {}
-        shot_items = sentence_shots.get("items") or []
-
-        storyboard = outputs.get("storyboard") or {}
-        scenes = storyboard.get("scenes") or []
-        scene_by_id = {
-            str(scene.get("scene_id")): scene
-            for scene in scenes
-            if scene.get("scene_id")
-        }
-
-        prompt_by_scene_id, prompt_by_shot_id = self._image_prompt_item_maps(outputs)
-
-        run_dir = self._ensure_image_run_dir(ctx.run_id)
-        assets: List[Dict[str, Any]] = []
-
-        if shot_items:
-            for index, shot in enumerate(shot_items, start=1):
-                shot_id = str(shot.get("shot_id") or f"shot_{index:02d}")
-                scene_id = str(shot.get("scene_id") or "").strip()
-                scene_title = str(shot.get("scene_title") or f"Shot {index}").strip()
-                visual_description = str(shot.get("visual_description") or "").strip()
-                shot_text = str(shot.get("text") or "").strip()
-                shot_type = str(shot.get("shot_type") or "medium").strip()
-                transition = str(shot.get("transition") or "fade").strip()
-
-                parent_scene = scene_by_id.get(scene_id) or {}
-                prompt_item = (
-                    prompt_by_shot_id.get(shot_id)
-                    or prompt_by_scene_id.get(scene_id)
-                    or {}
-                )
-
-                asset_meta = self._image_asset_metadata(
-                    scene=scene_by_id.get(scene_id) or {},
-                    prompt_item=prompt_item,
-                    fallback_scene_title=scene_title,
-                )
-
-                candidate_asset_refs: List[Dict[str, Any]] = []
-
-                for candidate_index, candidate_suffix in enumerate(["candidate_a", "candidate_b"]):
-                    candidate_scene = {
-                        "scene_id": shot_id,
-                        "scene_title": scene_title,
-                        "visual_description": visual_description,
-                        "narration": shot_text,
-                        "duration_sec": 0,
-                        "shot_type": shot_type,
-                        "transition": transition,
-                        "characters": (
-                            prompt_item.get("characters")
-                            or parent_scene.get("characters")
-                            or []
-                        ),
-                        "candidate_key": candidate_suffix,
-                        "candidate_label": (
-                            "Primary Composition"
-                            if candidate_index == 0
-                            else "Alternate Composition"
-                        ),
-                    }
-
-                    file_name = f"{shot_id}__{candidate_suffix}.png"
-                    output_path = run_dir / file_name
-                    output_path.write_bytes(
-                        self._build_scene_png(ctx, candidate_scene, index + candidate_index)
-                    )
-
-                    candidate_asset_refs.append(
-                        {
-                            "scene_id": scene_id,
-                            "shot_id": shot_id,
-                            "file_name": file_name,
-                            "relative_path": f"assets/mock/image/{ctx.run_id}/{file_name}",
-                            "public_url": f"/assets/mock/image/{ctx.run_id}/{file_name}",
-                            "mime_type": "image/png",
-                            "provider": "pillow_storybook_renderer",
-                        }
-                    )
-
-                primary_ref = candidate_asset_refs[0]
-
-                assets.append(
-                    {
-                        "shot_id": shot_id,
-                        "scene_id": scene_id,
-                        "scene_title": asset_meta["scene_title"],
-                        "characters": asset_meta["characters"],
-                        "character_ids": asset_meta["character_ids"],
-                        "prompt": asset_meta["prompt"],
-                        "selected_asset_ref": dict(primary_ref),
-                        "file_name": primary_ref["file_name"],
-                        "relative_path": primary_ref["relative_path"],
-                        "public_url": primary_ref["public_url"],
-                        "mime_type": primary_ref["mime_type"],
-                        "status": "generated",
-                        "candidate_asset_refs": candidate_asset_refs,
-                    }
-                )
-
-            return {
-                "enabled": True,
-                "run_id": ctx.run_id,
-                "provider": "pillow_storybook_renderer",
-                "asset_count": len(assets),
-                "assets": assets,
-            }
-
-        for index, scene in enumerate(scenes, start=1):
-            scene_id = str(scene.get("scene_id") or f"scene_{index:02d}")
-            prompt_item = prompt_by_scene_id.get(scene_id) or {}
-            asset_meta = self._image_asset_metadata(
-                scene=scene,
-                prompt_item=prompt_by_scene_id.get(scene_id) or {},
-                fallback_scene_title=str(scene.get("scene_title") or "").strip(),
-            )
-            
-            candidate_asset_refs: List[Dict[str, Any]] = []
-            
-            for candidate_index, candidate_suffix in enumerate(["candidate_a", "candidate_b"]):
-                candidate_scene = self._scene_candidate_variant(
-                    scene=scene,
-                    candidate_index=candidate_index,
-                )
-
-                file_name = f"{scene_id}__{candidate_suffix}.png"
-                output_path = run_dir / file_name
-                output_path.write_bytes(
-                    self._build_scene_png(ctx, candidate_scene, index + candidate_index)
-                )
-
-                candidate_asset_refs.append(
-                    {
-                        "scene_id": scene_id,
-                        "file_name": file_name,
-                        "relative_path": f"assets/mock/image/{ctx.run_id}/{file_name}",
-                        "public_url": f"/assets/mock/image/{ctx.run_id}/{file_name}",
-                        "mime_type": "image/png",
-                        "provider": "pillow_storybook_renderer",
-                    }
-                )
-
-            primary_ref = candidate_asset_refs[0]
-
-            assets.append(
-                {
-                    "scene_id": scene_id,
-                    "scene_title": asset_meta["scene_title"],
-                    "characters": asset_meta["characters"],
-                    "character_ids": asset_meta["character_ids"],
-                    "prompt": asset_meta["prompt"],
-                    "selected_asset_ref": dict(primary_ref),
-                    "file_name": primary_ref["file_name"],
-                    "relative_path": primary_ref["relative_path"],
-                    "public_url": primary_ref["public_url"],
-                    "mime_type": primary_ref["mime_type"],
-                    "status": "generated",
-                    "candidate_asset_refs": candidate_asset_refs,
-                }
-            )
-        return {
-            "enabled": True,
-            "run_id": ctx.run_id,
-            "provider": "pillow_storybook_renderer",
-            "asset_count": len(assets),
-            "assets": assets,
-        }
+        queue = ImageProviderQueue(self)
+        result = queue._run_provider(
+            provider="pillow_storybook_renderer",
+            ctx=ctx,
+            outputs=outputs,
+        )
+        return queue._to_output_dict(result, ctx=ctx)
     def _generate_api_image_bytes(
         self,
         *,
@@ -4022,382 +3837,33 @@ class WorkflowRunner:
         scene: Dict[str, Any],
         scene_index: int,
     ) -> bytes:
-        """
-        Generate image bytes through SiliconFlow image generation API.
-
-        Current implementation:
-        - text-to-image only
-        - request image URL from SiliconFlow
-        - immediately download bytes because the returned URL is temporary
-        """
-        import json
-        import urllib.error
-        import urllib.request
-
-        if not self._api_image_enabled():
-            raise RuntimeError("API_IMAGE_ENABLED is false")
-
-        api_key = self._image_api_key()
-        if not api_key:
-            raise RuntimeError("image api key is missing")
-
-        base_url = self._image_api_base_url()
-
-        model = os.getenv("SILICONFLOW_IMAGE_MODEL", "Kwai-Kolors/Kolors").strip()
-        if not model:
-            model = "Kwai-Kolors/Kolors"
-
-        image_size = os.getenv("SILICONFLOW_IMAGE_SIZE", "720x1280").strip()
-        if not image_size:
-            image_size = "720x1280"
-
-        negative_prompt = os.getenv(
-            "SILICONFLOW_IMAGE_NEGATIVE_PROMPT",
-            "low quality, blurry, distorted anatomy, broken composition, extra limbs, duplicated subject, unreadable details",
-        ).strip()
-
-        num_inference_steps_raw = os.getenv("SILICONFLOW_IMAGE_STEPS", "20").strip()
-        guidance_scale_raw = os.getenv("SILICONFLOW_IMAGE_GUIDANCE", "7.5").strip()
-
-        try:
-            num_inference_steps = int(num_inference_steps_raw)
-        except ValueError:
-            num_inference_steps = 20
-
-        try:
-            guidance_scale = float(guidance_scale_raw)
-        except ValueError:
-            guidance_scale = 7.5
-
-        payload: Dict[str, Any] = {
-            "model": model,
-            "prompt": prompt,
-            "image_size": image_size,
-        }
-
-        if negative_prompt:
-            payload["negative_prompt"] = negative_prompt
-
-        # SiliconFlow docs indicate these parameters are applicable to Kolors.
-        # Keep them for the default Kolors model and omit for other model families.
-        if "kolors" in model.lower():
-            payload["batch_size"] = 1
-            payload["num_inference_steps"] = num_inference_steps
-            payload["guidance_scale"] = guidance_scale
-
-        request_url = f"{base_url.rstrip('/')}/images/generations"
-        request_body = json.dumps(payload).encode("utf-8")
-
-        request = urllib.request.Request(
-            request_url,
-            data=request_body,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
+        adapter = ApiImageGeneratorAdapter(self)
+        task = ImageGenerationTask(
+            run_id="compat_run",
+            item_id=str(scene.get("scene_id") or f"scene_{scene_index:02d}"),
+            scene_id=str(scene.get("scene_id") or f"scene_{scene_index:02d}"),
+            prompt=prompt,
+            candidate_suffix=str(scene.get("candidate_key") or "candidate_a"),
+            output_path=None,
+            relative_path="",
+            public_url="",
+            prompt_metadata={
+                "scene": scene,
+                "scene_index": scene_index,
             },
-            method="POST",
         )
-
-        try:
-            with urllib.request.urlopen(request, timeout=120) as response:
-                response_text = response.read().decode("utf-8")
-        except urllib.error.HTTPError as e:
-            error_body = ""
-            try:
-                error_body = e.read().decode("utf-8")
-            except Exception:
-                error_body = repr(e)
-            raise RuntimeError(
-                f"SiliconFlow image generation failed with HTTP {e.code}: {error_body}"
-            ) from e
-        except urllib.error.URLError as e:
-            raise RuntimeError(
-                f"SiliconFlow image generation request failed: {e}"
-            ) from e
-
-        try:
-            result = json.loads(response_text)
-        except json.JSONDecodeError as e:
-            raise RuntimeError(
-                f"SiliconFlow image generation returned invalid JSON: {response_text[:500]}"
-            ) from e
-
-        images = result.get("images") or []
-        if not images:
-            raise RuntimeError(
-                f"SiliconFlow image generation returned no images: {response_text[:500]}"
-            )
-
-        first_image = images[0] or {}
-        image_url = str(first_image.get("url") or "").strip()
-        if not image_url:
-            raise RuntimeError(
-                f"SiliconFlow image generation returned empty image url: {response_text[:500]}"
-            )
-
-        download_request = urllib.request.Request(
-            image_url,
-            headers={
-                "User-Agent": "Mozilla/5.0",
-            },
-            method="GET",
-        )
-
-        last_error: Optional[Exception] = None
-        image_bytes: bytes = b""
-
-        for attempt in range(3):
-            try:
-                with urllib.request.urlopen(download_request, timeout=120) as response:
-                    downloaded = response.read()
-
-                if downloaded:
-                    image_bytes = downloaded
-                    break
-
-                last_error = RuntimeError(
-                    f"Generated image download returned empty bytes for scene {scene_index}"
-                )
-            except urllib.error.HTTPError as e:
-                last_error = RuntimeError(
-                    f"Generated image download failed with HTTP {e.code} for scene {scene_index}"
-                )
-            except urllib.error.URLError as e:
-                last_error = RuntimeError(
-                    f"Generated image download failed for scene {scene_index}: {e}"
-                )
-            except Exception as e:
-                last_error = RuntimeError(
-                    f"Generated image download failed for scene {scene_index}: {e}"
-                )
-
-            if attempt < 2:
-                time.sleep(1.5 * (attempt + 1))
-
-        if not image_bytes:
-            if last_error is not None:
-                raise last_error
-            raise RuntimeError(
-                f"Generated image download returned empty bytes for scene {scene_index}"
-            )
-
-        return image_bytes
-
+        return adapter.generate(task)
     def _run_api_image_assets(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
-        if self._force_image_rate_limit():
-            raise RuntimeError("HTTP 429: IPM limit reached (forced for local testing)")
-        sentence_shots = outputs.get("sentence_shots") or {}
-        shot_items = sentence_shots.get("items") or []
-
-        storyboard = outputs.get("storyboard") or {}
-        scenes = storyboard.get("scenes") or []
-        scene_by_id = {
-            str(scene.get("scene_id")): scene
-            for scene in scenes
-            if scene.get("scene_id")
-        }
-
-        prompt_by_scene_id, prompt_by_shot_id = self._image_prompt_item_maps(outputs)
-
-        run_dir = self._ensure_image_run_dir(ctx.run_id)
-        assets: List[Dict[str, Any]] = []
-
-        if shot_items:
-            for index, shot in enumerate(shot_items, start=1):
-                shot_id = str(shot.get("shot_id") or f"shot_{index:02d}")
-                scene_id = str(shot.get("scene_id") or "").strip()
-                scene_title = str(shot.get("scene_title") or f"Shot {index}").strip()
-
-                prompt_item = (
-                    prompt_by_shot_id.get(shot_id)
-                    or prompt_by_scene_id.get(scene_id)
-                    or {}
-                )
-                base_prompt = str(prompt_item.get("prompt") or "").strip()
-
-                if not base_prompt:
-                    text = str(shot.get("text", "")).strip()
-                    visual_description = str(shot.get("visual_description", "")).strip()
-                    base_prompt = visual_description or text or f"storybook shot {shot_id}"
-
-                asset_meta = self._image_asset_metadata(
-                    scene=scene_by_id.get(scene_id) or {},
-                    prompt_item=prompt_item,
-                    fallback_scene_title=scene_title,
-                )
-
-                candidate_asset_refs: List[Dict[str, Any]] = []
-
-                for candidate_index, candidate_suffix in enumerate(["candidate_a", "candidate_b"]):
-                    candidate_prompt = base_prompt
-                    if candidate_index == 1:
-                        candidate_prompt = (
-                            f"{base_prompt}, alternate composition, different framing, "
-                            "slightly changed pose emphasis, secondary visual arrangement"
-                        )
-
-                    pseudo_scene = {
-                        "scene_id": shot_id,
-                        "scene_title": scene_title,
-                        "visual_description": str(shot.get("visual_description") or "").strip(),
-                        "narration": str(shot.get("text") or "").strip(),
-                        "duration_sec": 0,
-                        "shot_type": str(shot.get("shot_type") or "medium").strip(),
-                        "transition": str(shot.get("transition") or "fade").strip(),
-                        "characters": (
-                            prompt_item.get("characters")
-                            or (scene_by_id.get(scene_id) or {}).get("characters")
-                            or []
-                        ),
-                        "candidate_key": candidate_suffix,
-                        "candidate_label": (
-                            "Primary Composition"
-                            if candidate_index == 0
-                            else "Alternate Composition"
-                        ),
-                    }
-
-                    file_name = f"{shot_id}__{candidate_suffix}.png"
-                    output_path = run_dir / file_name
-
-                    image_bytes = self._generate_api_image_bytes(
-                        prompt=candidate_prompt,
-                        scene=pseudo_scene,
-                        scene_index=index + candidate_index,
-                    )
-                    if not isinstance(image_bytes, (bytes, bytearray)):
-                        raise RuntimeError(
-                            f"api image provider returned invalid bytes for shot {shot_id} ({candidate_suffix})"
-                        )
-
-                    output_path.write_bytes(bytes(image_bytes))
-
-                    candidate_asset_refs.append(
-                        {
-                            "scene_id": scene_id,
-                            "file_name": file_name,
-                            "relative_path": f"assets/mock/image/{ctx.run_id}/{file_name}",
-                            "public_url": f"/assets/mock/image/{ctx.run_id}/{file_name}",
-                            "mime_type": "image/png",
-                            "provider": "api_image_generator",
-                        }
-                    )
-
-                primary_ref = candidate_asset_refs[0]
-
-                assets.append(
-                    {
-                        "shot_id": shot_id,
-                        "scene_id": scene_id,
-                        "scene_title": asset_meta["scene_title"],
-                        "characters": asset_meta["characters"],
-                        "character_ids": asset_meta["character_ids"],
-                        "prompt": base_prompt,
-                        "selected_asset_ref": dict(primary_ref),
-                        "file_name": primary_ref["file_name"],
-                        "relative_path": primary_ref["relative_path"],
-                        "public_url": primary_ref["public_url"],
-                        "mime_type": primary_ref["mime_type"],
-                        "status": "generated",
-                        "candidate_asset_refs": candidate_asset_refs,
-                    }
-                )
-
-            return {
-                "enabled": True,
-                "run_id": ctx.run_id,
-                "provider": "api_image_generator",
-                "asset_count": len(assets),
-                "assets": assets,
-            }
-
-        for index, scene in enumerate(scenes, start=1):
-            scene_id = str(scene.get("scene_id") or f"scene_{index:02d}")
-            prompt_item = prompt_by_scene_id.get(scene_id) or {}
-            base_prompt = str(prompt_item.get("prompt") or "").strip()
-
-            if not base_prompt:
-                visual_description = str(scene.get("visual_description") or "").strip()
-                narration = str(scene.get("narration") or "").strip()
-                base_prompt = (
-                    visual_description or narration or f"storybook scene {scene_id}"
-                )
-
-            asset_meta = self._image_asset_metadata(
-                scene=scene,
-                prompt_item=prompt_item,
-                fallback_scene_title=str(scene.get("scene_title") or "").strip(),
-            )
-
-            candidate_asset_refs: List[Dict[str, Any]] = []
-
-            for candidate_index, candidate_suffix in enumerate(["candidate_a", "candidate_b"]):
-                candidate_scene = self._scene_candidate_variant(
-                    scene=scene,
-                    candidate_index=candidate_index,
-                )
-
-                candidate_prompt = base_prompt
-                if candidate_index == 1:
-                    candidate_prompt = (
-                        f"{base_prompt}, alternate composition, different framing, "
-                        "slightly changed pose emphasis, secondary visual arrangement"
-                    )
-
-                file_name = f"{scene_id}__{candidate_suffix}.png"
-                output_path = run_dir / file_name
-
-                image_bytes = self._generate_api_image_bytes(
-                    prompt=candidate_prompt,
-                    scene=candidate_scene,
-                    scene_index=index + candidate_index,
-                )
-                if not isinstance(image_bytes, (bytes, bytearray)):
-                    raise RuntimeError(
-                        f"api image provider returned invalid bytes for scene {scene_id} ({candidate_suffix})"
-                    )
-
-                output_path.write_bytes(bytes(image_bytes))
-
-                candidate_asset_refs.append(
-                    {
-                        "scene_id": scene_id,
-                        "file_name": file_name,
-                        "relative_path": f"assets/mock/image/{ctx.run_id}/{file_name}",
-                        "public_url": f"/assets/mock/image/{ctx.run_id}/{file_name}",
-                        "mime_type": "image/png",
-                        "provider": "api_image_generator",
-                    }
-                )
-
-            primary_ref = candidate_asset_refs[0]
-
-            assets.append(
-                {
-                    "scene_id": scene_id,
-                    "scene_title": asset_meta["scene_title"],
-                    "characters": asset_meta["characters"],
-                    "character_ids": asset_meta["character_ids"],
-                    "prompt": base_prompt,
-                    "selected_asset_ref": dict(primary_ref),
-                    "file_name": primary_ref["file_name"],
-                    "relative_path": primary_ref["relative_path"],
-                    "public_url": primary_ref["public_url"],
-                    "mime_type": primary_ref["mime_type"],
-                    "status": "generated",
-                    "candidate_asset_refs": candidate_asset_refs,
-                }
-            )
-
-        return {
-            "enabled": True,
-            "run_id": ctx.run_id,
-            "provider": "api_image_generator",
-            "asset_count": len(assets),
-            "assets": assets,
-        }
+        queue = ImageProviderQueue(self)
+        result = queue._run_provider(
+            provider="api_image_generator",
+            ctx=ctx,
+            outputs=outputs,
+        )
+        return queue._to_output_dict(result, ctx=ctx)
+    
     def _run_video_prompts(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:

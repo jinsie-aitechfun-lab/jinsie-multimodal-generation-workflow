@@ -1,0 +1,222 @@
+from __future__ import annotations
+
+import json
+import os
+import urllib.error
+import urllib.request
+from typing import Any
+
+from app.services.image_provider_retry import run_with_retry
+from app.services.image_provider_types import (
+    PROVIDER_API,
+    PROVIDER_PILLOW,
+    ImageGenerationTask,
+    RetryConfig,
+)
+
+
+class PillowStorybookAdapter:
+    def __init__(self, runner: Any) -> None:
+        self._runner = runner
+
+    @property
+    def provider_name(self) -> str:
+        return PROVIDER_PILLOW
+
+    def generate(self, task: ImageGenerationTask) -> bytes:
+        scene = dict(task.prompt_metadata.get("scene") or {})
+        scene_index = int(task.prompt_metadata.get("scene_index") or 1)
+        ctx = task.prompt_metadata.get("ctx")
+        if ctx is None:
+            raise RuntimeError("pillow adapter requires ctx in prompt_metadata")
+
+        return self._runner._build_scene_png(ctx, scene, scene_index)
+
+
+class ApiImageGeneratorAdapter:
+    def __init__(self, runner: Any) -> None:
+        self._runner = runner
+
+    @property
+    def provider_name(self) -> str:
+        return PROVIDER_API
+
+    def generate(self, task: ImageGenerationTask) -> bytes:
+        return self._generate_api_image_bytes(
+            prompt=task.prompt,
+            scene=task.prompt_metadata.get("scene") or {},
+            scene_index=int(task.prompt_metadata.get("scene_index") or 1),
+        )
+
+    def _generate_api_image_bytes(
+        self,
+        *,
+        prompt: str,
+        scene: dict[str, Any],
+        scene_index: int,
+    ) -> bytes:
+        if self._runner._force_image_rate_limit():
+            raise RuntimeError("HTTP 429: IPM limit reached (forced for local testing)")
+
+        if not self._runner._api_image_enabled():
+            raise RuntimeError("API_IMAGE_ENABLED is false")
+
+        api_key = self._runner._image_api_key()
+        if not api_key:
+            raise RuntimeError("image api key is missing")
+
+        base_url = self._runner._image_api_base_url()
+
+        model = os.getenv("SILICONFLOW_IMAGE_MODEL", "Kwai-Kolors/Kolors").strip()
+        if not model:
+            model = "Kwai-Kolors/Kolors"
+
+        image_size = os.getenv("SILICONFLOW_IMAGE_SIZE", "720x1280").strip()
+        if not image_size:
+            image_size = "720x1280"
+
+        negative_prompt = os.getenv(
+            "SILICONFLOW_IMAGE_NEGATIVE_PROMPT",
+            (
+                "low quality, blurry, distorted anatomy, broken composition, "
+                "extra limbs, duplicated subject, unreadable details"
+            ),
+        ).strip()
+
+        num_inference_steps_raw = os.getenv("SILICONFLOW_IMAGE_STEPS", "20").strip()
+        guidance_scale_raw = os.getenv("SILICONFLOW_IMAGE_GUIDANCE", "7.5").strip()
+
+        try:
+            num_inference_steps = int(num_inference_steps_raw)
+        except ValueError:
+            num_inference_steps = 20
+
+        try:
+            guidance_scale = float(guidance_scale_raw)
+        except ValueError:
+            guidance_scale = 7.5
+
+        payload: dict[str, Any] = {
+            "model": model,
+            "prompt": prompt,
+            "image_size": image_size,
+        }
+
+        if negative_prompt:
+            payload["negative_prompt"] = negative_prompt
+
+        if "kolors" in model.lower():
+            payload["batch_size"] = 1
+            payload["num_inference_steps"] = num_inference_steps
+            payload["guidance_scale"] = guidance_scale
+
+        request_url = f"{base_url.rstrip('/')}/images/generations"
+        request_body = json.dumps(payload).encode("utf-8")
+
+        request = urllib.request.Request(
+            request_url,
+            data=request_body,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(request, timeout=120) as response:
+                response_text = response.read().decode("utf-8")
+        except urllib.error.HTTPError as error:
+            error_body = ""
+            try:
+                error_body = error.read().decode("utf-8")
+            except Exception:
+                error_body = repr(error)
+            raise RuntimeError(
+                f"SiliconFlow image generation failed with HTTP {error.code}: {error_body}"
+            ) from error
+        except urllib.error.URLError as error:
+            raise RuntimeError(
+                f"SiliconFlow image generation request failed: {error}"
+            ) from error
+
+        try:
+            result = json.loads(response_text)
+        except json.JSONDecodeError as error:
+            raise RuntimeError(
+                "SiliconFlow image generation returned invalid JSON: "
+                f"{response_text[:500]}"
+            ) from error
+
+        images = result.get("images") or []
+        if not images:
+            raise RuntimeError(
+                f"SiliconFlow image generation returned no images: {response_text[:500]}"
+            )
+
+        first_image = images[0] or {}
+        image_url = str(first_image.get("url") or "").strip()
+        if not image_url:
+            raise RuntimeError(
+                "SiliconFlow image generation returned empty image url: "
+                f"{response_text[:500]}"
+            )
+
+        download_request = urllib.request.Request(
+            image_url,
+            headers={"User-Agent": "Mozilla/5.0"},
+            method="GET",
+        )
+
+        retry_result = run_with_retry(
+            lambda: self._download_generated_image_bytes(
+                download_request=download_request,
+                scene_index=scene_index,
+            ),
+            RetryConfig(
+                max_attempts=3,
+                base_delay_seconds=1.5,
+                backoff_multiplier=1.5,
+                retry_on_rate_limit=True,
+                retry_on_network_error=True,
+            ),
+        )
+
+        if retry_result.ok and isinstance(retry_result.value, (bytes, bytearray)):
+            return bytes(retry_result.value)
+
+        if retry_result.error is not None:
+            raise retry_result.error
+
+        raise RuntimeError(
+            f"Generated image download returned empty bytes for scene {scene_index}"
+        )
+
+    def _download_generated_image_bytes(
+        self,
+        *,
+        download_request: urllib.request.Request,
+        scene_index: int,
+    ) -> bytes:
+        try:
+            with urllib.request.urlopen(download_request, timeout=120) as response:
+                downloaded = response.read()
+        except urllib.error.HTTPError as error:
+            raise RuntimeError(
+                f"Generated image download failed with HTTP {error.code} for scene {scene_index}"
+            ) from error
+        except urllib.error.URLError as error:
+            raise RuntimeError(
+                f"Generated image download failed for scene {scene_index}: {error}"
+            ) from error
+        except Exception as error:
+            raise RuntimeError(
+                f"Generated image download failed for scene {scene_index}: {error}"
+            ) from error
+
+        if not downloaded:
+            raise RuntimeError(
+                f"Generated image download returned empty bytes for scene {scene_index}"
+            )
+
+        return downloaded
