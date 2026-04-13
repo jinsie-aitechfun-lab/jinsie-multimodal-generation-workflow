@@ -3820,50 +3820,6 @@ class WorkflowRunner:
         queue = ImageProviderQueue(self)
         return queue.run(ctx=ctx, outputs=outputs)
     
-    def _run_pillow_image_assets(
-        self, ctx: StepContext, outputs: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        queue = ImageProviderQueue(self)
-        result = queue._run_provider(
-            provider="pillow_storybook_renderer",
-            ctx=ctx,
-            outputs=outputs,
-        )
-        return queue._to_output_dict(result, ctx=ctx)
-    def _generate_api_image_bytes(
-        self,
-        *,
-        prompt: str,
-        scene: Dict[str, Any],
-        scene_index: int,
-    ) -> bytes:
-        adapter = ApiImageGeneratorAdapter(self)
-        task = ImageGenerationTask(
-            run_id="compat_run",
-            item_id=str(scene.get("scene_id") or f"scene_{scene_index:02d}"),
-            scene_id=str(scene.get("scene_id") or f"scene_{scene_index:02d}"),
-            prompt=prompt,
-            candidate_suffix=str(scene.get("candidate_key") or "candidate_a"),
-            output_path=None,
-            relative_path="",
-            public_url="",
-            prompt_metadata={
-                "scene": scene,
-                "scene_index": scene_index,
-            },
-        )
-        return adapter.generate(task)
-    def _run_api_image_assets(
-        self, ctx: StepContext, outputs: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        queue = ImageProviderQueue(self)
-        result = queue._run_provider(
-            provider="api_image_generator",
-            ctx=ctx,
-            outputs=outputs,
-        )
-        return queue._to_output_dict(result, ctx=ctx)
-    
     def _run_video_prompts(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
