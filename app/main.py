@@ -5,6 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.schemas.workflow import (
+    FinalVideoRenderRequest,
+    FinalVideoRenderResponse,
     ImageReviewRefreshRequest,
     ImageReviewRefreshResponse,
     ImageReviewRefreshSceneRequest,
@@ -108,6 +110,34 @@ def select_image_review_asset(req: ImageReviewSelectRequest):
         print("[image-review] runtime error", repr(e))
         raise
 
+@app.post("/v1/final-video/render", response_model=FinalVideoRenderResponse)
+def render_final_video(req: FinalVideoRenderRequest):
+    print("[final-video] render request received", req.workflow_id, req.run_id)
+    try:
+        result = _runner.rerender_final_video(
+            workflow_id=req.workflow_id,
+            session_id=req.session_id,
+            run_id=req.run_id,
+            workflow_input=req.workflow_input,
+            image_assets=req.image_assets,
+            audio_segments=req.audio_segments,
+            subtitles=req.subtitles,
+        )
+        print("[final-video] render completed", req.run_id)
+        return FinalVideoRenderResponse(
+            workflow_id=result["workflow_id"],
+            session_id=result.get("session_id"),
+            run_id=result["run_id"],
+            final_video=result["final_video"],
+            timestamp=FinalVideoRenderResponse.now_timestamp(),
+        )
+    except ValueError as e:
+        print("[final-video] bad request", str(e))
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        print("[final-video] runtime error", repr(e))
+        raise
+    
 @app.post("/v1/image-review/refresh", response_model=ImageReviewRefreshResponse)
 def refresh_image_review(req: ImageReviewRefreshRequest):
     print("[image-review] refresh request received", req.workflow_id, req.run_id)

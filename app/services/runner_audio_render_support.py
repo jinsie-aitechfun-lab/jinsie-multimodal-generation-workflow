@@ -726,3 +726,37 @@ class RunnerAudioRenderSupport:
             "audio_track_path": f"assets/mock/video/{ctx.run_id}/merged_audio.mp3",
             "subtitle_path": f"assets/mock/video/{ctx.run_id}/subtitles.srt",
         }
+    def rerender_final_video(
+        self,
+        *,
+        workflow_id: str,
+        session_id: Optional[str],
+        run_id: str,
+        workflow_input: Dict[str, Any],
+        image_assets: Dict[str, Any],
+        audio_segments: Dict[str, Any],
+        subtitles: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        ctx_input = self._runner._workflow_input_from_dict(workflow_input)
+        ctx = self._runner._build_step_context(
+            workflow_id=workflow_id,
+            session_id=session_id,
+            run_id=run_id,
+            workflow_input=ctx_input,
+        )
+
+        final_video = self.run_final_video(
+            ctx,
+            {
+                "image_assets": image_assets,
+                "audio_segments": audio_segments,
+                "subtitles": subtitles,
+            },
+        )
+
+        return {
+            "workflow_id": workflow_id,
+            "session_id": session_id,
+            "run_id": run_id,
+            "final_video": final_video,
+        }
