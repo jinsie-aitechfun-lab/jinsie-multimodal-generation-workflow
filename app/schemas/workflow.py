@@ -267,3 +267,29 @@ class ImageReviewRefreshSceneResponse(BaseModel):
             .isoformat()
             .replace("+00:00", "Z")
         )
+        
+class FinalVideoRenderRequest(BaseModel):
+    workflow_id: str
+    session_id: Optional[str] = None
+    run_id: str
+    workflow_input: Dict[str, Any] = Field(default_factory=dict)
+    image_assets: Dict[str, Any] = Field(default_factory=dict)
+    audio_segments: Dict[str, Any] = Field(default_factory=dict)
+    subtitles: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FinalVideoRenderResponse(BaseModel):
+    workflow_id: str
+    session_id: Optional[str] = None
+    run_id: str
+    final_video: Dict[str, Any] = Field(default_factory=dict)
+    timestamp: str
+
+    @staticmethod
+    def now_timestamp() -> str:
+        return (
+            datetime.now(timezone.utc)
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )

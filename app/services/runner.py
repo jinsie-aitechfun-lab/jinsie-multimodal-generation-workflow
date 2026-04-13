@@ -98,6 +98,50 @@ class WorkflowRunner:
         }
         self._session_store: Dict[str, Dict[str, Any]] = {}
         self._run_store: Dict[str, Dict[str, Any]] = {}
+
+    def _workflow_input_from_dict(self, workflow_input: Dict[str, Any]) -> WorkflowInput:
+        if isinstance(workflow_input, WorkflowInput):
+            return workflow_input
+        if not isinstance(workflow_input, dict):
+            workflow_input = {}
+        return WorkflowInput(**workflow_input)
+
+    def _build_step_context(
+        self,
+        *,
+        workflow_id: str,
+        session_id: Optional[str],
+        run_id: str,
+        workflow_input: WorkflowInput,
+    ) -> StepContext:
+        return StepContext(
+            workflow_id=workflow_id,
+            session_id=session_id,
+            run_id=run_id,
+            input=workflow_input,
+        )
+
+    def rerender_final_video(
+        self,
+        *,
+        workflow_id: str,
+        session_id: Optional[str],
+        run_id: str,
+        workflow_input: Dict[str, Any],
+        image_assets: Dict[str, Any],
+        audio_segments: Dict[str, Any],
+        subtitles: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        return self._audio_render_support.rerender_final_video(
+            workflow_id=workflow_id,
+            session_id=session_id,
+            run_id=run_id,
+            workflow_input=workflow_input,
+            image_assets=image_assets,
+            audio_segments=audio_segments,
+            subtitles=subtitles,
+        )
+   
     def get_real_kling_samples_manifest(self) -> Dict[str, Any]:
         manifest = self._build_real_samples_manifest()
         samples = manifest.get("samples") or []
