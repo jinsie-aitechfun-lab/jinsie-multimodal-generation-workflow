@@ -3830,28 +3830,61 @@ class WorkflowRunner:
                 transition = str(shot.get("transition") or "fade").strip()
 
                 parent_scene = scene_by_id.get(scene_id) or {}
-                prompt_item = prompt_by_shot_id.get(shot_id) or prompt_by_scene_id.get(scene_id) or {}
-
-                pseudo_scene = {
-                    "scene_id": shot_id,
-                    "scene_title": scene_title,
-                    "visual_description": visual_description,
-                    "narration": shot_text,
-                    "duration_sec": 0,
-                    "shot_type": shot_type,
-                    "transition": transition,
-                    "characters": prompt_item.get("characters") or parent_scene.get("characters") or [],
-                }
-
-                file_name = f"{shot_id}.png"
-                output_path = run_dir / file_name
-                output_path.write_bytes(self._build_scene_png(ctx, pseudo_scene, index))
+                prompt_item = (
+                    prompt_by_shot_id.get(shot_id)
+                    or prompt_by_scene_id.get(scene_id)
+                    or {}
+                )
 
                 asset_meta = self._image_asset_metadata(
                     scene=scene_by_id.get(scene_id) or {},
-                    prompt_item=prompt_by_shot_id.get(shot_id) or prompt_by_scene_id.get(scene_id) or {},
+                    prompt_item=prompt_item,
                     fallback_scene_title=scene_title,
                 )
+
+                candidate_asset_refs: List[Dict[str, Any]] = []
+
+                for candidate_index, candidate_suffix in enumerate(["candidate_a", "candidate_b"]):
+                    candidate_scene = {
+                        "scene_id": shot_id,
+                        "scene_title": scene_title,
+                        "visual_description": visual_description,
+                        "narration": shot_text,
+                        "duration_sec": 0,
+                        "shot_type": shot_type,
+                        "transition": transition,
+                        "characters": (
+                            prompt_item.get("characters")
+                            or parent_scene.get("characters")
+                            or []
+                        ),
+                        "candidate_key": candidate_suffix,
+                        "candidate_label": (
+                            "Primary Composition"
+                            if candidate_index == 0
+                            else "Alternate Composition"
+                        ),
+                    }
+
+                    file_name = f"{shot_id}__{candidate_suffix}.png"
+                    output_path = run_dir / file_name
+                    output_path.write_bytes(
+                        self._build_scene_png(ctx, candidate_scene, index + candidate_index)
+                    )
+
+                    candidate_asset_refs.append(
+                        {
+                            "scene_id": scene_id,
+                            "shot_id": shot_id,
+                            "file_name": file_name,
+                            "relative_path": f"assets/mock/image/{ctx.run_id}/{file_name}",
+                            "public_url": f"/assets/mock/image/{ctx.run_id}/{file_name}",
+                            "mime_type": "image/png",
+                            "provider": "pillow_storybook_renderer",
+                        }
+                    )
+
+                primary_ref = candidate_asset_refs[0]
 
                 assets.append(
                     {
@@ -3861,11 +3894,13 @@ class WorkflowRunner:
                         "characters": asset_meta["characters"],
                         "character_ids": asset_meta["character_ids"],
                         "prompt": asset_meta["prompt"],
-                        "file_name": file_name,
-                        "relative_path": f"assets/mock/image/{ctx.run_id}/{file_name}",
-                        "public_url": f"/assets/mock/image/{ctx.run_id}/{file_name}",
-                        "mime_type": "image/png",
+                        "selected_asset_ref": dict(primary_ref),
+                        "file_name": primary_ref["file_name"],
+                        "relative_path": primary_ref["relative_path"],
+                        "public_url": primary_ref["public_url"],
+                        "mime_type": primary_ref["mime_type"],
                         "status": "generated",
+                        "candidate_asset_refs": candidate_asset_refs,
                     }
                 )
 
