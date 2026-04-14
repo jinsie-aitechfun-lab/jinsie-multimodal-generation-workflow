@@ -16,6 +16,7 @@ type StepName =
   | 'narration'
   | 'subtitles'
   | 'render_plan'
+  | 'final_video'
 
 type StepResult = {
   name?: string
@@ -211,6 +212,7 @@ const STEP_OPTIONS: Array<{ label: string; value: StepName }> = [
   { label: 'Narration', value: 'narration' },
   { label: 'Subtitles', value: 'subtitles' },
   { label: 'Render Plan', value: 'render_plan' },
+  { label: 'Final Video', value: 'final_video' },
 ]
 
 const DEFAULT_STEPS: StepName[] = [
@@ -223,6 +225,7 @@ const DEFAULT_STEPS: StepName[] = [
   'narration',
   'subtitles',
   'render_plan',
+  'final_video',
 ]
 
 const loading = ref(false)
@@ -238,6 +241,8 @@ const videoPromptsText = ref('')
 const narrationText = ref('')
 const subtitlesText = ref('')
 const renderPlanText = ref('')
+const finalVideoText = ref('')
+const finalVideoUrl = ref('')
 const workflowForm = ref<WorkflowRunFormState>({ ...DEFAULT_WORKFLOW_FORM })
 const characterCandidatesText = ref('')
 const characterManifestText = ref('')
@@ -474,6 +479,33 @@ function extractRenderPlanText(data: WorkflowRunResponse): string {
   }
   return ''
 }
+
+function extractFinalVideoText(data: WorkflowRunResponse): string {
+  const finalVideo = data.outputs?.final_video
+  if (finalVideo && typeof finalVideo === 'object') {
+    return stringifyPretty(finalVideo)
+  }
+  return ''
+}
+
+function extractFinalVideoUrl(data: WorkflowRunResponse): string {
+  const finalVideo = data.outputs?.final_video
+  if (!finalVideo || typeof finalVideo !== 'object') {
+    return ''
+  }
+
+  const publicUrl = String((finalVideo as Record<string, unknown>).public_url || '').trim()
+  if (!publicUrl) {
+    return ''
+  }
+
+  if (publicUrl.startsWith('http://') || publicUrl.startsWith('https://')) {
+    return publicUrl
+  }
+
+  return `${apiBaseUrl}${publicUrl}`
+}
+
 function extractCharacterCandidatesText(data: WorkflowRunResponse): string {
   const value = data.outputs?.character_candidates
   if (value && typeof value === 'object') {
@@ -569,6 +601,8 @@ function applyWorkflowResponse(data: WorkflowRunResponse) {
   narrationText.value = extractNarrationText(data)
   subtitlesText.value = extractSubtitlesText(data)
   renderPlanText.value = extractRenderPlanText(data)
+  finalVideoText.value = extractFinalVideoText(data)
+  finalVideoUrl.value = extractFinalVideoUrl(data)
   extractMockAudioState(data)
   stepSummaries.value = buildStepSummaries(data)
   characterCandidatesText.value = extractCharacterCandidatesText(data)
@@ -934,6 +968,8 @@ async function runWorkflow() {
   narrationText.value = ''
   subtitlesText.value = ''
   renderPlanText.value = ''
+  finalVideoText.value = ''
+  finalVideoUrl.value = ''
   stepSummaries.value = []
 
   const form = workflowForm.value
@@ -1111,6 +1147,19 @@ onMounted(() => {
             :character-candidates-text="characterCandidatesText"
             :character-manifest-text="characterManifestText"
           />
+          <section v-if="finalVideoUrl || finalVideoText" class="result-panel">
+            <h3>Final Video</h3>
+
+            <video
+              v-if="finalVideoUrl"
+              :src="finalVideoUrl"
+              controls
+              playsinline
+              class="final-video-player"
+            />
+
+            <pre v-if="finalVideoText" class="light-result">{{ finalVideoText }}</pre>
+          </section>
         </template>
       </section>
       <section v-if="activeTab === 'assets'">
@@ -1588,6 +1637,13 @@ h1 {
   font-weight: 600;
   color: #111827;
   margin-bottom: 10px;
+}
+.final-video-player {
+  width: 100%;
+  max-width: 960px;
+  border-radius: 16px;
+  background: #000;
+  display: block;
 }
 
 @media (max-width: 768px) {

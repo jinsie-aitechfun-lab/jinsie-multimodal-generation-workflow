@@ -9,6 +9,7 @@ type StepName =
   | 'narration'
   | 'subtitles'
   | 'render_plan'
+  | 'final_video'
 
 export type WorkflowRunFormState = {
   sessionId: string
