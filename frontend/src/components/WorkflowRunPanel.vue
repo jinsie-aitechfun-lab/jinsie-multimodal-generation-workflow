@@ -6,6 +6,7 @@ type StepName =
   | 'image_assets'
   | 'video_prompts'
   | 'dialogue_script'
+  | 'audio_segments'
   | 'narration'
   | 'subtitles'
   | 'render_plan'
