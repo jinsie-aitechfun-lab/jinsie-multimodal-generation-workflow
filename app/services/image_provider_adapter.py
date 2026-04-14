@@ -123,22 +123,23 @@ class ApiImageGeneratorAdapter:
             method="POST",
         )
 
-        try:
-            with urllib.request.urlopen(request, timeout=120) as response:
-                response_text = response.read().decode("utf-8")
-        except urllib.error.HTTPError as error:
-            error_body = ""
-            try:
-                error_body = error.read().decode("utf-8")
-            except Exception:
-                error_body = repr(error)
-            raise RuntimeError(
-                f"SiliconFlow image generation failed with HTTP {error.code}: {error_body}"
-            ) from error
-        except urllib.error.URLError as error:
-            raise RuntimeError(
-                f"SiliconFlow image generation request failed: {error}"
-            ) from error
+        generation_retry_result = run_with_retry(
+            lambda: self._request_generation_response_text(request=request),
+            RetryConfig(
+                max_attempts=3,
+                base_delay_seconds=2.0,
+                backoff_multiplier=1.8,
+                retry_on_rate_limit=True,
+                retry_on_network_error=True,
+            ),
+        )
+
+        if generation_retry_result.ok and isinstance(generation_retry_result.value, str):
+            response_text = generation_retry_result.value
+        elif generation_retry_result.error is not None:
+            raise generation_retry_result.error
+        else:
+            raise RuntimeError("SiliconFlow image generation returned empty response text")
 
         try:
             result = json.loads(response_text)
@@ -192,6 +193,32 @@ class ApiImageGeneratorAdapter:
             f"Generated image download returned empty bytes for scene {scene_index}"
         )
 
+    def _request_generation_response_text(
+        self,
+        *,
+        request: urllib.request.Request,
+    ) -> str:
+        try:
+            with urllib.request.urlopen(request, timeout=120) as response:
+                return response.read().decode("utf-8")
+        except urllib.error.HTTPError as error:
+            error_body = ""
+            try:
+                error_body = error.read().decode("utf-8")
+            except Exception:
+                error_body = repr(error)
+            raise RuntimeError(
+                f"SiliconFlow image generation failed with HTTP {error.code}: {error_body}"
+            ) from error
+        except urllib.error.URLError as error:
+            raise RuntimeError(
+                f"SiliconFlow image generation request failed: {error}"
+            ) from error
+        except Exception as error:
+            raise RuntimeError(
+                f"SiliconFlow image generation request failed: {error}"
+            ) from error
+    
     def _download_generated_image_bytes(
         self,
         *,

@@ -13,6 +13,7 @@ type StepName =
   | 'image_assets'
   | 'video_prompts'
   | 'dialogue_script'
+  | 'audio_segments'
   | 'narration'
   | 'subtitles'
   | 'render_plan'
@@ -71,6 +72,7 @@ type ImageReviewSelectResponse = {
   run_id?: string
   scene_id?: string
   image_review?: Record<string, unknown>
+  image_assets?: Record<string, unknown>
   video_prompts?: Record<string, unknown>
   timestamp?: string
 }
@@ -166,6 +168,14 @@ type ImageReviewRefreshSceneResponse = {
   timestamp?: string
 }
 
+type FinalVideoRenderResponse = {
+  workflow_id?: string
+  session_id?: string
+  run_id?: string
+  final_video?: Record<string, unknown>
+  timestamp?: string
+}
+
 type ReviewPlaceholderItem = {
   scene_id: string
   scene_title: string
@@ -180,7 +190,7 @@ const DEFAULT_WORKFLOW_FORM: WorkflowRunFormState = {
   visualStyle: 'storybook',
   characterStyle: 'animal',
   voiceStyle: 'warm_female',
-  voiceoverEnabled: false,
+  voiceoverEnabled: true,
   voiceMode: 'single',
   narratorVoiceStyle: 'warm_female',
   motherVoiceStyle: 'warm_female',
@@ -209,6 +219,7 @@ const STEP_OPTIONS: Array<{ label: string; value: StepName }> = [
   { label: 'Image Assets', value: 'image_assets' },
   { label: 'Video Prompts', value: 'video_prompts' },
   { label: 'Dialogue Script', value: 'dialogue_script' },
+  { label: 'Audio Segments', value: 'audio_segments' },
   { label: 'Narration', value: 'narration' },
   { label: 'Subtitles', value: 'subtitles' },
   { label: 'Render Plan', value: 'render_plan' },
@@ -222,6 +233,7 @@ const DEFAULT_STEPS: StepName[] = [
   'image_assets',
   'video_prompts',
   'dialogue_script',
+  'audio_segments',
   'narration',
   'subtitles',
   'render_plan',
@@ -243,6 +255,7 @@ const subtitlesText = ref('')
 const renderPlanText = ref('')
 const finalVideoText = ref('')
 const finalVideoUrl = ref('')
+const finalVideoRendering = ref(false)
 const workflowForm = ref<WorkflowRunFormState>({ ...DEFAULT_WORKFLOW_FORM })
 const characterCandidatesText = ref('')
 const characterManifestText = ref('')
@@ -817,12 +830,17 @@ async function selectImageAsset(sceneId: string, assetRef: ImageAssetRef) {
         ...(currentWorkflowResponse.value.outputs || {}),
         image_review:
           data.image_review || currentWorkflowResponse.value.outputs?.image_review || {},
+        image_assets:
+          data.image_assets || currentWorkflowResponse.value.outputs?.image_assets || {},
         video_prompts:
           data.video_prompts || currentWorkflowResponse.value.outputs?.video_prompts || {},
+        final_video:
+          currentWorkflowResponse.value.outputs?.final_video || {},
       },
     }
 
     applyWorkflowResponse(mergedResponse)
+    await renderFinalVideoIfReady(mergedResponse)
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '手动选图请求失败'
   } finally {
@@ -833,6 +851,102 @@ function clearImageReviewAutoRefreshTimer() {
   if (imageReviewAutoRefreshTimer !== null) {
     window.clearTimeout(imageReviewAutoRefreshTimer)
     imageReviewAutoRefreshTimer = null
+  }
+}
+
+async function renderFinalVideoIfReady(baseResponse: WorkflowRunResponse) {
+  if (!currentWorkflowPayload.value) {
+    return
+  }
+
+  if (finalVideoRendering.value) {
+    return
+  }
+
+  const outputs = baseResponse.outputs || {}
+  const storyboard = outputs.storyboard as Record<string, unknown> | undefined
+  const imageReview = outputs.image_review as Record<string, unknown> | undefined
+  const imageAssets = outputs.image_assets as Record<string, unknown> | undefined
+  const audioSegments = outputs.audio_segments as Record<string, unknown> | undefined
+  const subtitles = outputs.subtitles as Record<string, unknown> | undefined
+  const finalVideo = outputs.final_video as Record<string, unknown> | undefined
+
+  const scenesValue = storyboard?.scenes
+  const scenes = Array.isArray(scenesValue) ? scenesValue : []
+
+  const selectedAssetsValue = imageReview?.selected_assets
+  const selectedAssets = Array.isArray(selectedAssetsValue) ? selectedAssetsValue : []
+
+  const imageAssetsValue = imageAssets?.assets
+  const imageAssetList = Array.isArray(imageAssetsValue) ? imageAssetsValue : []
+
+  const audioItemsValue = audioSegments?.items
+  const audioItems = Array.isArray(audioItemsValue) ? audioItemsValue : []
+
+  const finalVideoStatus =
+    typeof finalVideo?.status === 'string' ? finalVideo.status : ''
+  const finalVideoEnabled = finalVideo?.enabled === true
+
+  if (finalVideoEnabled && finalVideoStatus === 'generated') {
+    return
+  }
+
+  if (scenes.length === 0) {
+    return
+  }
+
+  if (selectedAssets.length < scenes.length) {
+    return
+  }
+
+  if (imageAssetList.length < scenes.length) {
+    return
+  }
+
+  if (audioItems.length === 0) {
+    return
+  }
+
+  const payload = {
+    workflow_id: baseResponse.workflow_id || currentWorkflowPayload.value.workflow_id,
+    session_id: baseResponse.session_id || currentWorkflowPayload.value.session_id,
+    run_id: baseResponse.run_id || '',
+    workflow_input: currentWorkflowPayload.value.input,
+    image_assets: imageAssets || {},
+    audio_segments: audioSegments || {},
+    subtitles: subtitles || {},
+  }
+
+  finalVideoRendering.value = true
+  try {
+    const response = await fetch(`${apiBaseUrl}/v1/final-video/render`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+
+    const data: FinalVideoRenderResponse = await response.json()
+
+    const mergedResponse: WorkflowRunResponse = {
+      ...(baseResponse || {}),
+      workflow_id: data.workflow_id || baseResponse.workflow_id,
+      session_id: data.session_id || baseResponse.session_id,
+      run_id: data.run_id || baseResponse.run_id,
+      outputs: {
+        ...(baseResponse.outputs || {}),
+        final_video: data.final_video || baseResponse.outputs?.final_video || {},
+      },
+    }
+
+    applyWorkflowResponse(mergedResponse)
+  } finally {
+    finalVideoRendering.value = false
   }
 }
 

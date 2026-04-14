@@ -20,9 +20,11 @@ from app.schemas.workflow import (
     WorkflowRunResponse,
 )
 from app.services.runner_audio_render_support import RunnerAudioRenderSupport
+from app.services.runner_image_selection_support import RunnerImageSelectionSupport
 from app.services.image_provider_queue import ImageProviderQueue
 from app.services.image_provider_adapter import ApiImageGeneratorAdapter
 from app.services.image_provider_types import ImageGenerationTask
+from app.services.runner_single_scene_image_support import RunnerSingleSceneImageSupport
 
 
 class UnknownStepError(Exception):
@@ -84,6 +86,8 @@ class WorkflowRunner:
 
     def __init__(self) -> None:
         self._audio_render_support = RunnerAudioRenderSupport(self)
+        self._image_selection_support = RunnerImageSelectionSupport(self)
+        self._single_scene_image_support = RunnerSingleSceneImageSupport(self)
 
         self._handlers = {
             "story": self._run_story,
@@ -145,6 +149,19 @@ class WorkflowRunner:
             subtitles=subtitles,
         )
    
+    def build_image_assets_from_selected_assets(
+        self,
+        *,
+        run_id: str,
+        image_review: Dict[str, Any],
+        provider: str,
+    ) -> Dict[str, Any]:
+        return self._image_selection_support.build_image_assets_from_selected_assets(
+            run_id=run_id,
+            image_review=image_review,
+            provider=provider,
+        )
+    
     def get_real_kling_samples_manifest(self) -> Dict[str, Any]:
         manifest = self._build_real_samples_manifest()
         samples = manifest.get("samples") or []
@@ -2003,40 +2020,12 @@ class WorkflowRunner:
         scene: Dict[str, Any],
         scene_index: int,
     ) -> Dict[str, Any]:
-        provider = self._image_provider_name()
-
-        if provider == "pillow_storybook_renderer":
-            raise RuntimeError("single-scene pillow path is not implemented in this phase")
-
-        if provider == "api_image_generator":
-            try:
-                asset = self._run_single_scene_api_image_asset(
-                    ctx=ctx,
-                    outputs=outputs,
-                    scene=scene,
-                    scene_index=scene_index,
-                )
-                return {
-                    "enabled": True,
-                    "run_id": ctx.run_id,
-                    "provider": "api_image_generator",
-                    "asset_count": 1,
-                    "assets": [asset],
-                }
-            except Exception as e:
-                strategy = self._image_429_strategy()
-                if strategy == "pending" and self._is_rate_limit_error(e):
-                    return self._build_pending_image_assets_result(
-                        ctx=ctx,
-                        provider="api_image_generator",
-                        reason=str(e),
-                        retry_after_sec=60,
-                    )
-                raise RuntimeError(
-                    f"single scene image asset generation failed with provider={provider}: {e}"
-                ) from e
-
-        raise RuntimeError(f"unknown image provider: {provider}")
+        return self._single_scene_image_support.run_single_scene_image_asset(
+            ctx=ctx,
+            outputs=outputs,
+            scene=scene,
+            scene_index=scene_index,
+        )
     def _video_prompt_scene_metadata(
         self,
         scene: Dict[str, Any],
@@ -2256,8 +2245,15 @@ class WorkflowRunner:
             input=normalized_input,
         )
 
+        image_assets = self.build_image_assets_from_selected_assets(
+            run_id=run_id,
+            image_review=updated_image_review,
+            provider=str(self._image_provider_name()),
+        )
+
         outputs = {
             "image_review": updated_image_review,
+            "image_assets": image_assets,
             "storyboard": {
                 "scenes": storyboard_scenes,
             },
@@ -2275,9 +2271,9 @@ class WorkflowRunner:
             "run_id": run_id,
             "scene_id": scene_id,
             "image_review": updated_image_review,
+            "image_assets": image_assets,
             "video_prompts": video_prompts,
         }
-    
     def refresh_image_review_scene(
         self,
         workflow_id: str,
@@ -2365,37 +2361,11 @@ class WorkflowRunner:
 
         outputs["image_review"] = updated_image_review
 
-        merged_assets: List[Dict[str, Any]] = []
-        selected_assets = updated_image_review.get("selected_assets") or []
-        if isinstance(selected_assets, list):
-            for item in selected_assets:
-                if not isinstance(item, dict):
-                    continue
-                selected_asset_ref = item.get("selected_asset_ref") or {}
-                merged_assets.append(
-                    {
-                        "scene_id": item.get("scene_id"),
-                        "scene_title": item.get("scene_title"),
-                        "characters": item.get("characters") or [],
-                        "character_ids": item.get("character_ids") or [],
-                        "prompt": item.get("prompt") or "",
-                        "file_name": selected_asset_ref.get("file_name"),
-                        "relative_path": selected_asset_ref.get("relative_path"),
-                        "public_url": selected_asset_ref.get("public_url"),
-                        "mime_type": selected_asset_ref.get("mime_type"),
-                        "selected_asset_ref": dict(selected_asset_ref) if isinstance(selected_asset_ref, dict) else {},
-                        "status": "generated",
-                        "candidate_asset_refs": item.get("candidate_asset_refs") or [],
-                    }
-                )
-
-        outputs["image_assets"] = {
-            "enabled": True,
-            "run_id": run_id,
-            "provider": str(single_scene_assets.get("provider") or self._image_provider_name()),
-            "asset_count": len(merged_assets),
-            "assets": merged_assets,
-        }
+        outputs["image_assets"] = self.build_image_assets_from_selected_assets(
+            run_id=run_id,
+            image_review=updated_image_review,
+            provider=str(single_scene_assets.get("provider") or self._image_provider_name()),
+        )
 
         video_prompts = self._run_video_prompts(ctx, outputs)
 

@@ -196,6 +196,7 @@ class ImageReviewSelectResponse(BaseModel):
     run_id: str
     scene_id: str
     image_review: Dict[str, Any] = Field(default_factory=dict)
+    image_assets: Dict[str, Any] = Field(default_factory=dict)
     video_prompts: Dict[str, Any] = Field(default_factory=dict)
     timestamp: str
 

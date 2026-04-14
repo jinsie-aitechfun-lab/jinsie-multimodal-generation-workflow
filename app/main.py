@@ -100,6 +100,7 @@ def select_image_review_asset(req: ImageReviewSelectRequest):
             run_id=result["run_id"],
             scene_id=result["scene_id"],
             image_review=result["image_review"],
+            image_assets=result.get("image_assets", {}),
             video_prompts=result["video_prompts"],
             timestamp=ImageReviewSelectResponse.now_timestamp(),
         )
@@ -109,8 +110,6 @@ def select_image_review_asset(req: ImageReviewSelectRequest):
     except Exception as e:
         print("[image-review] runtime error", repr(e))
         raise
-
-
 @app.post("/v1/final-video/render", response_model=FinalVideoRenderResponse)
 def render_final_video(req: FinalVideoRenderRequest):
     print("[final-video] render request received", req.workflow_id, req.run_id)
