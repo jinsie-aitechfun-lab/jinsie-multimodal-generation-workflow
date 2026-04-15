@@ -71,9 +71,9 @@ class ApiImageGeneratorAdapter:
         if not model:
             model = "Kwai-Kolors/Kolors"
 
-        image_size = os.getenv("SILICONFLOW_IMAGE_SIZE", "720x1280").strip()
+        image_size = os.getenv("SILICONFLOW_IMAGE_SIZE", "1280x720").strip()
         if not image_size:
-            image_size = "720x1280"
+            image_size = "1280x720"
 
         negative_prompt = os.getenv(
             "SILICONFLOW_IMAGE_NEGATIVE_PROMPT",
