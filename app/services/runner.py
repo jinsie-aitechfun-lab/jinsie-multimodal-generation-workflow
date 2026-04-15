@@ -285,8 +285,10 @@ class WorkflowRunner:
         return run_dir
 
     def _ensure_image_run_dir(self, run_id: str) -> Path:
+        # NOTE: Do NOT create directories here.
+        # We create parent dirs only when we actually write an output file.
+        # This prevents leaving lots of empty run dirs when generation/refresh fails.
         run_dir = MOCK_IMAGE_ROOT / run_id
-        run_dir.mkdir(parents=True, exist_ok=True)
         return run_dir
 
     def _probe_audio_duration_seconds(self, audio_path: Path) -> Optional[float]:

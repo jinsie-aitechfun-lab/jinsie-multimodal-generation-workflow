@@ -43,6 +43,7 @@ class RunnerSingleSceneImageSupport:
 
             file_name = f"{scene_id}__{candidate_suffix}.png"
             output_path = run_dir / file_name
+            output_path.parent.mkdir(parents=True, exist_ok=True)
 
             image_bytes = self._runner._build_scene_png(
                 ctx,
