@@ -6,6 +6,7 @@ import WorkflowRunPanel, {
   type WorkflowRunFormState,
 } from './components/WorkflowRunPanel.vue'
 import SampleAssetsPanel from './components/SampleAssetsPanel.vue'
+import FinalVideoPanel from './components/FinalVideoPanel.vue'
 type StepName =
   | 'story'
   | 'storyboard'
@@ -241,6 +242,7 @@ const DEFAULT_STEPS: StepName[] = [
 ]
 
 const loading = ref(false)
+const finalVideoRenderInFlight = ref(false)
 const errorMessage = ref('')
 const resultText = ref('')
 
@@ -284,6 +286,7 @@ const refreshingImageReview = ref(false)
 const sceneRefreshQueue = ref<string[]>([])
 const sceneRefreshingId = ref('')
 const reviewPlaceholders = ref<ReviewPlaceholderItem[]>([])
+let reviewAutoRefreshFiredOnce = false
 let imageReviewAutoRefreshTimer: number | null = null
 type ViewTab = 'run' | 'review' | 'assets' | 'debug'
 const activeTab = ref<ViewTab>('run')
@@ -847,6 +850,7 @@ async function selectImageAsset(sceneId: string, assetRef: ImageAssetRef) {
     selectingSceneId.value = ''
   }
 }
+
 function clearImageReviewAutoRefreshTimer() {
   if (imageReviewAutoRefreshTimer !== null) {
     window.clearTimeout(imageReviewAutoRefreshTimer)
@@ -855,13 +859,8 @@ function clearImageReviewAutoRefreshTimer() {
 }
 
 async function renderFinalVideoIfReady(baseResponse: WorkflowRunResponse) {
-  if (!currentWorkflowPayload.value) {
-    return
-  }
-
-  if (finalVideoRendering.value) {
-    return
-  }
+  if (!currentWorkflowPayload.value) return
+  if (finalVideoRendering.value) return
 
   const outputs = baseResponse.outputs || {}
   const storyboard = outputs.storyboard as Record<string, unknown> | undefined
@@ -871,41 +870,19 @@ async function renderFinalVideoIfReady(baseResponse: WorkflowRunResponse) {
   const subtitles = outputs.subtitles as Record<string, unknown> | undefined
   const finalVideo = outputs.final_video as Record<string, unknown> | undefined
 
-  const scenesValue = storyboard?.scenes
-  const scenes = Array.isArray(scenesValue) ? scenesValue : []
+  const scenes = Array.isArray(storyboard?.scenes) ? storyboard.scenes : []
+  const selectedAssets = Array.isArray(imageReview?.selected_assets) ? imageReview.selected_assets : []
+  const imageAssetList = Array.isArray(imageAssets?.assets) ? imageAssets.assets : []
+  const audioItems = Array.isArray(audioSegments?.items) ? audioSegments.items : []
 
-  const selectedAssetsValue = imageReview?.selected_assets
-  const selectedAssets = Array.isArray(selectedAssetsValue) ? selectedAssetsValue : []
-
-  const imageAssetsValue = imageAssets?.assets
-  const imageAssetList = Array.isArray(imageAssetsValue) ? imageAssetsValue : []
-
-  const audioItemsValue = audioSegments?.items
-  const audioItems = Array.isArray(audioItemsValue) ? audioItemsValue : []
-
-  const finalVideoStatus =
-    typeof finalVideo?.status === 'string' ? finalVideo.status : ''
+  const finalVideoStatus = typeof finalVideo?.status === 'string' ? finalVideo.status : ''
   const finalVideoEnabled = finalVideo?.enabled === true
 
-  if (finalVideoEnabled && finalVideoStatus === 'generated') {
-    return
-  }
-
-  if (scenes.length === 0) {
-    return
-  }
-
-  if (selectedAssets.length < scenes.length) {
-    return
-  }
-
-  if (imageAssetList.length < scenes.length) {
-    return
-  }
-
-  if (audioItems.length === 0) {
-    return
-  }
+  if (finalVideoEnabled && finalVideoStatus === 'generated') return
+  if (scenes.length === 0) return
+  if (selectedAssets.length < scenes.length) return
+  if (imageAssetList.length < scenes.length) return
+  if (audioItems.length === 0) return
 
   const payload = {
     workflow_id: baseResponse.workflow_id || currentWorkflowPayload.value.workflow_id,
@@ -921,11 +898,15 @@ async function renderFinalVideoIfReady(baseResponse: WorkflowRunResponse) {
   try {
     const response = await fetch(`${apiBaseUrl}/v1/final-video/render`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     })
+    finalVideoRenderInFlight.value = true
+    try {
+      // 原有 render fetch 逻辑不变
+    } finally {
+      finalVideoRenderInFlight.value = false
+    }
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`)
@@ -1160,9 +1141,12 @@ async function runWorkflow() {
 
     applyWorkflowResponse(data)
 
-    if (reviewWaitingState.value === 'deferred_pending') {
+    if (reviewWaitingState.value === 'deferred_pending' && !reviewAutoRefreshFiredOnce) {
+      reviewAutoRefreshFiredOnce = true
       clearImageReviewAutoRefreshTimer()
       imageReviewAutoRefreshTimer = window.setTimeout(() => {
+        // 二次保护：如果此时已经在刷新，则不再触发
+        if (refreshingImageReview.value) return
         void refreshImageReview()
       }, 1200)
     }
@@ -1218,7 +1202,14 @@ onMounted(() => {
           Debug
         </button>
       </div>
-      <section v-if="activeTab === 'run'">    
+      <section v-if="activeTab === 'run'">
+         <FinalVideoPanel
+          :final-video-url="finalVideoUrl"
+          :final-video-text="finalVideoText"
+          :workflow-response="currentWorkflowResponse"
+          :render-in-flight="finalVideoRenderInFlight"
+        />
+
         <WorkflowRunPanel
           :loading="loading"
           :can-submit="canSubmit"
@@ -1237,16 +1228,23 @@ onMounted(() => {
         </p>
 
         <template v-else>
-          <section v-if="activeTab === 'review'">
-            <InteractiveImageReview
-              :items="imageReviewItems"
-              :placeholders="reviewPlaceholders"
-              :api-base-url="apiBaseUrl"
-              :loading="loading || refreshingImageReview"
-              :selecting-scene-id="selectingSceneId || sceneRefreshingId"
-              @select-asset="({ sceneId, assetRef }) => selectImageAsset(sceneId, assetRef)"
+          <section class="result-panel final-video-hero">
+            <FinalVideoPanel
+              :final-video-url="finalVideoUrl"
+              :final-video-text="finalVideoText"
+              :workflow-response="currentWorkflowResponse"
+              :render-in-flight="finalVideoRenderInFlight"
             />
           </section>
+
+          <InteractiveImageReview
+            :items="imageReviewItems"
+            :placeholders="reviewPlaceholders"
+            :api-base-url="apiBaseUrl"
+            :loading="loading || refreshingImageReview"
+            :selecting-scene-id="selectingSceneId || sceneRefreshingId"
+            @select-asset="({ sceneId, assetRef }) => selectImageAsset(sceneId, assetRef)"
+          />
 
           <WorkflowResultsPanel
             :story-text="storyText"
@@ -1261,19 +1259,6 @@ onMounted(() => {
             :character-candidates-text="characterCandidatesText"
             :character-manifest-text="characterManifestText"
           />
-          <section v-if="finalVideoUrl || finalVideoText" class="result-panel">
-            <h3>Final Video</h3>
-
-            <video
-              v-if="finalVideoUrl"
-              :src="finalVideoUrl"
-              controls
-              playsinline
-              class="final-video-player"
-            />
-
-            <pre v-if="finalVideoText" class="light-result">{{ finalVideoText }}</pre>
-          </section>
         </template>
       </section>
       <section v-if="activeTab === 'assets'">
@@ -1752,12 +1737,93 @@ h1 {
   color: #111827;
   margin-bottom: 10px;
 }
+
+.final-video-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.final-video-placeholder-inner {
+  width: min(520px, 80%);
+  text-align: center;
+  color: #e5e7eb;
+}
+
+.final-video-summary-card {
+  margin-bottom: 20px;
+}
+
+.final-video-summary-ready,
+.final-video-summary-waiting {
+  border-radius: 16px;
+  padding: 24px;
+  background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+  border: 1px solid #e5e7eb;
+}
+
+.final-video-hero {
+  margin-bottom: 20px;
+}
+
+.final-video-shell {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 20px;
+  overflow: hidden;
+  background: linear-gradient(180deg, #0f172a 0%, #111827 100%);
+}
+
 .final-video-player {
   width: 100%;
-  max-width: 960px;
-  border-radius: 16px;
-  background: #000;
+  height: 100%;
+  object-fit: contain;
   display: block;
+  background: #0f172a;
+}
+
+.final-video-status {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.final-video-desc {
+  font-size: 15px;
+  color: #475569;
+  line-height: 1.7;
+}
+
+.final-video-progress {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.08);
+  margin-top: 18px;
+  overflow: hidden;
+}
+
+.final-video-progress-bar {
+  display: block;
+  width: 35%;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #60a5fa, #a78bfa);
+  animation: final-video-loading 1.2s ease-in-out infinite;
+}
+
+.final-video-progress-bar.waiting {
+  width: 45%;
+  animation: none;
+  opacity: 0.72;
+}
+.review-video-placeholder {
+  min-height: 320px;
+}
+
+@keyframes final-video-loading {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(320%); }
 }
 
 @media (max-width: 768px) {
