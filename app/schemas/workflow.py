@@ -256,6 +256,7 @@ class ImageReviewRefreshSceneResponse(BaseModel):
     scene_id: str
     scene_image_asset: Dict[str, Any] = Field(default_factory=dict)
     scene_review_item: Dict[str, Any] = Field(default_factory=dict)
+    image_assets: Dict[str, Any] = Field(default_factory=dict)
     image_review: Dict[str, Any] = Field(default_factory=dict)
     video_prompts: Dict[str, Any] = Field(default_factory=dict)
     timestamp: str
@@ -267,8 +268,7 @@ class ImageReviewRefreshSceneResponse(BaseModel):
             .replace(microsecond=0)
             .isoformat()
             .replace("+00:00", "Z")
-        )
-        
+        )       
 class FinalVideoRenderRequest(BaseModel):
     workflow_id: str
     session_id: Optional[str] = None

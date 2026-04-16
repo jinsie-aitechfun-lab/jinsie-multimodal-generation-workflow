@@ -1985,8 +1985,11 @@ class WorkflowRunner:
                 raise RuntimeError(
                     f"api image provider returned invalid bytes for scene {scene_id} ({candidate_suffix})"
                 )
-
+        
+            output_path = Path(output_path)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_bytes(bytes(image_bytes))
+            
 
             candidate_asset_refs.append(
                 {
@@ -2378,6 +2381,7 @@ class WorkflowRunner:
             "scene_id": normalized_scene_id,
             "scene_image_asset": single_scene_assets,
             "scene_review_item": scene_review_item if image_assets_status not in {"pending", "retrying"} else {},
+            "image_assets": outputs["image_assets"],
             "image_review": updated_image_review,
             "video_prompts": video_prompts,
         }

@@ -125,28 +125,28 @@ class RunnerSingleSceneImageSupport:
                     "assets": [asset],
                 }
             except Exception as e:
-                if self._runner._is_rate_limit_error(e):
-                    if self._runner._api_image_fallback_to_pillow():
-                        fallback_asset = self.run_single_scene_pillow_image_asset(
-                            ctx=ctx,
-                            outputs=outputs,
-                            scene=scene,
-                            scene_index=scene_index,
-                        )
-                        return {
+                if self._runner._api_image_fallback_to_pillow():
+                    fallback_asset = self.run_single_scene_pillow_image_asset(
+                        ctx=ctx,
+                        outputs=outputs,
+                        scene=scene,
+                        scene_index=scene_index,
+                    )
+                    return {
+                        "enabled": True,
+                        "run_id": ctx.run_id,
+                        "provider": "pillow_storybook_renderer",
+                        "asset_count": 1,
+                        "assets": [fallback_asset],
+                        "fallback": {
                             "enabled": True,
-                            "run_id": ctx.run_id,
-                            "provider": "pillow_storybook_renderer",
-                            "asset_count": 1,
-                            "assets": [fallback_asset],
-                            "fallback": {
-                                "enabled": True,
-                                "source_provider": "api_image_generator",
-                                "fallback_provider": "pillow_storybook_renderer",
-                                "reason": str(e),
-                            },
-                        }
+                            "source_provider": "api_image_generator",
+                            "fallback_provider": "pillow_storybook_renderer",
+                            "reason": str(e),
+                        },
+                    }
 
+                if self._runner._is_rate_limit_error(e):
                     strategy = self._runner._image_429_strategy()
                     if strategy == "pending":
                         return self._runner._build_pending_image_assets_result(
@@ -159,5 +159,5 @@ class RunnerSingleSceneImageSupport:
                 raise RuntimeError(
                     f"single scene image asset generation failed with provider={provider}: {e}"
                 ) from e
-
+        
         raise RuntimeError(f"unknown image provider: {provider}")
