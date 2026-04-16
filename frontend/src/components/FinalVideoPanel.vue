@@ -25,6 +25,14 @@
             <span>{{ progressLabel }}</span>
           </div>
         </div>
+
+        <button
+          class="render-button"
+          :disabled="!canRender"
+          @click="emit('render')"
+        >
+          {{ renderButtonText }}
+        </button>
       </div>
     </div>
 
@@ -44,6 +52,10 @@ const props = defineProps<{
   renderInFlight: boolean
 }>()
 
+const emit = defineEmits<{
+  (e: 'render'): void
+}>()
+
 function asObj(v: unknown): UnknownRecord | null {
   return v && typeof v === 'object' ? (v as UnknownRecord) : null
 }
@@ -58,7 +70,8 @@ function asNum(v: unknown): number | null {
 
 const outputs = computed(() => asObj(props.workflowResponse?.outputs))
 const storyboard = computed(() => asObj(outputs.value?.storyboard))
-const imageReview = computed(() => asObj(outputs.value?.image_review))
+const imageAssets = computed(() => asObj(outputs.value?.image_assets))
+const audioSegments = computed(() => asObj(outputs.value?.audio_segments))
 const finalVideo = computed(() => asObj(outputs.value?.final_video))
 
 const sceneCount = computed(() => {
@@ -66,28 +79,38 @@ const sceneCount = computed(() => {
   return n && n > 0 ? Math.floor(n) : 0
 })
 
-const selectedCount = computed(() => {
-  const arr = imageReview.value?.selected_assets
-  return Array.isArray(arr) ? arr.length : 0
+const imageAssetCount = computed(() => {
+  const assets = imageAssets.value?.assets
+  return Array.isArray(assets) ? assets.length : 0
+})
+
+const audioItemCount = computed(() => {
+  const items = audioSegments.value?.items
+  return Array.isArray(items) ? items.length : 0
 })
 
 const finalStatus = computed(() => asStr(finalVideo.value?.status).toLowerCase())
 const finalEnabled = computed(() => Boolean(finalVideo.value?.enabled))
 
+const assetsReady = computed(() => {
+  return sceneCount.value > 0 && imageAssetCount.value >= sceneCount.value
+})
+
+const canRender = computed(() => {
+  if (props.finalVideoUrl) return false
+  if (props.renderInFlight || finalStatus.value === 'rendering') return false
+  if (finalEnabled.value && finalStatus.value === 'generated') return false
+  if (!assetsReady.value) return false
+  if (audioItemCount.value === 0) return false
+  return true
+})
+
 const progressPct = computed(() => {
   if (props.finalVideoUrl) return 100
+  if (props.renderInFlight || finalStatus.value === 'rendering') return 90
+  if (!sceneCount.value) return 0
 
-  // render 请求已发出：先给一个真实但保守的“渲染中”区间（不做假计时，只反映状态）
-  if (props.renderInFlight || finalStatus.value === 'rendering') {
-    // 选图完成度决定渲染前置进度（最多到 85%），渲染中固定显示 90%
-    return 90
-  }
-
-  // 没开始渲染：用“选图完成度”作为真实进度
-  const total = sceneCount.value
-  if (total <= 0) return 0
-  const ratio = Math.min(1, Math.max(0, selectedCount.value / total))
-  // 选图阶段最多显示到 85%，避免误导 “快好了但其实还没渲染”
+  const ratio = Math.min(1, Math.max(0, imageAssetCount.value / sceneCount.value))
   return Math.floor(ratio * 85)
 })
 
@@ -95,28 +118,37 @@ const progressLabel = computed(() => {
   if (props.finalVideoUrl) return '已生成'
   if (props.renderInFlight || finalStatus.value === 'rendering') return '视频渲染中'
   if (!sceneCount.value) return '等待 Storyboard'
-  if (selectedCount.value < sceneCount.value) {
-    return `选图中（${selectedCount.value}/${sceneCount.value}）`
-  }
-  // 选图完成但还没渲染
-  if (finalEnabled.value && finalStatus.value === 'skipped') return '等待渲染触发'
-  return '等待渲染触发'
+  if (!assetsReady.value) return `候选图生成中（${imageAssetCount.value}/${sceneCount.value}）`
+  return '等待用户触发渲染'
 })
 
 const placeholderTitle = computed(() => {
   if (props.renderInFlight || finalStatus.value === 'rendering') return '正在生成视频'
   if (!sceneCount.value) return '等待分镜'
-  if (selectedCount.value < sceneCount.value) return '等待选图完成'
+  if (!assetsReady.value) return '等待候选图生成'
   return '等待渲染'
 })
 
 const placeholderDesc = computed(() => {
-  if (props.renderInFlight || finalStatus.value === 'rendering')
+  if (props.renderInFlight || finalStatus.value === 'rendering') {
     return '视频正在合成中，请稍候（音频/字幕/画面正在拼接）。'
-  if (!sceneCount.value) return '请先在 Run 执行一次，生成 storyboard。'
-  if (selectedCount.value < sceneCount.value)
-    return '请先完成每个场景的候选图生成与选择。'
-  return '选图已完成，等待触发 Final Video 渲染。'
+  }
+  if (!sceneCount.value) {
+    return '请先在 Run 执行一次，生成 storyboard。'
+  }
+  if (!assetsReady.value) {
+    return '系统正在准备每个场景的候选图，默认图生成后即可直接渲染，也可以手动改选。'
+  }
+  if (audioItemCount.value === 0) {
+    return '当前缺少音频片段，请先完成音频生成。'
+  }
+  return '候选图已就绪。你可以直接使用默认图，也可以手动改选，然后点击按钮开始渲染。'
+})
+
+const renderButtonText = computed(() => {
+  if (props.renderInFlight || finalStatus.value === 'rendering') return 'Rendering...'
+  if (props.finalVideoUrl) return 'Rendered'
+  return 'Render Final Video'
 })
 </script>
 
@@ -144,7 +176,6 @@ const placeholderDesc = computed(() => {
 .final-video {
   width: 100%;
   display: block;
-  /* 关键：9:16 在网页端“居中留边”，不怪异 */
   background: transparent;
   object-fit: contain;
   max-height: 72vh;
@@ -198,6 +229,25 @@ const placeholderDesc = computed(() => {
 
 .ph-dot {
   opacity: 0.6;
+}
+
+.render-button {
+  margin-top: 18px;
+  min-width: 220px;
+  height: 42px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  background: #ffffff;
+  color: #111827;
+}
+
+.render-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .final-json {

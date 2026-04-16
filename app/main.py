@@ -197,6 +197,7 @@ def refresh_image_review_scene(req: ImageReviewRefreshSceneRequest):
             scene_id=result["scene_id"],
             scene_image_asset=result["scene_image_asset"],
             scene_review_item=result["scene_review_item"],
+            image_assets=result["image_assets"],
             image_review=result["image_review"],
             video_prompts=result["video_prompts"],
             timestamp=ImageReviewRefreshSceneResponse.now_timestamp(),

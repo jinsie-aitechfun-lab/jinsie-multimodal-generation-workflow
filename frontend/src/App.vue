@@ -76,6 +76,10 @@ type ImageReviewSelectResponse = {
   image_assets?: Record<string, unknown>
   video_prompts?: Record<string, unknown>
   timestamp?: string
+  final_video?: Record<string, unknown>
+  audio_segments?: Record<string, unknown>
+  subtitles?: Record<string, unknown>
+  storyboard?: Record<string, unknown>
 }
 
 type ReviewWaitingState =
@@ -164,6 +168,7 @@ type ImageReviewRefreshSceneResponse = {
   scene_id?: string
   scene_image_asset?: Record<string, unknown>
   scene_review_item?: Record<string, unknown>
+  image_assets?: Record<string, unknown>
   image_review?: Record<string, unknown>
   video_prompts?: Record<string, unknown>
   timestamp?: string
@@ -831,19 +836,16 @@ async function selectImageAsset(sceneId: string, assetRef: ImageAssetRef) {
       run_id: data.run_id || currentWorkflowResponse.value.run_id,
       outputs: {
         ...(currentWorkflowResponse.value.outputs || {}),
-        image_review:
-          data.image_review || currentWorkflowResponse.value.outputs?.image_review || {},
         image_assets:
           data.image_assets || currentWorkflowResponse.value.outputs?.image_assets || {},
+        image_review:
+          data.image_review || currentWorkflowResponse.value.outputs?.image_review || {},
         video_prompts:
           data.video_prompts || currentWorkflowResponse.value.outputs?.video_prompts || {},
-        final_video:
-          currentWorkflowResponse.value.outputs?.final_video || {},
       },
     }
 
     applyWorkflowResponse(mergedResponse)
-    await renderFinalVideoIfReady(mergedResponse)
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '手动选图请求失败'
   } finally {
@@ -860,18 +862,16 @@ function clearImageReviewAutoRefreshTimer() {
 
 async function renderFinalVideoIfReady(baseResponse: WorkflowRunResponse) {
   if (!currentWorkflowPayload.value) return
-  if (finalVideoRendering.value) return
+  if (finalVideoRendering.value || finalVideoRenderInFlight.value) return
 
   const outputs = baseResponse.outputs || {}
   const storyboard = outputs.storyboard as Record<string, unknown> | undefined
-  const imageReview = outputs.image_review as Record<string, unknown> | undefined
   const imageAssets = outputs.image_assets as Record<string, unknown> | undefined
   const audioSegments = outputs.audio_segments as Record<string, unknown> | undefined
   const subtitles = outputs.subtitles as Record<string, unknown> | undefined
   const finalVideo = outputs.final_video as Record<string, unknown> | undefined
 
   const scenes = Array.isArray(storyboard?.scenes) ? storyboard.scenes : []
-  const selectedAssets = Array.isArray(imageReview?.selected_assets) ? imageReview.selected_assets : []
   const imageAssetList = Array.isArray(imageAssets?.assets) ? imageAssets.assets : []
   const audioItems = Array.isArray(audioSegments?.items) ? audioSegments.items : []
 
@@ -880,7 +880,6 @@ async function renderFinalVideoIfReady(baseResponse: WorkflowRunResponse) {
 
   if (finalVideoEnabled && finalVideoStatus === 'generated') return
   if (scenes.length === 0) return
-  if (selectedAssets.length < scenes.length) return
   if (imageAssetList.length < scenes.length) return
   if (audioItems.length === 0) return
 
@@ -895,18 +894,14 @@ async function renderFinalVideoIfReady(baseResponse: WorkflowRunResponse) {
   }
 
   finalVideoRendering.value = true
+  finalVideoRenderInFlight.value = true
+
   try {
     const response = await fetch(`${apiBaseUrl}/v1/final-video/render`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     })
-    finalVideoRenderInFlight.value = true
-    try {
-      // 原有 render fetch 逻辑不变
-    } finally {
-      finalVideoRenderInFlight.value = false
-    }
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`)
@@ -927,6 +922,7 @@ async function renderFinalVideoIfReady(baseResponse: WorkflowRunResponse) {
 
     applyWorkflowResponse(mergedResponse)
   } finally {
+    finalVideoRenderInFlight.value = false
     finalVideoRendering.value = false
   }
 }
@@ -984,6 +980,8 @@ async function refreshImageReviewScene(sceneId: string) {
     run_id: data.run_id || currentWorkflowResponse.value.run_id,
     outputs: {
       ...(currentWorkflowResponse.value.outputs || {}),
+      image_assets:
+        data.image_assets || currentWorkflowResponse.value.outputs?.image_assets || {},
       image_review:
         data.image_review || currentWorkflowResponse.value.outputs?.image_review || {},
       video_prompts:
@@ -1065,6 +1063,8 @@ async function runWorkflow() {
   renderPlanText.value = ''
   finalVideoText.value = ''
   finalVideoUrl.value = ''
+  finalVideoRendering.value = false
+  finalVideoRenderInFlight.value = false
   stepSummaries.value = []
 
   const form = workflowForm.value
@@ -1208,6 +1208,7 @@ onMounted(() => {
           :final-video-text="finalVideoText"
           :workflow-response="currentWorkflowResponse"
           :render-in-flight="finalVideoRenderInFlight"
+          @render="renderFinalVideoIfReady(currentWorkflowResponse || {})"
         />
 
         <WorkflowRunPanel
@@ -1234,6 +1235,7 @@ onMounted(() => {
               :final-video-text="finalVideoText"
               :workflow-response="currentWorkflowResponse"
               :render-in-flight="finalVideoRenderInFlight"
+              @render="renderFinalVideoIfReady(currentWorkflowResponse || {})"
             />
           </section>
 
