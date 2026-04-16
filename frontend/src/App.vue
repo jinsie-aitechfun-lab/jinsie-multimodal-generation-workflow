@@ -1121,6 +1121,14 @@ async function runWorkflow() {
   }
   currentWorkflowPayload.value = payload as WorkflowRunPayload
 
+  // ✅ 点击 Run 立刻给 UI 反馈（跨 tab 都能感知）
+  loading.value = true
+  errorMessage.value = ''
+  finalVideoText.value = ''
+  finalVideoUrl.value = ''
+  finalVideoRenderInFlight.value = false
+  finalVideoRendering.value = false
+
   try {
     const response = await fetch(`${apiBaseUrl}/v1/workflow/run`, {
       method: 'POST',
@@ -1209,6 +1217,7 @@ onMounted(() => {
           :workflow-response="currentWorkflowResponse"
           :render-in-flight="finalVideoRenderInFlight"
           @render="renderFinalVideoIfReady(currentWorkflowResponse || {})"
+          :loading="loading || refreshingImageReview || finalVideoRenderInFlight"
         />
 
         <WorkflowRunPanel
@@ -1224,44 +1233,48 @@ onMounted(() => {
         />
       </section>
       <section v-if="activeTab === 'review'">
-        <p v-if="!hasReviewContent" class="empty-state">
+        <template v-if="hasReviewContent || loading || refreshingImageReview || finalVideoRenderInFlight">
+  <section class="result-panel final-video-hero">
+    <FinalVideoPanel
+      :final-video-url="finalVideoUrl"
+      :final-video-text="finalVideoText"
+      :workflow-response="currentWorkflowResponse"
+      :render-in-flight="finalVideoRenderInFlight"
+      :loading="loading || refreshingImageReview || finalVideoRenderInFlight"
+      @render="renderFinalVideoIfReady(currentWorkflowResponse || {})"
+    />
+  </section>
+
+  <!-- 有内容才显示选图和结果；没内容但在跑时，只显示 FinalVideoPanel 占位 -->
+  <template v-if="hasReviewContent">
+    <InteractiveImageReview
+      :items="imageReviewItems"
+      :placeholders="reviewPlaceholders"
+      :api-base-url="apiBaseUrl"
+      :loading="loading || refreshingImageReview"
+      :selecting-scene-id="selectingSceneId || sceneRefreshingId"
+      @select-asset="({ sceneId, assetRef }) => selectImageAsset(sceneId, assetRef)"
+    />
+
+    <WorkflowResultsPanel
+      :story-text="storyText"
+      :storyboard-text="storyboardText"
+      :image-prompts-text="imagePromptsText"
+      :image-assets-text="imageAssetsText"
+      :image-review-text="imageReviewText"
+      :video-prompts-text="videoPromptsText"
+      :narration-text="narrationText"
+      :subtitles-text="subtitlesText"
+      :render-plan-text="renderPlanText"
+      :character-candidates-text="characterCandidatesText"
+      :character-manifest-text="characterManifestText"
+    />
+  </template>
+        </template>
+
+        <p v-else class="empty-state">
           请先在 Run 页签执行一次 workflow，然后回到 Review 查看选图和结果。
         </p>
-
-        <template v-else>
-          <section class="result-panel final-video-hero">
-            <FinalVideoPanel
-              :final-video-url="finalVideoUrl"
-              :final-video-text="finalVideoText"
-              :workflow-response="currentWorkflowResponse"
-              :render-in-flight="finalVideoRenderInFlight"
-              @render="renderFinalVideoIfReady(currentWorkflowResponse || {})"
-            />
-          </section>
-
-          <InteractiveImageReview
-            :items="imageReviewItems"
-            :placeholders="reviewPlaceholders"
-            :api-base-url="apiBaseUrl"
-            :loading="loading || refreshingImageReview"
-            :selecting-scene-id="selectingSceneId || sceneRefreshingId"
-            @select-asset="({ sceneId, assetRef }) => selectImageAsset(sceneId, assetRef)"
-          />
-
-          <WorkflowResultsPanel
-            :story-text="storyText"
-            :storyboard-text="storyboardText"
-            :image-prompts-text="imagePromptsText"
-            :image-assets-text="imageAssetsText"
-            :image-review-text="imageReviewText"
-            :video-prompts-text="videoPromptsText"
-            :narration-text="narrationText"
-            :subtitles-text="subtitlesText"
-            :render-plan-text="renderPlanText"
-            :character-candidates-text="characterCandidatesText"
-            :character-manifest-text="characterManifestText"
-          />
-        </template>
       </section>
       <section v-if="activeTab === 'assets'">
         <SampleAssetsPanel
