@@ -16,8 +16,11 @@
         <div class="ph-desc">{{ placeholderDesc }}</div>
 
         <div class="ph-progress">
-          <div class="ph-bar">
-            <div class="ph-bar-fill" :style="{ width: progressPct + '%' }"></div>
+          <div class="ph-bar" :class="{ indeterminate }">
+            <div
+              class="ph-bar-fill"
+              :style="indeterminate ? {} : { width: progressPct + '%' }"
+            ></div>
           </div>
           <div class="ph-meta">
             <span>{{ progressPct }}%</span>
@@ -50,6 +53,7 @@ const props = defineProps<{
   finalVideoText: string
   workflowResponse: UnknownRecord | null
   renderInFlight: boolean
+  loading: boolean
 }>()
 
 const emit = defineEmits<{
@@ -73,6 +77,13 @@ const storyboard = computed(() => asObj(outputs.value?.storyboard))
 const imageAssets = computed(() => asObj(outputs.value?.image_assets))
 const audioSegments = computed(() => asObj(outputs.value?.audio_segments))
 const finalVideo = computed(() => asObj(outputs.value?.final_video))
+
+const indeterminate = computed(() => {
+  if (props.finalVideoUrl) return false
+  if (props.renderInFlight || finalStatus.value === 'rendering') return false
+  // runWorkflow 请求中，或 refresh 正在跑，但还没有任何 image_assets
+  return props.loading  && imageAssetCount.value === 0
+})
 
 const sceneCount = computed(() => {
   const n = asNum(storyboard.value?.scene_count)
@@ -115,6 +126,7 @@ const progressPct = computed(() => {
 })
 
 const progressLabel = computed(() => {
+  if (indeterminate.value) return '准备中…'
   if (props.finalVideoUrl) return '已生成'
   if (props.renderInFlight || finalStatus.value === 'rendering') return '视频渲染中'
   if (!sceneCount.value) return '等待 Storyboard'
@@ -216,6 +228,55 @@ const renderButtonText = computed(() => {
   background: linear-gradient(90deg, #6ea8fe 0%, #9f7aea 60%, #a78bfa 100%);
   border-radius: 999px;
   transition: width 180ms ease-out;
+}
+
+.ph-bar {
+  height: 10px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ✅ 企业风格：全宽的 indeterminate 背景 shimmer */
+.ph-bar.indeterminate::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  /* 低对比度、低饱和：不抢真实进度 */
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.06) 0%,
+    rgba(255, 255, 255, 0.14) 20%,
+    rgba(255, 255, 255, 0.06) 40%,
+    rgba(255, 255, 255, 0.06) 100%
+  );
+  background-size: 240px 100%;
+  animation: ph-indeterminate 1.1s linear infinite;
+}
+
+/* ✅ 真实进度条仍然用 fill（你原来的渐变） */
+.ph-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #6ea8fe 0%, #9f7aea 60%, #a78bfa 100%);
+  border-radius: 999px;
+  transition: width 180ms ease-out;
+  position: relative;
+  z-index: 1;
+}
+
+/* ✅ indeterminate 时，不显示 fill（避免“假进度”） */
+.ph-bar.indeterminate .ph-bar-fill {
+  width: 0 !important;
+}
+
+@keyframes ph-indeterminate {
+  from {
+    background-position: -240px 0;
+  }
+  to {
+    background-position: 240px 0;
+  }
 }
 
 .ph-meta {
