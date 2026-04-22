@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref, watch} from 'vue'
 import InteractiveImageReview from './components/InteractiveImageReview.vue'
 import WorkflowResultsPanel from './components/WorkflowResultsPanel.vue'
 import WorkflowRunPanel, {
@@ -295,6 +295,20 @@ let reviewAutoRefreshFiredOnce = false
 let imageReviewAutoRefreshTimer: number | null = null
 type ViewTab = 'run' | 'review' | 'assets' | 'debug'
 const activeTab = ref<ViewTab>('run')
+
+watch(
+  () => activeTab.value,
+  (tab: ViewTab) => {
+    if (tab !== 'assets') return
+
+    // 避免重复加载：已有数据或正在加载时不再拉
+    if (samplesLoading.value) return
+    if (samplesSummary.value) return
+    if (klingSamples.value && klingSamples.value.length > 0) return
+
+    void loadSampleAssets()
+  }
+)
 
 const apiBaseUrl =
   (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() ||
@@ -1165,9 +1179,6 @@ async function runWorkflow() {
     loading.value = false
   }
 }
-onMounted(() => {
-  void loadSampleAssets()
-})
 </script>
 
 <template>
