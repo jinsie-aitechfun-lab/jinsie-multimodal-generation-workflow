@@ -740,7 +740,35 @@ class WorkflowRunner:
             "vertical 9:16 framing"
         )
 
-        character_anchor = self._character_consistency_anchor(ctx)
+        primary = self._manifest_character_by_role(outputs, "primary") or {}
+        primary_display = str(primary.get("display_name") or "").strip()
+        primary_species = str(primary.get("species") or "").strip()
+
+        # 基于 manifest 主角强绑定（默认主题推断/manifest 生成后会有）
+        if primary_display or primary_species:
+            subject = primary_display or primary_species or "main protagonist"
+
+            # 稍微加强物种稳定性：猫最容易漂成狐/鼠，所以给轻量反向约束
+            negative_guard = ""
+            if primary_species.lower() in {"cat", "kitten"} or "猫" in primary_display:
+                negative_guard = "no fox snout, no raccoon mask, no mouse face, no rabbit ears"
+
+            character_anchor = ", ".join(
+                part
+                for part in [
+                    f"{subject} ({primary_species})" if primary_species else subject,
+                    "same character across all scenes",
+                    "consistent facial features",
+                    "consistent body shape",
+                    "consistent outfit and visual identity",
+                    "cute expressive face",
+                    "storybook details",
+                    negative_guard,
+                ]
+                if part
+            )
+        else:
+            character_anchor = self._character_consistency_anchor(ctx)
 
         prompts: List[Dict[str, Any]] = []
 
@@ -2456,9 +2484,23 @@ class WorkflowRunner:
         if stored_sentence_shots:
             outputs["sentence_shots"] = stored_sentence_shots
 
+        stored_character_manifest = stored_context.get("character_manifest") or {}
+        if stored_character_manifest:
+            outputs["character_manifest"] = stored_character_manifest
+
         stored_image_prompts = stored_context.get("image_prompts") or {}
         if stored_image_prompts:
-            outputs["image_prompts"] = stored_image_prompts
+            stored_topic = str(stored_workflow_input.get("topic") or "").strip()
+            current_topic = str(normalized_input.topic or "").strip()
+            stored_structured = bool(stored_workflow_input.get("structured_characters_enabled") or False)
+            current_structured = bool(getattr(normalized_input, "structured_characters_enabled", False))
+
+            if stored_topic == current_topic and stored_structured == current_structured:
+                outputs["image_prompts"] = stored_image_prompts
+            else:
+                outputs["image_prompts"] = self._run_image_prompts(ctx, outputs)
+        else:
+            outputs["image_prompts"] = self._run_image_prompts(ctx, outputs)
 
         previous_image_review = image_review or stored_context.get("image_review") or {}
         if previous_image_review:
