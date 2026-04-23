@@ -207,15 +207,15 @@ const DEFAULT_WORKFLOW_FORM: WorkflowRunFormState = {
   videoProvider: 'mock',
   outputMode: 'full_video',
 
-  structuredCharactersEnabled: true,
-  primaryCharacterDisplayName: '小兔子',
-  primaryCharacterSpecies: 'rabbit',
-  primaryCharacterVisualTraits: 'long upright ears, white fur, red scarf',
-  primaryCharacterForbiddenTraits: 'cat ears, turtle shell',
-  secondaryCharacterDisplayName: '小乌龟',
-  secondaryCharacterSpecies: 'turtle',
-  secondaryCharacterVisualTraits: 'round shell, short legs, green shell',
-  secondaryCharacterForbiddenTraits: 'rabbit ears, cat ears',
+  structuredCharactersEnabled: false,
+  primaryCharacterDisplayName: '',
+  primaryCharacterSpecies: '',
+  primaryCharacterVisualTraits: '',
+  primaryCharacterForbiddenTraits: '',
+  secondaryCharacterDisplayName: '',
+  secondaryCharacterSpecies: '',
+  secondaryCharacterVisualTraits: '',
+  secondaryCharacterForbiddenTraits: '',
 }
 
 const STEP_OPTIONS: Array<{ label: string; value: StepName }> = [
@@ -1105,18 +1105,30 @@ async function runWorkflow() {
           : []),
       ]
     : []
+  
+  const sessionId =
+  form.sessionId.trim() || `demo-session-${Date.now().toString(36)}`
+
+  const enableStructuredCharacters =
+    form.structuredCharactersEnabled && structuredCharacters.length > 0
 
   const payload = {
     workflow_id: 'storybook-demo',
-    session_id: form.sessionId.trim() || 'demo-session-001',
+    session_id: sessionId,
     input: {
       topic: form.topic.trim(),
       audience: form.audience,
       tone: form.tone,
       visual_style: form.visualStyle,
       character_style: form.characterStyle,
-      structured_characters_enabled: form.structuredCharactersEnabled,
-      characters: structuredCharacters,
+      ...(enableStructuredCharacters
+        ? {
+            structured_characters_enabled: true,
+            characters: structuredCharacters,
+          }
+        : {
+            structured_characters_enabled: false,
+          }),
       voice_style: form.voiceStyle,
       voiceover_enabled: form.voiceoverEnabled,
       voice_mode: form.voiceMode,
