@@ -1389,7 +1389,7 @@ class WorkflowRunner:
             return "narrator"
 
         if "故事的主角" in normalized:
-            return "narrator"
+            return "main_character"
 
         has_main_display = bool(main_display and main_display in normalized)
         has_main_character = bool(

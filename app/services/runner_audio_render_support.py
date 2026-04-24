@@ -12,6 +12,29 @@ class RunnerAudioRenderSupport:
     def __init__(self, runner: Any) -> None:
         self._runner = runner
 
+    def _effective_voice_mode(self, ctx: Any) -> str:
+        voice_mode = self._runner._normalized_voice_mode(ctx.input.voice_mode)
+        if voice_mode != "single":
+            return voice_mode
+
+        has_character_input = any(
+            bool(str(getattr(ctx.input, field, "") or "").strip())
+            for field in (
+                "main_character",
+                "main_character_display",
+                "secondary_character",
+                "secondary_character_display",
+            )
+        )
+        has_character_profiles = bool(
+            getattr(ctx.input, "character_speaker_profiles", {}) or {}
+        )
+
+        if has_character_input or has_character_profiles:
+            return "character"
+
+        return voice_mode
+
     def run_dialogue_script(
         self, ctx: Any, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -21,7 +44,7 @@ class RunnerAudioRenderSupport:
         storyboard = outputs.get("storyboard") or {}
         scenes = storyboard.get("scenes") or []
 
-        voice_mode = self._runner._normalized_voice_mode(ctx.input.voice_mode)
+        voice_mode = self._effective_voice_mode(ctx)
         speaker_profiles = self._runner._speaker_profiles(ctx)
 
         if not ctx.input.voiceover_enabled:
