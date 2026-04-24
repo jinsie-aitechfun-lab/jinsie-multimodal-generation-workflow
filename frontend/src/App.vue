@@ -1075,6 +1075,8 @@ async function runWorkflow() {
   narrationText.value = ''
   subtitlesText.value = ''
   renderPlanText.value = ''
+  reviewAutoRefreshFiredOnce = false
+  clearImageReviewAutoRefreshTimer()
   finalVideoText.value = ''
   finalVideoUrl.value = ''
   finalVideoRendering.value = false
@@ -1083,16 +1085,21 @@ async function runWorkflow() {
 
   const form = workflowForm.value
 
-  const structuredCharacters: StructuredCharacterInput[] = form.structuredCharactersEnabled
+  // ---- characters: manual override (when enabled) ----
+  const manualCharacters: StructuredCharacterInput[] = form.structuredCharactersEnabled
     ? [
-        {
-          display_name: form.primaryCharacterDisplayName.trim(),
-          species: form.primaryCharacterSpecies.trim(),
-          role_type: 'primary',
-          visual_traits: form.primaryCharacterVisualTraits.trim(),
-          forbidden_traits: form.primaryCharacterForbiddenTraits.trim(),
-        },
-        ...(form.secondaryCharacterDisplayName.trim()
+        ...(form.primaryCharacterDisplayName.trim() || form.primaryCharacterSpecies.trim()
+          ? [
+              {
+                display_name: form.primaryCharacterDisplayName.trim(),
+                species: form.primaryCharacterSpecies.trim(),
+                role_type: 'primary' as const,
+                visual_traits: form.primaryCharacterVisualTraits.trim(),
+                forbidden_traits: form.primaryCharacterForbiddenTraits.trim(),
+              },
+            ]
+          : []),
+        ...(form.secondaryCharacterDisplayName.trim() || form.secondaryCharacterSpecies.trim()
           ? [
               {
                 display_name: form.secondaryCharacterDisplayName.trim(),
@@ -1105,12 +1112,86 @@ async function runWorkflow() {
           : []),
       ]
     : []
+
+  // ---- characters: auto derive from topic (default path) ----
+  function inferPrimaryFromTopic(topic: string): StructuredCharacterInput[] {
+    const t = (topic || '').trim()
+    if (!t) return []
+    const lower = t.toLowerCase()
+
+    // 先覆盖高频：猫/狗/兔/龟（足够验证“换动物也稳”）
+    const hitCat = t.includes('猫') || lower.includes('cat') || lower.includes('kitten')
+    if (hitCat) {
+      return [
+        {
+          display_name: '小猫',
+          species: 'cat',
+          role_type: 'primary',
+          visual_traits:
+            'domestic kitten, round cat face, short muzzle, moderate-sized triangular ears, visible whiskers, cat-like paws, long cat tail',
+          forbidden_traits:
+            'fox snout, fennec fox ears, raccoon mask, mouse face, rabbit ears, turtle shell',
+        },
+      ]
+    }
+
+    const hitDog = t.includes('狗') || lower.includes('dog') || lower.includes('puppy')
+    if (hitDog) {
+      return [
+        {
+          display_name: '小狗',
+          species: 'dog',
+          role_type: 'primary',
+          visual_traits:
+            'cute puppy, round friendly face, moderate ears, dog-like paws, dog tail',
+          forbidden_traits:
+            'fox snout, fennec fox ears, raccoon mask, mouse face, rabbit ears, turtle shell',
+        },
+      ]
+    }
+
+    const hitRabbit = t.includes('兔') || lower.includes('rabbit') || lower.includes('bunny')
+    if (hitRabbit) {
+      return [
+        {
+          display_name: '小兔子',
+          species: 'rabbit',
+          role_type: 'primary',
+          visual_traits: 'cute bunny, long rabbit ears, round face, fluffy fur',
+          forbidden_traits:
+            'cat ears, fox snout, turtle shell, raccoon mask, mouse face',
+        },
+      ]
+    }
+
+    const hitTurtle = t.includes('乌龟') || t.includes('龟') || lower.includes('turtle')
+    if (hitTurtle) {
+      return [
+        {
+          display_name: '小乌龟',
+          species: 'turtle',
+          role_type: 'primary',
+          visual_traits: 'cute turtle, round shell, short legs',
+          forbidden_traits:
+            'rabbit ears, cat ears, fox snout, raccoon mask, mouse face',
+        },
+      ]
+    }
+
+    return []
+  }
+
+  const autoCharacters: StructuredCharacterInput[] =
+    manualCharacters.length > 0 ? [] : inferPrimaryFromTopic(form.topic)
+
+  const finalCharacters: StructuredCharacterInput[] =
+    manualCharacters.length > 0 ? manualCharacters : autoCharacters
+
+  // 关键：是否启用结构化角色，不再由 checkbox 决定
+  const enableStructuredCharacters = finalCharacters.length > 0
   
   const sessionId =
   form.sessionId.trim() || `demo-session-${Date.now().toString(36)}`
-
-  const enableStructuredCharacters =
-    form.structuredCharactersEnabled && structuredCharacters.length > 0
 
   const payload = {
     workflow_id: 'storybook-demo',
@@ -1124,7 +1205,7 @@ async function runWorkflow() {
       ...(enableStructuredCharacters
         ? {
             structured_characters_enabled: true,
-            characters: structuredCharacters,
+            characters: finalCharacters,
           }
         : {
             structured_characters_enabled: false,
