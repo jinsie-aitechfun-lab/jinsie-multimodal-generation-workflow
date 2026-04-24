@@ -27,6 +27,7 @@ from app.services.image_provider_queue import ImageProviderQueue
 from app.services.image_provider_adapter import ApiImageGeneratorAdapter
 from app.services.image_provider_types import ImageGenerationTask
 from app.services.runner_single_scene_image_support import RunnerSingleSceneImageSupport
+from app.services.topic_character_infer import infer_primary_character_manifest
 
 
 class UnknownStepError(Exception):
@@ -806,6 +807,12 @@ class WorkflowRunner:
         character_candidates = self._build_character_candidates(req.input)
         character_manifest = self._build_character_manifest(req.input, character_candidates)
 
+        # P0-05: structured_characters_enabled=false 时，按 topic 自动补 primary manifest
+        if (not req.input.structured_characters_enabled) and (not character_manifest):
+            inferred_primary = infer_primary_character_manifest(req.input.topic)
+            if inferred_primary is not None:
+                character_manifest = [inferred_primary]
+                
         aggregated_outputs: Dict[str, Any] = {
             "character_candidates": {
                 "enabled": bool(req.input.structured_characters_enabled),
@@ -813,7 +820,7 @@ class WorkflowRunner:
                 "items": character_candidates,
             },
             "character_manifest": {
-                "enabled": bool(req.input.structured_characters_enabled),
+                "enabled": bool(req.input.structured_characters_enabled) or bool(character_manifest),
                 "count": len(character_manifest),
                 "characters": character_manifest,
             },
