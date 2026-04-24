@@ -1075,6 +1075,8 @@ async function runWorkflow() {
   narrationText.value = ''
   subtitlesText.value = ''
   renderPlanText.value = ''
+  reviewAutoRefreshFiredOnce = false
+  clearImageReviewAutoRefreshTimer()
   finalVideoText.value = ''
   finalVideoUrl.value = ''
   finalVideoRendering.value = false
