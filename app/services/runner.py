@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import shutil
 import json
+import ast
+import re
 import os
 import subprocess
 import time
@@ -52,6 +54,10 @@ DEFAULT_TTS_API_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_TTS_PROVIDER = "openai_compatible_tts"
 DEFAULT_IMAGE_PROVIDER = "pillow_storybook_renderer"
 DEFAULT_IMAGE_FALLBACK_PROVIDER = "pillow_storybook_renderer"
+DEFAULT_LLM_API_BASE_URL = "https://api.siliconflow.cn/v1"
+DEFAULT_STORY_PROVIDER = "template"  # template | openai_compatible_llm
+DEFAULT_STORY_MODEL = ""
+DEFAULT_STORY_TIMEOUT_SECONDS = 60
 
 
 class WorkflowRunner:
@@ -246,7 +252,279 @@ class WorkflowRunner:
     def _tts_api_base_url(self) -> str:
         value = os.getenv("TTS_API_BASE_URL", DEFAULT_TTS_API_BASE_URL).strip()
         return value.rstrip("/") or DEFAULT_TTS_API_BASE_URL
+    def _llm_api_base_url(self) -> str:
+    # 优先走 OPENAI_BASE_URL（你们项目一直按 openai-compatible 使用）
+        base = (os.getenv("OPENAI_BASE_URL") or os.getenv("LLM_API_BASE_URL") or "").strip()
+        return base or DEFAULT_LLM_API_BASE_URL
 
+    def _llm_api_key(self) -> str:
+        return (os.getenv("OPENAI_API_KEY") or os.getenv("LLM_API_KEY") or "").strip()
+
+    def _story_provider_name(self) -> str:
+        return (os.getenv("STORY_PROVIDER") or DEFAULT_STORY_PROVIDER).strip()
+
+    def _story_model_name(self) -> str:
+        # 不瞎猜你具体模型名：优先读你显式配置，其次读常见环境变量
+        model = (
+            (os.getenv("STORY_MODEL") or "").strip()
+            or (os.getenv("OPENAI_MODEL") or "").strip()
+            or (os.getenv("LLM_MODEL") or "").strip()
+            or DEFAULT_STORY_MODEL
+        )
+        return model
+
+    def _story_timeout_seconds(self) -> int:
+        raw = (os.getenv("STORY_TIMEOUT_SECONDS") or "").strip()
+        if raw.isdigit():
+            return max(5, min(180, int(raw)))
+        return DEFAULT_STORY_TIMEOUT_SECONDS
+
+    def _generate_story_with_llm(self, ctx: StepContext, outputs: Dict[str, Any]) -> Dict[str, str]:
+        api_key = self._llm_api_key()
+        if not api_key:
+            raise RuntimeError("LLM api key is missing (OPENAI_API_KEY/LLM_API_KEY)")
+
+        model = self._story_model_name()
+        if not model:
+            raise RuntimeError("STORY_MODEL/OPENAI_MODEL/LLM_MODEL is missing")
+
+        topic = (ctx.input.topic or "").strip() or "一个温暖的童话故事"
+        tone_label = self._tone_label(ctx.input.tone)
+        audience_label = self._audience_label(ctx.input.audience)
+
+        manifest_items = self._character_manifest_items(outputs)
+        character_hint = ""
+        if manifest_items:
+            parts = []
+            for item in manifest_items:
+                display = str(item.get("display_name") or "").strip()
+                species = str(item.get("species") or "").strip()
+                role = str(item.get("role_type") or "").strip()
+                traits = str(item.get("visual_traits") or "").strip()
+                forbid = str(item.get("forbidden_traits") or "").strip()
+                parts.append(
+                    f"- role={role}, name={display}, species={species}, traits={traits}, forbid={forbid}"
+                )
+            character_hint = "\n".join(parts)
+
+        system_prompt = (
+            "You are a professional children's story writer.\n"
+            "Write in Chinese.\n"
+            "Return ONLY the story text. No JSON, no markdown, no headings."
+        )
+
+        user_prompt = (
+            f"Topic: {topic}\n"
+            f"Tone: {tone_label}\n"
+            f"Audience: {audience_label}\n"
+            f"Visual style: {ctx.input.visual_style}\n"
+            f"Character style: {ctx.input.character_style}\n"
+            f"Language: {ctx.input.language}\n"
+            f"Constraints:\n"
+            f"- The plot must meaningfully reflect the topic (not a generic template).\n"
+            f"- 4-6 paragraphs. Each paragraph 1-3 sentences.\n"
+            f"- Provide a clear beginning, problem, attempt, resolution.\n"
+            f"- Do NOT include any JSON or section headings.\n"
+            f"Characters (if provided):\n{character_hint or '- (none)'}\n"
+        )
+
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": 0.8,
+            "max_tokens": 900,
+        }
+
+        req = urllib_request.Request(
+            url=f"{self._llm_api_base_url().rstrip('/')}/chat/completions",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+
+        with urllib_request.urlopen(req, timeout=self._story_timeout_seconds()) as resp:
+            raw = resp.read()
+
+        if not raw:
+            raise RuntimeError("LLM response is empty")
+
+        data = json.loads(raw.decode("utf-8", errors="ignore"))
+        content = (
+            (((data.get("choices") or [{}])[0]).get("message") or {}).get("content") or ""
+        ).strip()
+
+        if not content:
+            raise RuntimeError("LLM content is empty")
+
+        title = f"{topic}的故事"
+        summary = f"一个围绕“{topic}”展开的短篇故事，整体气质{tone_label}，适合做成{audience_label}向内容。"
+        text = content
+        
+        # 如果模型把内容包成 JSON（常见），就尽量抽出 text 字段，避免前端看到一坨伪 JSON/乱码
+        cleaned = content.strip()
+        cleaned = cleaned.replace("-mfraction", "").replace("adidas", "")
+
+        # 去掉 ```json ... ``` 包裹
+        if cleaned.startswith("```"):
+            cleaned = cleaned.strip("`").strip()
+            if cleaned.lower().startswith("json"):
+                cleaned = cleaned[4:].strip()
+
+        # 尝试直接当 JSON 解析
+        extracted = None
+        try:
+            obj = json.loads(cleaned)
+            if isinstance(obj, dict):
+                maybe_text = obj.get("text")
+                if isinstance(maybe_text, str) and maybe_text.strip():
+                    extracted = maybe_text.strip()
+        except Exception:
+            extracted = None
+
+        # 再尝试：从内容里截取第一段 {...} 再 parse（应对前后夹杂脏字符）
+        if extracted is None and "{" in cleaned and "}" in cleaned:
+            start = cleaned.find("{")
+            end = cleaned.rfind("}")
+            if 0 <= start < end:
+                snippet = cleaned[start : end + 1]
+                try:
+                    obj2 = json.loads(snippet)
+                    if isinstance(obj2, dict):
+                        maybe_text2 = obj2.get("text")
+                        if isinstance(maybe_text2, str) and maybe_text2.strip():
+                            extracted = maybe_text2.strip()
+                except Exception:
+                    extracted = None
+        # 再兜底：处理 Python dict 风格（单引号）的输出，如 {' paragraphs': [{' sentence': '...'}]}
+        if extracted is None:
+            try:
+                obj3 = ast.literal_eval(cleaned)
+            except Exception:
+                obj3 = None
+
+            if isinstance(obj3, dict):
+                # 1) 常见：text/Text 字段
+                for k in ("text", "Text", "TEXT", "story", "content"):
+                    v = obj3.get(k)
+                    if isinstance(v, str) and v.strip():
+                        extracted = v.strip()
+                        break
+
+                # 2) 常见：paragraphs / paragraphs 列表，元素里有 sentence/text
+                if extracted is None:
+                    paras = obj3.get("paragraphs") or obj3.get(" paragraphs")
+                    if isinstance(paras, list):
+                        lines = []
+                        for it in paras:
+                            if isinstance(it, dict):
+                                s = it.get("sentence") or it.get(" sentence") or it.get("text") or it.get(" content")
+                                if isinstance(s, str) and s.strip():
+                                    lines.append(s.strip())
+                        if lines:
+                            extracted = "\n".join(lines)
+
+                # 3) 处理 {'1': '...', '2': '...'} 这类数字键分段
+                if extracted is None:
+                    try:
+                        items = []
+                        for k, v in obj3.items():
+                            if isinstance(k, str) and k.strip().isdigit() and isinstance(v, str) and v.strip():
+                                items.append((int(k.strip()), v.strip()))
+                        if items:
+                            items.sort(key=lambda x: x[0])
+                            extracted = "\n".join([v for _, v in items])
+                    except Exception:
+                        pass
+        # 最后兜底：处理“伪 JSON / 混入脏 token”的情况
+        # 只要包含 "text" 字段，就把 text 字段后面的内容截出来当正文
+        if extracted is None and '"text"' in cleaned:
+            tail = cleaned.split('"text"', 1)[1]
+            # tail 形如: : "...." , ... 或 : .... }
+            colon = tail.find(":")
+            if colon != -1:
+                tail = tail[colon + 1 :].strip()
+
+            # 去掉开头多余的引号/逗号
+            if tail.startswith(","):
+                tail = tail[1:].lstrip()
+            if tail.startswith('"'):
+                tail = tail[1:]
+
+            # 尽量去掉末尾的引号/大括号（不追求严格 JSON，只求可读正文）
+            tail = tail.rstrip()
+            tail = tail.rstrip("}").rstrip().rstrip('"').rstrip()
+
+            # 反转义常见的 \n 和 \"
+            tail = tail.replace("\\n", "\n").replace('\\"', '"')
+
+            if tail.strip():
+                extracted = tail.strip()
+        
+            # 最终兜底：如果输出是“伪 JSON 头 + 正文”，剥离 JSON 外壳，只保留正文
+    
+        if extracted is None:
+            blob = cleaned
+
+            # 清理常见噪声 token（你看到的 -mfraction）
+            blob = re.sub(r"-mfraction\d*\s*", "", blob)
+
+            # 如果看起来是 JSON/伪 JSON，先去掉 title/summary 等键值头
+            if blob.lstrip().startswith("{"):
+                # 去掉最外层花括号
+                blob2 = blob.strip()
+                if blob2.startswith("{"):
+                    blob2 = blob2[1:]
+                if blob2.endswith("}"):
+                    blob2 = blob2[:-1]
+
+                # 删除 title/summary 行（允许各种脏引号/逗号）
+                blob2 = re.sub(r'"\s*title\s*"\s*:\s*.*?(?:\n|,)', "", blob2, flags=re.IGNORECASE | re.DOTALL)
+                blob2 = re.sub(r'"\s*summary\s*"\s*:\s*.*?(?:\n|,)', "", blob2, flags=re.IGNORECASE | re.DOTALL)
+
+                # 如果存在 text 字段，优先从 text 后面截正文（比正则更稳）
+                if '"text"' in blob2:
+                    tail = blob2.split('"text"', 1)[1]
+                    colon = tail.find(":")
+                    if colon != -1:
+                        tail = tail[colon + 1 :].strip()
+                    # 去掉开头引号
+                    if tail.startswith('"'):
+                        tail = tail[1:]
+                    # 截到最后一个引号/结尾
+                    tail = tail.rstrip().rstrip('"').rstrip()
+                    tail = tail.replace("\\n", "\n").replace('\\"', '"')
+                    if tail.strip():
+                        extracted = tail.strip()
+                else:
+                    # 没有 text 字段：把剩余内容当正文候选，去掉残留的 key/value 碎片和引号
+                    tail = re.sub(r'"\s*\w+\s*"\s*:\s*', "", blob2)
+                    tail = tail.replace("\\n", "\n").replace('\\"', '"')
+                    tail = tail.replace('"', " ").replace(",", " ").replace(":", " ")
+                    tail = re.sub(r"\s+", " ", tail).strip()
+                    if tail:
+                        extracted = tail
+        # 兜底：匹配形如 "text": 或 text": 或 text ... : 的变体（应对 text 被脏 token 污染）
+        if extracted is None:
+            m = re.search(r'text[^:]{0,20}:\s*"', cleaned, flags=re.IGNORECASE)
+            if m:
+                tail = cleaned[m.end():]
+                # 截到下一个未转义的引号附近（粗略即可）
+                end = tail.find('"')
+                if end != -1:
+                    candidate = tail[:end]
+                    candidate = candidate.replace("\\n", "\n").replace('\\"', '"').strip()
+                    if candidate:
+                        extracted = candidate
+        if extracted is not None:
+            text = extracted
+
+        return {"title": title, "summary": summary, "text": text}
     def _tts_api_key(self) -> str:
         tts_key = os.getenv("TTS_API_KEY", "").strip()
         if tts_key:
@@ -2845,8 +3123,7 @@ class WorkflowRunner:
         }
 
     def _run_story(self, ctx: StepContext, outputs: Dict[str, Any]) -> Dict[str, Any]:
-        paragraphs = self._build_story_paragraphs(ctx, outputs)
-        story_text = "\n".join(paragraphs)
+        provider = self._story_provider_name()
 
         topic = ctx.input.topic.strip() or "一个温暖的童话故事"
         tone_label = self._tone_label(ctx.input.tone)
@@ -2855,21 +3132,39 @@ class WorkflowRunner:
         secondary_character_display = self._secondary_character_display_label(ctx, outputs)
         has_secondary_character = self._has_secondary_character(ctx, outputs)
 
-        if has_secondary_character:
-            summary = (
-                f"一个围绕“{topic}”展开的短篇故事，主角是{main_character_display}，"
-                f"配角是{secondary_character_display}，整体气质{tone_label}，适合做成{audience_label}向内容。"
-            )
+        # 先尝试 LLM
+        llm_story: Dict[str, str] | None = None
+        if provider == "openai_compatible_llm":
+            try:
+                llm_story = self._generate_story_with_llm(ctx, outputs)
+            except Exception:
+                llm_story = None
+
+        if llm_story:
+            title = llm_story["title"]
+            summary = llm_story["summary"]
+            story_text = llm_story["text"]
         else:
-            summary = (
-                f"一个围绕“{topic}”展开的短篇故事，主角是{main_character_display}，"
-                f"整体气质{tone_label}，适合做成{audience_label}向内容。"
-            )
+            # fallback：模板（现有逻辑）
+            paragraphs = self._build_story_paragraphs(ctx, outputs)
+            story_text = "\n".join(paragraphs)
+
+            if has_secondary_character:
+                summary = (
+                    f"一个围绕“{topic}”展开的短篇故事，主角是{main_character_display}，"
+                    f"配角是{secondary_character_display}，整体气质{tone_label}，适合做成{audience_label}向内容。"
+                )
+            else:
+                summary = (
+                    f"一个围绕“{topic}”展开的短篇故事，主角是{main_character_display}，"
+                    f"整体气质{tone_label}，适合做成{audience_label}向内容。"
+                )
+            title = f"{topic}的故事"
 
         manifest_items = self._character_manifest_items(outputs)
 
         return {
-            "title": f"{topic}的故事",
+            "title": title,
             "summary": summary,
             "text": story_text,
             "style_profile": {
