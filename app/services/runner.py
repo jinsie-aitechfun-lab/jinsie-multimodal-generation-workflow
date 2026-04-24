@@ -1018,7 +1018,7 @@ class WorkflowRunner:
             "vertical 9:16 framing"
         )
 
-        character_anchor = self._character_consistency_anchor(ctx)
+        character_anchor = self._character_consistency_anchor(ctx, outputs)
 
         prompts: List[Dict[str, Any]] = []
 
@@ -1720,13 +1720,55 @@ class WorkflowRunner:
             return value
         return f"{ctx.input.character_style} protagonist"
 
-    def _character_consistency_anchor(self, ctx: StepContext) -> str:
+    def _character_consistency_anchor(
+        self,
+        ctx: StepContext,
+        outputs: Optional[Dict[str, Any]] = None,
+    ) -> str:
         explicit_anchor = str(
             getattr(ctx.input, "character_consistency_anchor", "") or ""
         ).strip()
         if explicit_anchor:
             return explicit_anchor
 
+        # ✅ 1) 优先走 character_manifest（primary 角色锚点）
+        primary = None
+        if outputs:
+            primary = self._manifest_character_by_role(outputs, "primary")
+
+        if isinstance(primary, dict):
+            display = str(primary.get("display_name") or "").strip()
+            species = str(primary.get("species") or "").strip()
+            traits = str(primary.get("visual_traits") or "").strip()
+            forbid = str(primary.get("forbidden_traits") or "").strip()
+
+            parts = []
+            if display and species:
+                parts.append(f"{display} ({species})")
+            elif species:
+                parts.append(species)
+            elif display:
+                parts.append(display)
+
+            if traits:
+                parts.append(traits)
+
+            if forbid:
+                parts.append(f"avoid: {forbid}")
+
+            parts.extend(
+                [
+                    "same character across all scenes",
+                    "consistent facial features",
+                    "consistent body shape",
+                    "consistent outfit and visual identity",
+                    "cute expressive face",
+                    "storybook details",
+                ]
+            )
+            return ", ".join([p for p in parts if p])
+
+        # ✅ 2) 其次走 ctx.input.main_character（旧逻辑保留）
         main_character = str(getattr(ctx.input, "main_character", "") or "").strip()
         if main_character:
             return (
@@ -1739,6 +1781,7 @@ class WorkflowRunner:
                 "storybook details"
             )
 
+        # ✅ 3) 最后兜底（旧逻辑保留）
         return (
             f"{ctx.input.character_style} protagonist, "
             "same character across all scenes, "
@@ -1748,7 +1791,6 @@ class WorkflowRunner:
             "cute expressive face, "
             "storybook details"
         )
-
     def _character_prompt_phrase(self, ctx: StepContext) -> str:
         main_character = str(getattr(ctx.input, "main_character", "") or "").strip()
         if main_character:
@@ -3139,11 +3181,62 @@ class WorkflowRunner:
                 llm_story = self._generate_story_with_llm(ctx, outputs)
             except Exception:
                 llm_story = None
+        story_text = ""
+        title = ""
+        summary = ""
 
         if llm_story:
-            title = llm_story["title"]
-            summary = llm_story["summary"]
-            story_text = llm_story["text"]
+            title = llm_story.get("title", "") or ""
+            summary = llm_story.get("summary", "") or ""
+            story_text = llm_story.get("text", "") or ""
+        # ✅ 关键：先清洗 LLM text，再判断是否可用
+        raw_text = story_text or ""
+        cleaned_text = raw_text.strip()
+
+        # 1) 如果是 JSON-like，优先尝试提取 text 字段
+        if cleaned_text.startswith("{") or cleaned_text.startswith("["):
+            extracted = None
+            # 尝试从 JSON 中抽 text
+            try:
+                obj = json.loads(cleaned_text)
+                if isinstance(obj, dict):
+                    v = obj.get("text")
+                    if isinstance(v, str) and v.strip():
+                        extracted = v.strip()
+            except Exception:
+                extracted = None
+
+            # 兜底：从内容里截第一段 {...} 再 parse
+            if extracted is None and "{" in cleaned_text and "}" in cleaned_text:
+                start = cleaned_text.find("{")
+                end = cleaned_text.rfind("}")
+                if 0 <= start < end:
+                    snippet = cleaned_text[start : end + 1]
+                    try:
+                        obj2 = json.loads(snippet)
+                        if isinstance(obj2, dict):
+                            v2 = obj2.get("text")
+                            if isinstance(v2, str) and v2.strip():
+                                extracted = v2.strip()
+                    except Exception:
+                        extracted = None
+
+            if extracted is not None:
+                cleaned_text = extracted
+
+        # 2) 如果清洗后仍然像结构体，判失败，走模板
+        looks_like_struct = cleaned_text.startswith("{") or cleaned_text.startswith("[") or cleaned_text.startswith("{'") or cleaned_text.startswith("['")
+        if (not cleaned_text) or looks_like_struct:
+            llm_story = None
+        else:
+            story_text = cleaned_text
+
+        if llm_story:
+            # LLM OK：使用正文
+            title = title or f"{topic}的故事"
+            summary = summary or (
+                f"一个围绕“{topic}”展开的短篇故事，整体气质{tone_label}，适合做成{audience_label}向内容。"
+            )
         else:
             # fallback：模板（现有逻辑）
             paragraphs = self._build_story_paragraphs(ctx, outputs)
@@ -3160,7 +3253,6 @@ class WorkflowRunner:
                     f"整体气质{tone_label}，适合做成{audience_label}向内容。"
                 )
             title = f"{topic}的故事"
-
         manifest_items = self._character_manifest_items(outputs)
 
         return {
@@ -3191,7 +3283,15 @@ class WorkflowRunner:
     ) -> Dict[str, Any]:
         scene_count = self._scene_count(ctx.input.duration_sec)
         blueprints = self._scene_blueprints(ctx, scene_count, outputs)
-        paragraphs = self._build_story_paragraphs(ctx, outputs)
+        story_out = outputs.get("story") or {}
+        story_text = str(story_out.get("text") or "").strip()
+
+        if story_text:
+            paragraphs = self._split_story_sentences(story_text)
+            if not paragraphs:
+                paragraphs = [story_text]
+        else:
+            paragraphs = self._build_story_paragraphs(ctx, outputs)
         total_duration_sec = ctx.input.duration_sec
         per_scene_duration = max(1, total_duration_sec // max(scene_count, 1))
 
@@ -3199,11 +3299,12 @@ class WorkflowRunner:
 
         scenes: List[Dict[str, Any]] = []
         for index, blueprint in enumerate(blueprints, start=1):
-            narration = (
-                paragraphs[index - 1]
-                if index - 1 < len(paragraphs)
-                else paragraphs[-1]
-            )
+            if not paragraphs:
+                narration = ""
+            else:
+                pos = int((index - 1) * len(paragraphs) / max(scene_count, 1))
+                pos = max(0, min(len(paragraphs) - 1, pos))
+                narration = paragraphs[pos]
 
             scenes.append(
                 {
