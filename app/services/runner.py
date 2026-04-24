@@ -28,6 +28,7 @@ from app.services.image_provider_adapter import ApiImageGeneratorAdapter
 from app.services.image_provider_types import ImageGenerationTask
 from app.services.runner_single_scene_image_support import RunnerSingleSceneImageSupport
 from app.services.topic_character_infer import infer_primary_character_manifest
+from app.services.llm_output_sanitizer import parse_story_payload
 
 
 class UnknownStepError(Exception):
@@ -365,167 +366,12 @@ class WorkflowRunner:
 
         title = f"{topic}的故事"
         summary = f"一个围绕“{topic}”展开的短篇故事，整体气质{tone_label}，适合做成{audience_label}向内容。"
-        text = content
-        
-        # 如果模型把内容包成 JSON（常见），就尽量抽出 text 字段，避免前端看到一坨伪 JSON/乱码
-        cleaned = content.strip()
-        cleaned = cleaned.replace("-mfraction", "").replace("adidas", "")
 
-        # 去掉 ```json ... ``` 包裹
-        if cleaned.startswith("```"):
-            cleaned = cleaned.strip("`").strip()
-            if cleaned.lower().startswith("json"):
-                cleaned = cleaned[4:].strip()
+        parsed = parse_story_payload(content, topic=topic)
+        text = parsed["text"] if parsed and parsed.get("text") else content
 
-        # 尝试直接当 JSON 解析
-        extracted = None
-        try:
-            obj = json.loads(cleaned)
-            if isinstance(obj, dict):
-                maybe_text = obj.get("text")
-                if isinstance(maybe_text, str) and maybe_text.strip():
-                    extracted = maybe_text.strip()
-        except Exception:
-            extracted = None
-
-        # 再尝试：从内容里截取第一段 {...} 再 parse（应对前后夹杂脏字符）
-        if extracted is None and "{" in cleaned and "}" in cleaned:
-            start = cleaned.find("{")
-            end = cleaned.rfind("}")
-            if 0 <= start < end:
-                snippet = cleaned[start : end + 1]
-                try:
-                    obj2 = json.loads(snippet)
-                    if isinstance(obj2, dict):
-                        maybe_text2 = obj2.get("text")
-                        if isinstance(maybe_text2, str) and maybe_text2.strip():
-                            extracted = maybe_text2.strip()
-                except Exception:
-                    extracted = None
-        # 再兜底：处理 Python dict 风格（单引号）的输出，如 {' paragraphs': [{' sentence': '...'}]}
-        if extracted is None:
-            try:
-                obj3 = ast.literal_eval(cleaned)
-            except Exception:
-                obj3 = None
-
-            if isinstance(obj3, dict):
-                # 1) 常见：text/Text 字段
-                for k in ("text", "Text", "TEXT", "story", "content"):
-                    v = obj3.get(k)
-                    if isinstance(v, str) and v.strip():
-                        extracted = v.strip()
-                        break
-
-                # 2) 常见：paragraphs / paragraphs 列表，元素里有 sentence/text
-                if extracted is None:
-                    paras = obj3.get("paragraphs") or obj3.get(" paragraphs")
-                    if isinstance(paras, list):
-                        lines = []
-                        for it in paras:
-                            if isinstance(it, dict):
-                                s = it.get("sentence") or it.get(" sentence") or it.get("text") or it.get(" content")
-                                if isinstance(s, str) and s.strip():
-                                    lines.append(s.strip())
-                        if lines:
-                            extracted = "\n".join(lines)
-
-                # 3) 处理 {'1': '...', '2': '...'} 这类数字键分段
-                if extracted is None:
-                    try:
-                        items = []
-                        for k, v in obj3.items():
-                            if isinstance(k, str) and k.strip().isdigit() and isinstance(v, str) and v.strip():
-                                items.append((int(k.strip()), v.strip()))
-                        if items:
-                            items.sort(key=lambda x: x[0])
-                            extracted = "\n".join([v for _, v in items])
-                    except Exception:
-                        pass
-        # 最后兜底：处理“伪 JSON / 混入脏 token”的情况
-        # 只要包含 "text" 字段，就把 text 字段后面的内容截出来当正文
-        if extracted is None and '"text"' in cleaned:
-            tail = cleaned.split('"text"', 1)[1]
-            # tail 形如: : "...." , ... 或 : .... }
-            colon = tail.find(":")
-            if colon != -1:
-                tail = tail[colon + 1 :].strip()
-
-            # 去掉开头多余的引号/逗号
-            if tail.startswith(","):
-                tail = tail[1:].lstrip()
-            if tail.startswith('"'):
-                tail = tail[1:]
-
-            # 尽量去掉末尾的引号/大括号（不追求严格 JSON，只求可读正文）
-            tail = tail.rstrip()
-            tail = tail.rstrip("}").rstrip().rstrip('"').rstrip()
-
-            # 反转义常见的 \n 和 \"
-            tail = tail.replace("\\n", "\n").replace('\\"', '"')
-
-            if tail.strip():
-                extracted = tail.strip()
-        
-            # 最终兜底：如果输出是“伪 JSON 头 + 正文”，剥离 JSON 外壳，只保留正文
+        return {"title": title.strip(), "summary": summary.strip(), "text": text.strip()}
     
-        if extracted is None:
-            blob = cleaned
-
-            # 清理常见噪声 token（你看到的 -mfraction）
-            blob = re.sub(r"-mfraction\d*\s*", "", blob)
-
-            # 如果看起来是 JSON/伪 JSON，先去掉 title/summary 等键值头
-            if blob.lstrip().startswith("{"):
-                # 去掉最外层花括号
-                blob2 = blob.strip()
-                if blob2.startswith("{"):
-                    blob2 = blob2[1:]
-                if blob2.endswith("}"):
-                    blob2 = blob2[:-1]
-
-                # 删除 title/summary 行（允许各种脏引号/逗号）
-                blob2 = re.sub(r'"\s*title\s*"\s*:\s*.*?(?:\n|,)', "", blob2, flags=re.IGNORECASE | re.DOTALL)
-                blob2 = re.sub(r'"\s*summary\s*"\s*:\s*.*?(?:\n|,)', "", blob2, flags=re.IGNORECASE | re.DOTALL)
-
-                # 如果存在 text 字段，优先从 text 后面截正文（比正则更稳）
-                if '"text"' in blob2:
-                    tail = blob2.split('"text"', 1)[1]
-                    colon = tail.find(":")
-                    if colon != -1:
-                        tail = tail[colon + 1 :].strip()
-                    # 去掉开头引号
-                    if tail.startswith('"'):
-                        tail = tail[1:]
-                    # 截到最后一个引号/结尾
-                    tail = tail.rstrip().rstrip('"').rstrip()
-                    tail = tail.replace("\\n", "\n").replace('\\"', '"')
-                    if tail.strip():
-                        extracted = tail.strip()
-                else:
-                    # 没有 text 字段：把剩余内容当正文候选，去掉残留的 key/value 碎片和引号
-                    tail = re.sub(r'"\s*\w+\s*"\s*:\s*', "", blob2)
-                    tail = tail.replace("\\n", "\n").replace('\\"', '"')
-                    tail = tail.replace('"', " ").replace(",", " ").replace(":", " ")
-                    tail = re.sub(r"\s+", " ", tail).strip()
-                    if tail:
-                        extracted = tail
-        # 兜底：匹配形如 "text": 或 text": 或 text ... : 的变体（应对 text 被脏 token 污染）
-        if extracted is None:
-            m = re.search(r'text[^:]{0,20}:\s*"', cleaned, flags=re.IGNORECASE)
-            if m:
-                tail = cleaned[m.end():]
-                # 截到下一个未转义的引号附近（粗略即可）
-                end = tail.find('"')
-                if end != -1:
-                    candidate = tail[:end]
-                    candidate = candidate.replace("\\n", "\n").replace('\\"', '"').strip()
-                    if candidate:
-                        extracted = candidate
-        if extracted is not None:
-            text = extracted
-
-        return {"title": title, "summary": summary, "text": text}
     def _tts_api_key(self) -> str:
         tts_key = os.getenv("TTS_API_KEY", "").strip()
         if tts_key:
