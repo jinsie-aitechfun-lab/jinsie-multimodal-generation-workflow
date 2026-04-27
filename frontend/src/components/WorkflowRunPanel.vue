@@ -181,8 +181,9 @@ function updateSelectedStep(step: StepName, checked: boolean) {
             class="input"
             @change="updateFormState('voiceMode', ($event.target as HTMLSelectElement).value)"
           >
-            <option value="single">single</option>
-            <option value="multi">multi</option>
+            <option value="single">single · 单人旁白</option>
+            <option value="multi">multi · 亲子双人轮流</option>
+            <option value="character">character · 角色配音</option>
           </select>
         </label>
 
@@ -198,8 +199,8 @@ function updateSelectedStep(step: StepName, checked: boolean) {
           />
         </label>
 
-        <label v-if="formState.voiceMode === 'multi'" class="field">
-          <span>Mother Voice</span>
+        <label v-if="formState.voiceMode === 'multi' || formState.voiceMode === 'character'" class="field">
+          <span>{{ formState.voiceMode === 'character' ? 'Secondary Character Voice' : 'Mother Voice' }}</span>
           <input
             :value="formState.motherVoiceStyle"
             class="input"
@@ -210,8 +211,8 @@ function updateSelectedStep(step: StepName, checked: boolean) {
           />
         </label>
 
-        <label v-if="formState.voiceMode === 'multi'" class="field">
-          <span>Child Voice</span>
+        <label v-if="formState.voiceMode === 'multi' || formState.voiceMode === 'character'" class="field">
+          <span>{{ formState.voiceMode === 'character' ? 'Main Character Voice' : 'Child Voice' }}</span>
           <input
             :value="formState.childVoiceStyle"
             class="input"

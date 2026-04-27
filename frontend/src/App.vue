@@ -1189,6 +1189,18 @@ async function runWorkflow() {
 
   // 关键：是否启用结构化角色，不再由 checkbox 决定
   const enableStructuredCharacters = finalCharacters.length > 0
+
+  const primaryCharacter =
+    finalCharacters.find((item) => item.role_type === 'primary') || finalCharacters[0]
+
+  const secondaryCharacter = finalCharacters.find(
+    (item) => item.role_type === 'secondary',
+  )
+
+  const mainCharacterDisplay = String(primaryCharacter?.display_name || '').trim()
+  const mainCharacterSpecies = String(primaryCharacter?.species || '').trim()
+  const secondaryCharacterDisplay = String(secondaryCharacter?.display_name || '').trim()
+  const secondaryCharacterSpecies = String(secondaryCharacter?.species || '').trim()
   
   const sessionId =
   form.sessionId.trim() || `demo-session-${Date.now().toString(36)}`
@@ -1202,6 +1214,19 @@ async function runWorkflow() {
       tone: form.tone,
       visual_style: form.visualStyle,
       character_style: form.characterStyle,
+      main_character: mainCharacterSpecies || mainCharacterDisplay,
+      main_character_display: mainCharacterDisplay,
+      main_character_species: mainCharacterSpecies || 'rabbit',
+      secondary_character: secondaryCharacterSpecies || secondaryCharacterDisplay,
+      secondary_character_display: secondaryCharacterDisplay,
+      secondary_character_species: secondaryCharacterSpecies || 'turtle',
+      character_speaker_profiles: enableStructuredCharacters
+        ? {
+            narrator: form.narratorVoiceStyle,
+            main_character: form.childVoiceStyle,
+            secondary_character: form.motherVoiceStyle,
+          }
+        : {},
       ...(enableStructuredCharacters
         ? {
             structured_characters_enabled: true,
