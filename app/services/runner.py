@@ -305,7 +305,10 @@ class WorkflowRunner:
                 traits = str(item.get("visual_traits") or "").strip()
                 forbid = str(item.get("forbidden_traits") or "").strip()
                 parts.append(
-                    f"- role={role}, name={display}, species={species}, traits={traits}, forbid={forbid}"
+                    f"- {display or species or '角色'}：请在故事中自然出现并参与情节；"
+                    f"{('物种是' + species + '；') if species else ''}"
+                    f"{('外观特征：' + traits + '；') if traits else ''}"
+                    f"{('禁止出现：' + forbid + '；') if forbid else ''}"
                 )
             character_hint = "\n".join(parts)
 
@@ -327,6 +330,7 @@ class WorkflowRunner:
             f"- 4-6 paragraphs. Each paragraph 1-3 sentences.\n"
             f"- Provide a clear beginning, problem, attempt, resolution.\n"
             f"- Do NOT include any JSON or section headings.\n"
+            f"- Do NOT output any tokens like 'role=', 'species=', 'traits=', 'forbid='.\n"
             f"Characters (if provided):\n{character_hint or '- (none)'}\n"
         )
 
