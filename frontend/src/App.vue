@@ -1220,13 +1220,14 @@ async function runWorkflow() {
       secondary_character: secondaryCharacterSpecies || secondaryCharacterDisplay,
       secondary_character_display: secondaryCharacterDisplay,
       secondary_character_species: secondaryCharacterSpecies || 'turtle',
-      character_speaker_profiles: enableStructuredCharacters
-        ? {
-            narrator: form.narratorVoiceStyle,
-            main_character: form.childVoiceStyle,
-            secondary_character: form.motherVoiceStyle,
-          }
-        : {},
+      character_speaker_profiles:
+        form.voiceMode === 'character'
+          ? {
+              narrator: form.narratorVoiceStyle,
+              main_character: form.childVoiceStyle,
+              secondary_character: form.motherVoiceStyle,
+            }
+          : {},
       ...(enableStructuredCharacters
         ? {
             structured_characters_enabled: true,
@@ -1238,11 +1239,15 @@ async function runWorkflow() {
       voice_style: form.voiceStyle,
       voiceover_enabled: form.voiceoverEnabled,
       voice_mode: form.voiceMode,
-      speaker_profiles: {
-        narrator: form.narratorVoiceStyle,
-        mother: form.motherVoiceStyle,
-        child: form.childVoiceStyle,
-      },
+      ...(form.voiceMode === 'character'
+        ? {}
+        : {
+            speaker_profiles: {
+              narrator: form.narratorVoiceStyle,
+              mother: form.motherVoiceStyle,
+              child: form.childVoiceStyle,
+            },
+          }),
       duration_sec: form.durationSec,
       language: form.language,
       subtitle_enabled: form.subtitleEnabled,
