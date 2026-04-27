@@ -169,6 +169,7 @@ class RunnerAudioRenderSupport:
 
         if voice_mode == "multi":
             alternating_speakers = ["mother", "child"]
+            speaker_cursor = 0
 
             for index, scene in enumerate(scenes, start=1):
                 text = str(scene.get("narration", "")).strip()
@@ -181,8 +182,10 @@ class RunnerAudioRenderSupport:
 
                 for seg_index, segment in enumerate(segments, start=1):
                     speaker = alternating_speakers[
-                        (seg_index - 1) % len(alternating_speakers)
+                        speaker_cursor % len(alternating_speakers)
                     ]
+                    speaker_cursor += 1
+
                     final_text = f"{segment}。"
                     lines.append(
                         {

@@ -82,6 +82,72 @@ function updateSelectedStep(step: StepName, checked: boolean) {
     current.filter((item) => item !== step)
   )
 }
+
+function applyPresetCharacter() {
+  console.log('[preset] character clicked')
+  emit('update:formState', {
+    ...props.formState,
+    voiceoverEnabled: true,
+    subtitleEnabled: true,
+    voiceMode: 'character',
+
+    narratorVoiceStyle: 'warm_female',
+    motherVoiceStyle: 'warm_male',
+    childVoiceStyle: 'gentle_child',
+
+    structuredCharactersEnabled: true,
+    primaryCharacterDisplayName: '小兔子',
+    primaryCharacterSpecies: 'rabbit',
+    secondaryCharacterDisplayName: '小乌龟',
+    secondaryCharacterSpecies: 'turtle',
+  })
+  applyPresetFullSteps()
+}
+
+function applyPresetMulti() {
+  console.log('[preset] multi clicked')
+  emit('update:formState', {
+    ...props.formState,
+    voiceoverEnabled: true,
+    subtitleEnabled: true,
+    voiceMode: 'multi',
+
+    narratorVoiceStyle: 'warm_female',
+    motherVoiceStyle: 'warm_female',
+    childVoiceStyle: 'gentle_child',
+  })
+  applyPresetFullSteps()
+}
+
+function applyPresetFullSteps() {
+  emit('update:selectedSteps', [
+    'story',
+    'storyboard',
+    'image_prompts',
+    'image_assets',
+    'video_prompts',
+    'dialogue_script',
+    'audio_segments',
+    'narration',
+    'subtitles',
+    'render_plan',
+    'final_video',
+  ])
+}
+
+function applyPresetMinimalSteps() {
+  console.log('[preset] minimal clicked')
+  // 最简步骤：减少等待（只保留必要产物）
+  emit('update:selectedSteps', [
+    'story',
+    'storyboard',
+    'dialogue_script',
+    'audio_segments',
+    'narration',
+    'subtitles',
+  ])
+}
+
 </script>
 
 <template>
@@ -176,6 +242,19 @@ function updateSelectedStep(step: StepName, checked: boolean) {
 
         <label class="field">
           <span>Voice Mode</span>
+
+          <div class="presetRow">
+            <button type="button" class="presetBtn" @click="applyPresetCharacter">
+              Preset · 角色配音（兔子/乌龟）
+            </button>
+            <button type="button" class="presetBtn" @click="applyPresetMulti">
+              Preset · 亲子轮流（妈妈/宝宝）
+            </button>
+            <button type="button" class="presetBtn subtle" @click="applyPresetMinimalSteps">
+              Preset · 最简验证（不出候选图/不出视频）
+            </button>
+          </div>
+
           <select
             :value="formState.voiceMode"
             class="input"
@@ -598,4 +677,23 @@ function updateSelectedStep(step: StepName, checked: boolean) {
   color: #dc2626;
   font-size: 14px;
 }
+
+.presetRow{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  margin:6px 0 8px 0;
+}
+.presetBtn{
+  border:1px solid rgba(0,0,0,0.12);
+  border-radius:10px;
+  padding:6px 10px;
+  font-size:12px;
+  cursor:pointer;
+  background:#fff;
+}
+.presetBtn.subtle{
+  opacity:0.8;
+}
+
 </style>
