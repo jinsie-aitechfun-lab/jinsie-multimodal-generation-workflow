@@ -230,6 +230,92 @@ function applyPresetMinimalSteps() {
     'subtitles',
   ])
 }
+
+// ---- topic vs manual characters warning (UI only) ----
+function detectTopicSpecies(topic: string): Set<'cat' | 'dog' | 'rabbit' | 'turtle'> {
+  const t = (topic || '').trim()
+  const lower = t.toLowerCase()
+  const hits = new Set<'cat' | 'dog' | 'rabbit' | 'turtle'>()
+
+  const hitCat = t.includes('猫') || lower.includes('cat') || lower.includes('kitten')
+  if (hitCat) hits.add('cat')
+
+  const hitDog = t.includes('狗') || lower.includes('dog') || lower.includes('puppy')
+  if (hitDog) hits.add('dog')
+
+  const hitRabbit = t.includes('兔') || lower.includes('rabbit') || lower.includes('bunny')
+  if (hitRabbit) hits.add('rabbit')
+
+  const hitTurtle = t.includes('乌龟') || t.includes('龟') || lower.includes('turtle')
+  if (hitTurtle) hits.add('turtle')
+
+  return hits
+}
+
+function normalizeManualSpecies(raw: string): 'cat' | 'dog' | 'rabbit' | 'turtle' | null {
+  const s = (raw || '').trim().toLowerCase()
+  if (!s) return null
+
+  // english
+  if (s === 'cat') return 'cat'
+  if (s === 'dog') return 'dog'
+  if (s === 'rabbit' || s === 'bunny') return 'rabbit'
+  if (s === 'turtle') return 'turtle'
+
+  // chinese / mixed
+  if (s.includes('猫')) return 'cat'
+  if (s.includes('狗')) return 'dog'
+  if (s.includes('兔')) return 'rabbit'
+  if (s.includes('龟')) return 'turtle'
+
+  return null
+}
+
+function formatSpeciesLabel(key: string): string {
+  if (key === 'cat') return '猫'
+  if (key === 'dog') return '狗'
+  if (key === 'rabbit') return '兔子'
+  if (key === 'turtle') return '乌龟'
+  return key
+}
+
+function getTopicManualMismatchWarning(): string {
+  const f = props.formState
+
+  // Only meaningful in character mode with manual override enabled
+  if (f.voiceMode !== 'character') return ''
+  if (!f.structuredCharactersEnabled) return ''
+
+  const topicHits = detectTopicSpecies(f.topic)
+
+  const manualHits = new Set<string>()
+  const primary = normalizeManualSpecies(f.primaryCharacterSpecies) ||
+    normalizeManualSpecies(f.primaryCharacterDisplayName)
+  const secondary = normalizeManualSpecies(f.secondaryCharacterSpecies) ||
+    normalizeManualSpecies(f.secondaryCharacterDisplayName)
+
+  if (primary) manualHits.add(primary)
+  if (secondary) manualHits.add(secondary)
+
+  // if user didn't really specify any manual character, no warning
+  if (manualHits.size === 0) return ''
+  if (topicHits.size === 0) return ''
+
+  // mismatch only when there is NO intersection
+  let intersect = false
+  for (const k of manualHits) {
+    if (topicHits.has(k as any)) {
+      intersect = true
+      break
+    }
+  }
+  if (intersect) return ''
+
+  const topicLabels = Array.from(topicHits).map(formatSpeciesLabel).join('、')
+  const manualLabels = Array.from(manualHits).map(formatSpeciesLabel).join('、')
+
+  return `主题提到了：${topicLabels}；你手动指定：${manualLabels}。将以手动为准。`
+}
 </script>
 
 <template>
@@ -337,6 +423,9 @@ function applyPresetMinimalSteps() {
 
           <div class="quickStart">
             <div class="quickStartTitle">Quick Start · 快捷模板</div>
+            <p v-if="getTopicManualMismatchWarning()" class="warn">
+              ⚠️ {{ getTopicManualMismatchWarning() }}
+            </p>
             <div class="quickStartRow">
               <button
                 type="button"
@@ -916,5 +1005,15 @@ function applyPresetMinimalSteps() {
   font-size: 12px;
   color: #111827;
   opacity: 0.7;
+}
+.warn {
+  margin: 6px 0 0 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(220, 38, 38, 0.35);
+  background: rgba(220, 38, 38, 0.06);
+  color: #991b1b;
+  font-size: 12px;
+  line-height: 1.4;
 }
 </style>
