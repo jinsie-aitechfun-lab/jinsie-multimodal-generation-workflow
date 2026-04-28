@@ -141,6 +141,31 @@ function updateSelectedStep(step: StepName, checked: boolean) {
   )
 }
 
+function applyPresetSingle() {
+  console.log('[preset] single clicked')
+  emit('update:formState', {
+    ...props.formState,
+    voiceoverEnabled: true,
+    subtitleEnabled: true,
+    voiceMode: 'single',
+
+    narratorVoiceStyle: 'warm_female',
+    motherVoiceStyle: '',
+    childVoiceStyle: '',
+
+    structuredCharactersEnabled: false,
+    primaryCharacterDisplayName: '',
+    primaryCharacterSpecies: '',
+    primaryCharacterVisualTraits: '',
+    primaryCharacterForbiddenTraits: '',
+    secondaryCharacterDisplayName: '',
+    secondaryCharacterSpecies: '',
+    secondaryCharacterVisualTraits: '',
+    secondaryCharacterForbiddenTraits: '',
+  })
+  applyPresetFullSteps()
+}
+
 function applyPresetCharacter() {
   console.log('[preset] character clicked')
   emit('update:formState', {
@@ -205,7 +230,6 @@ function applyPresetMinimalSteps() {
     'subtitles',
   ])
 }
-
 </script>
 
 <template>
@@ -301,18 +325,6 @@ function applyPresetMinimalSteps() {
         <label class="field">
           <span>Voice Mode</span>
 
-          <div class="presetRow">
-            <button type="button" class="presetBtn" @click="applyPresetCharacter">
-              Preset · 角色配音（兔子/乌龟）
-            </button>
-            <button type="button" class="presetBtn" @click="applyPresetMulti">
-              Preset · 亲子轮流（妈妈/宝宝）
-            </button>
-            <button type="button" class="presetBtn subtle" @click="applyPresetMinimalSteps">
-              Preset · 最简验证（不出候选图/不出视频）
-            </button>
-          </div>
-
           <select
             :value="formState.voiceMode"
             class="input"
@@ -322,6 +334,52 @@ function applyPresetMinimalSteps() {
             <option value="multi">multi · 亲子双人轮流</option>
             <option value="character">character · 角色配音</option>
           </select>
+
+          <div class="quickStart">
+            <div class="quickStartTitle">Quick Start · 快捷模板</div>
+            <div class="quickStartRow">
+              <button
+                type="button"
+                class="chipBtn"
+                :class="{ active: formState.voiceMode === 'single' }"
+                @click="applyPresetSingle"
+              >
+                单人旁白
+              </button>
+
+              <button
+                type="button"
+                class="chipBtn"
+                :class="{ active: formState.voiceMode === 'multi' }"
+                @click="applyPresetMulti"
+              >
+                亲子轮流
+              </button>
+
+              <button
+                type="button"
+                class="chipBtn"
+                :class="{ active: formState.voiceMode === 'character' }"
+                @click="applyPresetCharacter"
+              >
+                角色配音
+              </button>
+            </div>
+
+            <details class="advancedBox">
+              <summary class="advancedSummary">Advanced · 调试</summary>
+              <div class="advancedBody">
+                <button
+                  type="button"
+                  class="chipBtn subtle"
+                  @click="applyPresetMinimalSteps"
+                >
+                  快速运行（跳过候选图/视频）
+                </button>
+                <div class="advancedHint">仅用于调试/验收，不建议作为默认产品入口。</div>
+              </div>
+            </details>
+          </div>
         </label>
 
         <label class="field">
@@ -770,22 +828,93 @@ function applyPresetMinimalSteps() {
   font-size: 14px;
 }
 
-.presetRow{
-  display:flex;
-  gap:8px;
-  flex-wrap:wrap;
-  margin:6px 0 8px 0;
-}
-.presetBtn{
-  border:1px solid rgba(0,0,0,0.12);
-  border-radius:10px;
-  padding:6px 10px;
-  font-size:12px;
-  cursor:pointer;
-  background:#fff;
-}
-.presetBtn.subtle{
-  opacity:0.8;
+/* Quick Start / Advanced (minimal UI, product-friendly) */
+.quickStart {
+  margin: 6px auto 0;
+  max-width: 760px;
 }
 
+.quickStartTitle {
+  text-align: left;
+  margin: 2px 0 8px 0;
+  color: #111827;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.quickStartRow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(140px, 180px));
+  gap: 10px;
+  justify-content: center;
+  margin: 0 0 10px 0;
+}
+
+.chipBtn {
+  width: 100%;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  background: #fff;
+  white-space: nowrap;
+  text-align: center;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.chipBtn:hover {
+  border-color: rgba(0, 0, 0, 0.22);
+  background: rgba(17, 24, 39, 0.03);
+}
+
+.chipBtn.active {
+  border-color: #111827;
+  background: #111827;
+  color: #ffffff;
+}
+
+.chipBtn.subtle {
+  opacity: 0.85;
+}
+
+.advancedBox {
+  max-width: 760px;
+  margin-top: 6px;
+  margin-left: auto;
+  margin-right: auto;
+  border: 1px dashed rgba(0, 0, 0, 0.18);
+  border-radius: 12px;
+  padding: 10px 10px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.advancedSummary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: #111827;
+  opacity: 0.85;
+  text-align: left;
+}
+
+.advancedBox:hover {
+  border-color: rgba(0, 0, 0, 0.24);
+}
+.advancedBody {
+  margin-top: 10px;
+}
+
+.advancedBody .chipBtn {
+  max-width: 420px;
+  margin: 0 auto;
+}
+
+.advancedHint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #111827;
+  opacity: 0.7;
+}
 </style>
