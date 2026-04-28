@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "acceptance:voice": "node ../scripts/acceptance_voice_mode_payload.js",
+    "check": "npm run build && npm run acceptance:voice"
   },
   "dependencies": {
     "vue": "^3.5.30"

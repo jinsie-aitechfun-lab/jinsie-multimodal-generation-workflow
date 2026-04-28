@@ -77,7 +77,9 @@ function sliceBetween(text, startMarker, endMarker) {
 }
 
 function main() {
-  const repoRoot = process.cwd()
+  // ✅ Do NOT use process.cwd(): when invoked via `npm --prefix frontend`, cwd becomes `frontend/`
+  // scripts/ is located at <repoRoot>/scripts, so repo root is one level up from this file.
+  const repoRoot = path.resolve(__dirname, '..')
 
   const appVuePath = path.join(repoRoot, 'frontend', 'src', 'App.vue')
   const runPanelPath = path.join(
@@ -140,9 +142,8 @@ function main() {
   )
   ok('App.vue: no hardcoded default species injection found')
 
-  // ✅ Correct mutual exclusivity check:
+  // ✅ Mutual exclusivity check:
   // In character-mode block, we MUST NOT assign inputPayload.speaker_profiles (multi-mode only).
-  // Note: 'character_speaker_profiles' contains 'speaker_profiles' as a substring, so we must match the exact assignment.
   const characterIfMarker = "if (form.voiceMode === 'character')"
   const characterBlock = extractBraceBlock(appVue, characterIfMarker)
   if (!characterBlock) {
