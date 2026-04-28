@@ -1201,59 +1201,65 @@ async function runWorkflow() {
   const mainCharacterSpecies = String(primaryCharacter?.species || '').trim()
   const secondaryCharacterDisplay = String(secondaryCharacter?.display_name || '').trim()
   const secondaryCharacterSpecies = String(secondaryCharacter?.species || '').trim()
-  
+
   const sessionId =
-  form.sessionId.trim() || `demo-session-${Date.now().toString(36)}`
+    form.sessionId.trim() || `demo-session-${Date.now().toString(36)}`
+
+  const inputPayload: Record<string, unknown> = {
+    topic: form.topic.trim(),
+    audience: form.audience,
+    tone: form.tone,
+    visual_style: form.visualStyle,
+    character_style: form.characterStyle,
+    voice_style: form.voiceStyle,
+    voiceover_enabled: form.voiceoverEnabled,
+    voice_mode: form.voiceMode,
+    duration_sec: form.durationSec,
+    language: form.language,
+    subtitle_enabled: form.subtitleEnabled,
+    video_provider: form.videoProvider,
+    output_mode: form.outputMode,
+  }
+
+  if (form.voiceMode === 'multi') {
+    inputPayload.speaker_profiles = {
+      narrator: form.narratorVoiceStyle,
+      mother: form.motherVoiceStyle,
+      child: form.childVoiceStyle,
+    }
+  }
+
+  if (form.voiceMode === 'character') {
+    inputPayload.character_speaker_profiles = {
+      narrator: form.narratorVoiceStyle,
+      main_character: form.childVoiceStyle,
+      secondary_character: form.motherVoiceStyle,
+    }
+
+    inputPayload.structured_characters_enabled = enableStructuredCharacters
+
+    if (enableStructuredCharacters) {
+      inputPayload.characters = finalCharacters
+    }
+
+    if (mainCharacterDisplay || mainCharacterSpecies) {
+      inputPayload.main_character = mainCharacterSpecies || mainCharacterDisplay
+      inputPayload.main_character_display = mainCharacterDisplay
+      inputPayload.main_character_species = mainCharacterSpecies
+    }
+
+    if (secondaryCharacterDisplay || secondaryCharacterSpecies) {
+      inputPayload.secondary_character =
+        secondaryCharacterSpecies || secondaryCharacterDisplay
+      inputPayload.secondary_character_display = secondaryCharacterDisplay
+      inputPayload.secondary_character_species = secondaryCharacterSpecies
+    }
+  }
 
   const payload = {
     workflow_id: 'storybook-demo',
     session_id: sessionId,
-    input: {
-      topic: form.topic.trim(),
-      audience: form.audience,
-      tone: form.tone,
-      visual_style: form.visualStyle,
-      character_style: form.characterStyle,
-      main_character: mainCharacterSpecies || mainCharacterDisplay,
-      main_character_display: mainCharacterDisplay,
-      main_character_species: mainCharacterSpecies || 'rabbit',
-      secondary_character: secondaryCharacterSpecies || secondaryCharacterDisplay,
-      secondary_character_display: secondaryCharacterDisplay,
-      secondary_character_species: secondaryCharacterSpecies || 'turtle',
-      character_speaker_profiles:
-        form.voiceMode === 'character'
-          ? {
-              narrator: form.narratorVoiceStyle,
-              main_character: form.childVoiceStyle,
-              secondary_character: form.motherVoiceStyle,
-            }
-          : {},
-      ...(enableStructuredCharacters
-        ? {
-            structured_characters_enabled: true,
-            characters: finalCharacters,
-          }
-        : {
-            structured_characters_enabled: false,
-          }),
-      voice_style: form.voiceStyle,
-      voiceover_enabled: form.voiceoverEnabled,
-      voice_mode: form.voiceMode,
-      ...(form.voiceMode === 'character'
-        ? {}
-        : {
-            speaker_profiles: {
-              narrator: form.narratorVoiceStyle,
-              mother: form.motherVoiceStyle,
-              child: form.childVoiceStyle,
-            },
-          }),
-      duration_sec: form.durationSec,
-      language: form.language,
-      subtitle_enabled: form.subtitleEnabled,
-      video_provider: form.videoProvider,
-      output_mode: form.outputMode,
-    },
+    input: inputPayload,
     steps: selectedSteps.value.map((name) => ({ name })),
   }
   currentWorkflowPayload.value = payload as WorkflowRunPayload

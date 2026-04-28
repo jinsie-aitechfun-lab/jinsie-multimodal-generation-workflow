@@ -67,6 +67,64 @@ function updateFormState<K extends keyof WorkflowRunFormState>(
   })
 }
 
+function updateVoiceMode(value: string) {
+  if (value === 'single') {
+    emit('update:formState', {
+      ...props.formState,
+      voiceMode: 'single',
+      narratorVoiceStyle: props.formState.narratorVoiceStyle || 'warm_female',
+      motherVoiceStyle: '',
+      childVoiceStyle: '',
+      structuredCharactersEnabled: false,
+      primaryCharacterDisplayName: '',
+      primaryCharacterSpecies: '',
+      primaryCharacterVisualTraits: '',
+      primaryCharacterForbiddenTraits: '',
+      secondaryCharacterDisplayName: '',
+      secondaryCharacterSpecies: '',
+      secondaryCharacterVisualTraits: '',
+      secondaryCharacterForbiddenTraits: '',
+    })
+    return
+  }
+
+  if (value === 'multi') {
+    emit('update:formState', {
+      ...props.formState,
+      voiceMode: 'multi',
+      narratorVoiceStyle: props.formState.narratorVoiceStyle || 'warm_female',
+      motherVoiceStyle: props.formState.motherVoiceStyle || 'warm_female',
+      childVoiceStyle: props.formState.childVoiceStyle || 'gentle_child',
+      structuredCharactersEnabled: false,
+      primaryCharacterDisplayName: '',
+      primaryCharacterSpecies: '',
+      primaryCharacterVisualTraits: '',
+      primaryCharacterForbiddenTraits: '',
+      secondaryCharacterDisplayName: '',
+      secondaryCharacterSpecies: '',
+      secondaryCharacterVisualTraits: '',
+      secondaryCharacterForbiddenTraits: '',
+    })
+    return
+  }
+
+  emit('update:formState', {
+    ...props.formState,
+    voiceMode: 'character',
+    narratorVoiceStyle: props.formState.narratorVoiceStyle || 'warm_female',
+    motherVoiceStyle: props.formState.motherVoiceStyle || 'warm_male',
+    childVoiceStyle: props.formState.childVoiceStyle || 'gentle_child',
+    structuredCharactersEnabled: true,
+    primaryCharacterDisplayName:
+      props.formState.primaryCharacterDisplayName || '小兔子',
+    primaryCharacterSpecies: props.formState.primaryCharacterSpecies || 'rabbit',
+    secondaryCharacterDisplayName:
+      props.formState.secondaryCharacterDisplayName || '小乌龟',
+    secondaryCharacterSpecies:
+      props.formState.secondaryCharacterSpecies || 'turtle',
+  })
+}
+
 function updateSelectedStep(step: StepName, checked: boolean) {
   const current = [...props.selectedSteps]
 
@@ -258,7 +316,7 @@ function applyPresetMinimalSteps() {
           <select
             :value="formState.voiceMode"
             class="input"
-            @change="updateFormState('voiceMode', ($event.target as HTMLSelectElement).value)"
+            @change="updateVoiceMode(($event.target as HTMLSelectElement).value)"
           >
             <option value="single">single · 单人旁白</option>
             <option value="multi">multi · 亲子双人轮流</option>
@@ -267,7 +325,13 @@ function applyPresetMinimalSteps() {
         </label>
 
         <label class="field">
-          <span>Narrator Voice</span>
+          <span>
+            {{
+              formState.voiceMode === 'single'
+                ? 'Narrator Voice · 单人旁白'
+                : 'Narrator Voice · 旁白'
+            }}
+          </span>
           <input
             :value="formState.narratorVoiceStyle"
             class="input"
@@ -278,29 +342,57 @@ function applyPresetMinimalSteps() {
           />
         </label>
 
-        <label v-if="formState.voiceMode === 'multi' || formState.voiceMode === 'character'" class="field">
-          <span>{{ formState.voiceMode === 'character' ? 'Secondary Character Voice' : 'Mother Voice' }}</span>
-          <input
-            :value="formState.motherVoiceStyle"
-            class="input"
-            type="text"
-            @input="
-              updateFormState('motherVoiceStyle', ($event.target as HTMLInputElement).value)
-            "
-          />
-        </label>
+        <template v-if="formState.voiceMode === 'multi'">
+          <label class="field">
+            <span>Mother Voice · 妈妈配音</span>
+            <input
+              :value="formState.motherVoiceStyle"
+              class="input"
+              type="text"
+              @input="
+                updateFormState('motherVoiceStyle', ($event.target as HTMLInputElement).value)
+              "
+            />
+          </label>
 
-        <label v-if="formState.voiceMode === 'multi' || formState.voiceMode === 'character'" class="field">
-          <span>{{ formState.voiceMode === 'character' ? 'Main Character Voice' : 'Child Voice' }}</span>
-          <input
-            :value="formState.childVoiceStyle"
-            class="input"
-            type="text"
-            @input="
-              updateFormState('childVoiceStyle', ($event.target as HTMLInputElement).value)
-            "
-          />
-        </label>
+          <label class="field">
+            <span>Child Voice · 宝宝配音</span>
+            <input
+              :value="formState.childVoiceStyle"
+              class="input"
+              type="text"
+              @input="
+                updateFormState('childVoiceStyle', ($event.target as HTMLInputElement).value)
+              "
+            />
+          </label>
+        </template>
+
+        <template v-if="formState.voiceMode === 'character'">
+          <label class="field">
+            <span>Main Character Voice · 主角色配音</span>
+            <input
+              :value="formState.childVoiceStyle"
+              class="input"
+              type="text"
+              @input="
+                updateFormState('childVoiceStyle', ($event.target as HTMLInputElement).value)
+              "
+            />
+          </label>
+
+          <label class="field">
+            <span>Secondary Character Voice · 次角色配音</span>
+            <input
+              :value="formState.motherVoiceStyle"
+              class="input"
+              type="text"
+              @input="
+                updateFormState('motherVoiceStyle', ($event.target as HTMLInputElement).value)
+              "
+            />
+          </label>
+        </template>
 
         <label class="field">
           <span>Duration (sec)</span>
@@ -365,7 +457,7 @@ function applyPresetMinimalSteps() {
       </div>
     </section>
 
-    <section class="config-panel">
+    <section v-if="formState.voiceMode === 'character'" class="config-panel">
       <h2 class="section-title">Character Finalization</h2>
 
       <label class="checkbox-field">
