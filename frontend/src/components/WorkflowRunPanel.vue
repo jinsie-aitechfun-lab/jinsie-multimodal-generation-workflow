@@ -769,11 +769,13 @@ function getTopicManualMismatchWarning(): string {
       <p v-if="selectedSteps.length === 0" class="hint">请至少选择一个 step。</p>
     </section>
 
-    <button class="btn" :disabled="!canSubmit" @click="emit('run')">
-      {{ loading ? '请求中...' : 'Run Workflow' }}
-    </button>
-
     <p v-if="errorMessage" class="error">请求失败：{{ errorMessage }}</p>
+
+    <div class="stickyCtaBar">
+      <button class="btn stickyCtaBtn" :disabled="!canSubmit" @click="emit('run')">
+        {{ loading ? '请求中...' : 'Run Workflow' }}
+      </button>
+    </div>
   </section>
 </template>
 
@@ -903,6 +905,23 @@ function getTopicManualMismatchWarning(): string {
 .btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.stickyCtaBar {
+  position: sticky;
+  bottom: 16px;
+  margin-top: 16px;
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid #e5e7eb;
+  background: rgba(248, 250, 252, 0.9);
+  backdrop-filter: blur(8px);
+  z-index: 20;
+}
+
+.stickyCtaBtn {
+  width: 100%;
+  margin-top: 0;
 }
 
 .hint {

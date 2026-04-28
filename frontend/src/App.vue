@@ -262,6 +262,18 @@ const subtitlesText = ref('')
 const renderPlanText = ref('')
 const finalVideoText = ref('')
 const finalVideoUrl = ref('')
+const recentFinalVideoUrls = ref<string[]>([])
+
+function pushRecentFinalVideoUrl(url: string) {
+  const u = String(url || '').trim()
+  if (!u) return
+
+  // 去重：最新的放最前
+  recentFinalVideoUrls.value = [
+    u,
+    ...recentFinalVideoUrls.value.filter((item) => item !== u),
+  ].slice(0, 10)
+}
 const finalVideoRendering = ref(false)
 const workflowForm = ref<WorkflowRunFormState>({ ...DEFAULT_WORKFLOW_FORM })
 const characterCandidatesText = ref('')
@@ -638,6 +650,9 @@ function applyWorkflowResponse(data: WorkflowRunResponse) {
   renderPlanText.value = extractRenderPlanText(data)
   finalVideoText.value = extractFinalVideoText(data)
   finalVideoUrl.value = extractFinalVideoUrl(data)
+  if (finalVideoUrl.value) {
+    pushRecentFinalVideoUrl(finalVideoUrl.value)
+  }
   extractMockAudioState(data)
   stepSummaries.value = buildStepSummaries(data)
   characterCandidatesText.value = extractCharacterCandidatesText(data)
@@ -1082,6 +1097,7 @@ async function runWorkflow() {
   finalVideoRendering.value = false
   finalVideoRenderInFlight.value = false
   stepSummaries.value = []
+  activeTab.value = 'review'
 
   const form = workflowForm.value
 
@@ -1351,14 +1367,27 @@ async function runWorkflow() {
         </button>
       </div>
       <section v-if="activeTab === 'run'">
-         <FinalVideoPanel
-          :final-video-url="finalVideoUrl"
-          :final-video-text="finalVideoText"
-          :workflow-response="currentWorkflowResponse"
-          :render-in-flight="finalVideoRenderInFlight"
-          @render="renderFinalVideoIfReady(currentWorkflowResponse || {})"
-          :loading="loading || refreshingImageReview || finalVideoRenderInFlight"
-        />
+        <section class="recent-videos">
+          <h2 class="section-title">Recent Videos</h2>
+
+          <div v-if="recentFinalVideoUrls.length > 0" class="recent-videos-row">
+            <video
+              v-for="(url, idx) in recentFinalVideoUrls"
+              :key="`${url}-${idx}`"
+              class="recent-video-item"
+              :src="url"
+              controls
+              playsinline
+            />
+          </div>
+
+          <div v-else class="recent-videos-empty">
+            <div class="recent-videos-empty-title">还没有生成过视频</div>
+            <div class="recent-videos-empty-desc">
+              在下方选择配音模式与参数，然后点击 <strong>Run Workflow</strong> 生成第一条视频。
+            </div>
+          </div>
+        </section>
 
         <WorkflowRunPanel
           :loading="loading"
@@ -1569,6 +1598,47 @@ h1 {
   color: #6b7280;
   font-size: 14px;
   line-height: 1.7;
+}
+
+.recent-videos {
+  margin: 0 0 18px;
+}
+
+.recent-videos-row {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding: 6px 2px;
+  scroll-snap-type: x mandatory;
+}
+
+.recent-video-item {
+  flex: 0 0 auto;
+  width: 280px;
+  height: 180px;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  background: #000000;
+  scroll-snap-align: start;
+}
+
+.recent-videos-empty {
+  border: 1px dashed #d1d5db;
+  border-radius: 14px;
+  background: #f8fafc;
+  padding: 16px;
+  color: #6b7280;
+  line-height: 1.6;
+}
+
+.recent-videos-empty-title {
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 6px;
+}
+
+.recent-videos-empty-desc strong {
+  color: #111827;
 }
 
 .tab-btn {
