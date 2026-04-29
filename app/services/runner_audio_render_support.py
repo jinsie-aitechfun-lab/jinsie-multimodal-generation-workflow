@@ -619,13 +619,14 @@ class RunnerAudioRenderSupport:
         image_asset_list = image_assets.get("assets") or []
         audio_item_list = audio_segments.get("items") or []
 
-        if not image_asset_list or not audio_item_list:
+        if not image_asset_list:
             return {
                 "enabled": False,
                 "status": "skipped",
-                "reason": "missing image_assets or audio_segments",
+                "reason": "missing image_assets",
             }
 
+        # ========= 计算总时长 =========
         total_duration_sec = 0.0
         for item in audio_item_list:
             duration_sec = float(item.get("duration_sec") or 0.0)
@@ -634,58 +635,10 @@ class RunnerAudioRenderSupport:
             total_duration_sec += max(duration_sec, 0.0)
 
         video_run_dir = self._runner._ensure_video_run_dir(ctx.run_id)
-        concat_file = self.build_video_concat_file(ctx, image_assets, audio_segments)
 
-        audio_manifest = audio_segments.get("asset_manifest") or {}
-        audio_assets = audio_manifest.get("assets") or []
-        audio_file_paths = [
-            str(PROJECT_ROOT / str(asset.get("relative_path")))
-            for asset in audio_assets
-            if asset.get("relative_path")
-        ]
-
-        if not audio_file_paths:
-            return {
-                "enabled": False,
-                "status": "skipped",
-                "reason": "no audio files available",
-            }
-
-        merged_audio_path = video_run_dir / "merged_audio.mp3"
-        merged_audio_list_path = video_run_dir / "merged_audio_inputs.txt"
-        concat_audio_lines = []
-        for path in audio_file_paths:
-            escaped_path = path.replace("'", "'\\''")
-            concat_audio_lines.append(f"file '{escaped_path}'")
-
-        merged_audio_list_path.write_text(
-            "\n".join(concat_audio_lines) + "\n",
-            encoding="utf-8",
-        )
-
-        subprocess.run(
-            [
-                "ffmpeg",
-                "-y",
-                "-f",
-                "concat",
-                "-safe",
-                "0",
-                "-i",
-                str(merged_audio_list_path),
-                "-c",
-                "copy",
-                str(merged_audio_path),
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-
-        subtitle_path = video_run_dir / "subtitles.srt"
-        subtitle_path.write_text(
-            str(subtitles.get("srt_preview", "")).strip() + "\n",
-            encoding="utf-8",
+        # ========= 生成 base video =========
+        concat_file = self.build_video_concat_file(
+            ctx, image_assets, audio_segments
         )
 
         base_video_path = video_run_dir / "base_video.mp4"
@@ -711,36 +664,108 @@ class RunnerAudioRenderSupport:
                 str(base_video_path),
             ],
             check=True,
-            capture_output=True,
-            text=True,
         )
 
+        # ========= 判断是否真的有音频文件 =========
+        audio_manifest = audio_segments.get("asset_manifest") or {}
+        audio_assets = audio_manifest.get("assets") or []
+
+        audio_file_paths: List[str] = []
+        for asset in audio_assets:
+            relative_path = str(asset.get("relative_path") or "").strip()
+            if not relative_path:
+                continue
+            full_path = PROJECT_ROOT / relative_path
+            if full_path.exists():
+                audio_file_paths.append(str(full_path))
+
+        has_audio = len(audio_file_paths) > 0
+
+        merged_audio_path = None
+
+        # ========= 有音频才 concat =========
+        if has_audio:
+            merged_audio_path = video_run_dir / "merged_audio.mp3"
+            merged_audio_list_path = video_run_dir / "merged_audio_inputs.txt"
+
+            concat_audio_lines = []
+            for path in audio_file_paths:
+                escaped_path = path.replace("'", "'\\''")
+                concat_audio_lines.append(f"file '{escaped_path}'")
+
+            merged_audio_list_path.write_text(
+                "\n".join(concat_audio_lines) + "\n",
+                encoding="utf-8",
+            )
+
+            subprocess.run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-f",
+                    "concat",
+                    "-safe",
+                    "0",
+                    "-i",
+                    str(merged_audio_list_path),
+                    "-c",
+                    "copy",
+                    str(merged_audio_path),
+                ],
+                check=True,
+            )
+
+        # ========= 写字幕 =========
+        subtitle_path = video_run_dir / "subtitles.srt"
+        subtitle_path.write_text(
+            str(subtitles.get("srt_preview", "")).strip() + "\n",
+            encoding="utf-8",
+        )
+
+        # ========= 合成 final =========
         final_video_path = video_run_dir / "final.mp4"
 
-        subprocess.run(
-            [
-                "ffmpeg",
-                "-y",
-                "-i",
-                str(base_video_path),
-                "-i",
-                str(merged_audio_path),
-                "-vf",
-                f"subtitles={subtitle_path}",
-                "-c:v",
-                "libx264",
-                "-pix_fmt",
-                "yuv420p",
-                "-c:a",
-                "aac",
-                "-shortest",
-                str(final_video_path),
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+        if has_audio and merged_audio_path:
+            subprocess.run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    str(base_video_path),
+                    "-i",
+                    str(merged_audio_path),
+                    "-vf",
+                    f"subtitles={subtitle_path}",
+                    "-c:v",
+                    "libx264",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-c:a",
+                    "aac",
+                    "-shortest",
+                    str(final_video_path),
+                ],
+                check=True,
+            )
+        else:
+            subprocess.run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    str(base_video_path),
+                    "-vf",
+                    f"subtitles={subtitle_path}",
+                    "-c:v",
+                    "libx264",
+                    "-pix_fmt",
+                    "yuv420p",
+                    str(final_video_path),
+                ],
+                check=True,
+            )
 
+        # ========= 统一 return =========
         return {
             "enabled": True,
             "status": "generated",
@@ -749,8 +774,13 @@ class RunnerAudioRenderSupport:
             "relative_path": f"assets/mock/video/{ctx.run_id}/final.mp4",
             "public_url": f"/assets/mock/video/{ctx.run_id}/final.mp4",
             "duration_sec": round(total_duration_sec, 3),
-            "audio_track_path": f"assets/mock/video/{ctx.run_id}/merged_audio.mp3",
+            "audio_track_path": (
+                f"assets/mock/video/{ctx.run_id}/merged_audio.mp3"
+                if has_audio else None
+            ),
             "subtitle_path": f"assets/mock/video/{ctx.run_id}/subtitles.srt",
+            "audio_enabled": has_audio,
+            "audio_mode": "tts" if has_audio else "silent",
         }
     def rerender_final_video(
         self,

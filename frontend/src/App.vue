@@ -188,6 +188,10 @@ type ReviewPlaceholderItem = {
   state: 'waiting' | 'refreshing' | 'done'
 }
 
+type RenderMode = 'auto' | 'manual'
+const renderMode = ref<RenderMode>('auto')
+const userHasInteractedWithImages = ref(false)
+
 const DEFAULT_WORKFLOW_FORM: WorkflowRunFormState = {
   sessionId: 'demo-session-001',
   topic: '写一个关于小猫冒险的故事',
@@ -262,6 +266,7 @@ const subtitlesText = ref('')
 const renderPlanText = ref('')
 const finalVideoText = ref('')
 const finalVideoUrl = ref('')
+const finalVideoAudioEnabled = ref(true)
 const recentFinalVideoUrls = ref<string[]>([])
 
 function pushRecentFinalVideoUrl(url: string) {
@@ -307,6 +312,32 @@ let reviewAutoRefreshFiredOnce = false
 let imageReviewAutoRefreshTimer: number | null = null
 type ViewTab = 'run' | 'review' | 'assets' | 'debug'
 const activeTab = ref<ViewTab>('run')
+const showManualRenderButton = computed(() => {
+  return (
+    renderMode.value === 'manual' &&
+    isWorkflowReadyForRender.value
+  )
+})
+
+const isWorkflowReadyForRender = computed(() => {
+  const response = currentWorkflowResponse.value
+  if (!response) return false
+
+  const outputs = response.outputs || {}
+  const storyboard = outputs.storyboard as any
+  const imageAssets = outputs.image_assets as any
+  const audioSegments = outputs.audio_segments as any
+
+  const scenes = Array.isArray(storyboard?.scenes) ? storyboard.scenes : []
+  const imageAssetList = Array.isArray(imageAssets?.assets) ? imageAssets.assets : []
+  const audioItems = Array.isArray(audioSegments?.items) ? audioSegments.items : []
+
+  return (
+    scenes.length > 0 &&
+    imageAssetList.length >= scenes.length &&
+    audioItems.length > 0
+  )
+})
 
 watch(
   () => activeTab.value,
@@ -319,6 +350,17 @@ watch(
     if (klingSamples.value && klingSamples.value.length > 0) return
 
     void loadSampleAssets()
+  }
+)
+
+watch(
+  () => isWorkflowReadyForRender.value,
+  (ready) => {
+    if (!ready) return
+    if (renderMode.value !== 'auto') return
+    if (!currentWorkflowResponse.value) return
+
+    renderFinalVideoIfReady(currentWorkflowResponse.value)
   }
 )
 
@@ -649,6 +691,7 @@ function applyWorkflowResponse(data: WorkflowRunResponse) {
   subtitlesText.value = extractSubtitlesText(data)
   renderPlanText.value = extractRenderPlanText(data)
   finalVideoText.value = extractFinalVideoText(data)
+  finalVideoAudioEnabled.value = (data.outputs as any)?.final_video?.audio_enabled ?? true
   finalVideoUrl.value = extractFinalVideoUrl(data)
   if (finalVideoUrl.value) {
     pushRecentFinalVideoUrl(finalVideoUrl.value)
@@ -875,6 +918,8 @@ async function selectImageAsset(sceneId: string, assetRef: ImageAssetRef) {
     }
 
     applyWorkflowResponse(mergedResponse)
+    userHasInteractedWithImages.value = true
+    renderMode.value = 'manual'
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '手动选图请求失败'
   } finally {
@@ -910,7 +955,11 @@ async function renderFinalVideoIfReady(baseResponse: WorkflowRunResponse) {
   if (finalVideoEnabled && finalVideoStatus === 'generated') return
   if (scenes.length === 0) return
   if (imageAssetList.length < scenes.length) return
-  if (audioItems.length === 0) return
+  // 允许无声视频
+  // 只有在 audio_segments 存在且明确 enabled=true 但没有生成时才阻止
+  const audioEnabled = audioSegments?.enabled === true
+
+  if (audioEnabled && audioItems.length === 0) return
 
   const payload = {
     workflow_id: baseResponse.workflow_id || currentWorkflowPayload.value.workflow_id,
@@ -954,6 +1003,11 @@ async function renderFinalVideoIfReady(baseResponse: WorkflowRunResponse) {
     finalVideoRenderInFlight.value = false
     finalVideoRendering.value = false
   }
+}
+
+function handleManualRender() {
+  if (!currentWorkflowResponse.value) return
+  renderFinalVideoIfReady(currentWorkflowResponse.value)
 }
 
 async function refreshImageReviewScene(sceneId: string) {
@@ -1412,6 +1466,9 @@ async function runWorkflow() {
       :loading="loading || refreshingImageReview || finalVideoRenderInFlight"
       @render="renderFinalVideoIfReady(currentWorkflowResponse || {})"
     />
+    <div v-if="finalVideoAudioEnabled === false" class="silent-badge">
+      🔇 无声模式
+    </div>
   </section>
 
   <!-- 有内容才显示选图和结果；没内容但在跑时，只显示 FinalVideoPanel 占位 -->
@@ -1424,7 +1481,13 @@ async function runWorkflow() {
       :selecting-scene-id="selectingSceneId || sceneRefreshingId"
       @select-asset="({ sceneId, assetRef }) => selectImageAsset(sceneId, assetRef)"
     />
-
+    <button
+      v-if="showManualRenderButton"
+      @click="handleManualRender"
+      class="manual-render-btn"
+    >
+      Render Final Video
+    </button>
     <WorkflowResultsPanel
       :story-text="storyText"
       :storyboard-text="storyboardText"
@@ -1989,6 +2052,7 @@ h1 {
 
 .final-video-hero {
   margin-bottom: 20px;
+  position: relative;
 }
 
 .final-video-shell {
@@ -2046,6 +2110,16 @@ h1 {
   min-height: 320px;
 }
 
+.silent-badge {
+  position: absolute;
+  top: 0;
+  right: 12px;
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  padding: 4px 8px;
+  font-size: 12px;
+  border-radius: 6px;
+}
 @keyframes final-video-loading {
   0% { transform: translateX(-120%); }
   100% { transform: translateX(320%); }
