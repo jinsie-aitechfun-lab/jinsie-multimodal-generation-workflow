@@ -294,6 +294,10 @@ class ImageProviderQueue:
                 }
             )
 
+        # throttle between scenes to avoid IPM limit
+        if provider == PROVIDER_API:
+            import time
+            time.sleep(3)
         return candidate_asset_refs
 
     def _generate_scene_candidates(

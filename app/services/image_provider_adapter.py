@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from typing import Any
@@ -126,9 +127,9 @@ class ApiImageGeneratorAdapter:
         generation_retry_result = run_with_retry(
             lambda: self._request_generation_response_text(request=request),
             RetryConfig(
-                max_attempts=3,
-                base_delay_seconds=2.0,
-                backoff_multiplier=1.8,
+                max_attempts=6,
+                base_delay_seconds=5.0,
+                backoff_multiplier=2.0,
                 retry_on_rate_limit=True,
                 retry_on_network_error=True,
             ),
@@ -175,9 +176,9 @@ class ApiImageGeneratorAdapter:
                 scene_index=scene_index,
             ),
             RetryConfig(
-                max_attempts=3,
-                base_delay_seconds=1.5,
-                backoff_multiplier=1.5,
+                max_attempts=6,
+                base_delay_seconds=3.0,
+                backoff_multiplier=2.0,
                 retry_on_rate_limit=True,
                 retry_on_network_error=True,
             ),
