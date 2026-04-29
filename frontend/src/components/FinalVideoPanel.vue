@@ -28,14 +28,6 @@
             <span>{{ progressLabel }}</span>
           </div>
         </div>
-
-        <button
-          class="render-button"
-          :disabled="!canRender"
-          @click="emit('render')"
-        >
-          {{ renderButtonText }}
-        </button>
       </div>
     </div>
 
@@ -54,10 +46,6 @@ const props = defineProps<{
   workflowResponse: UnknownRecord | null
   renderInFlight: boolean
   loading: boolean
-}>()
-
-const emit = defineEmits<{
-  (e: 'render'): void
 }>()
 
 function asObj(v: unknown): UnknownRecord | null {
@@ -101,19 +89,9 @@ const audioItemCount = computed(() => {
 })
 
 const finalStatus = computed(() => asStr(finalVideo.value?.status).toLowerCase())
-const finalEnabled = computed(() => Boolean(finalVideo.value?.enabled))
 
 const assetsReady = computed(() => {
   return sceneCount.value > 0 && imageAssetCount.value >= sceneCount.value
-})
-
-const canRender = computed(() => {
-  if (props.finalVideoUrl) return false
-  if (props.renderInFlight || finalStatus.value === 'rendering') return false
-  if (finalEnabled.value && finalStatus.value === 'generated') return false
-  if (!assetsReady.value) return false
-  if (audioItemCount.value === 0) return false
-  return true
 })
 
 const progressPct = computed(() => {
@@ -155,12 +133,6 @@ const placeholderDesc = computed(() => {
     return '当前缺少音频片段，请先完成音频生成。'
   }
   return '候选图已就绪。你可以直接使用默认图，也可以手动改选，然后点击按钮开始渲染。'
-})
-
-const renderButtonText = computed(() => {
-  if (props.renderInFlight || finalStatus.value === 'rendering') return 'Rendering...'
-  if (props.finalVideoUrl) return 'Rendered'
-  return 'Render Final Video'
 })
 </script>
 
