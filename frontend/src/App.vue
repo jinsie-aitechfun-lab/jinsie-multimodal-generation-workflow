@@ -312,12 +312,6 @@ let reviewAutoRefreshFiredOnce = false
 let imageReviewAutoRefreshTimer: number | null = null
 type ViewTab = 'run' | 'review' | 'assets' | 'debug'
 const activeTab = ref<ViewTab>('run')
-const showManualRenderButton = computed(() => {
-  return (
-    renderMode.value === 'manual' &&
-    isWorkflowReadyForRender.value
-  )
-})
 
 const isWorkflowReadyForRender = computed(() => {
   const response = currentWorkflowResponse.value
@@ -1457,51 +1451,85 @@ async function runWorkflow() {
       </section>
       <section v-if="activeTab === 'review'">
         <template v-if="hasReviewContent || loading || refreshingImageReview || finalVideoRenderInFlight">
-  <section class="result-panel final-video-hero">
-    <FinalVideoPanel
-      :final-video-url="finalVideoUrl"
-      :final-video-text="finalVideoText"
-      :workflow-response="currentWorkflowResponse"
-      :render-in-flight="finalVideoRenderInFlight"
-      :loading="loading || refreshingImageReview || finalVideoRenderInFlight"
-      @render="renderFinalVideoIfReady(currentWorkflowResponse || {})"
-    />
-    <div v-if="finalVideoAudioEnabled === false" class="silent-badge">
-      🔇 无声模式
-    </div>
-  </section>
+          <section class="result-panel final-video-hero">
+            <div class="render-mode-switch">
+              <span class="label">Render Mode:</span>
+              <label class="mode-option">
+                <input
+                  type="radio"
+                  value="auto"
+                  v-model="renderMode"
+                />
+                Auto
+              </label>
 
-  <!-- 有内容才显示选图和结果；没内容但在跑时，只显示 FinalVideoPanel 占位 -->
-  <template v-if="hasReviewContent">
-    <InteractiveImageReview
-      :items="imageReviewItems"
-      :placeholders="reviewPlaceholders"
-      :api-base-url="apiBaseUrl"
-      :loading="loading || refreshingImageReview"
-      :selecting-scene-id="selectingSceneId || sceneRefreshingId"
-      @select-asset="({ sceneId, assetRef }) => selectImageAsset(sceneId, assetRef)"
-    />
-    <button
-      v-if="showManualRenderButton"
-      @click="handleManualRender"
-      class="manual-render-btn"
-    >
-      Render Final Video
-    </button>
-    <WorkflowResultsPanel
-      :story-text="storyText"
-      :storyboard-text="storyboardText"
-      :image-prompts-text="imagePromptsText"
-      :image-assets-text="imageAssetsText"
-      :image-review-text="imageReviewText"
-      :video-prompts-text="videoPromptsText"
-      :narration-text="narrationText"
-      :subtitles-text="subtitlesText"
-      :render-plan-text="renderPlanText"
-      :character-candidates-text="characterCandidatesText"
-      :character-manifest-text="characterManifestText"
-    />
-  </template>
+              <label class="mode-option">
+                <input
+                  type="radio"
+                  value="manual"
+                  v-model="renderMode"
+                />
+                Manual
+              </label>
+            </div>    
+            <FinalVideoPanel
+              :final-video-url="finalVideoUrl"
+              :final-video-text="finalVideoText"
+              :workflow-response="currentWorkflowResponse"
+              :render-in-flight="finalVideoRenderInFlight"
+              :loading="loading || refreshingImageReview || finalVideoRenderInFlight"
+              @render="renderFinalVideoIfReady(currentWorkflowResponse || {})"
+              :show-render-button="renderMode === 'auto'"
+            />
+            <!-- Manual 主操作按钮 -->
+            <div
+              v-if="renderMode === 'manual'"
+              class="manual-render-wrapper"
+            >
+              <button
+                @click="handleManualRender"
+                class="manual-render-primary"
+                :disabled="!isWorkflowReadyForRender"
+              >
+                🎬 Generate Final Video
+              </button>
+
+              <div
+                v-if="!isWorkflowReadyForRender"
+                class="manual-hint"
+              >
+                等待候选图与音频生成完成…
+              </div>
+            </div>
+            <div v-if="finalVideoAudioEnabled === false" class="silent-badge">
+              🔇 无声模式
+            </div>
+          </section>
+
+          <!-- 有内容才显示选图和结果；没内容但在跑时，只显示 FinalVideoPanel 占位 -->
+          <template v-if="hasReviewContent">
+            <InteractiveImageReview
+              :items="imageReviewItems"
+              :placeholders="reviewPlaceholders"
+              :api-base-url="apiBaseUrl"
+              :loading="loading || refreshingImageReview"
+              :selecting-scene-id="selectingSceneId || sceneRefreshingId"
+              @select-asset="({ sceneId, assetRef }) => selectImageAsset(sceneId, assetRef)"
+            />
+            <WorkflowResultsPanel
+              :story-text="storyText"
+              :storyboard-text="storyboardText"
+              :image-prompts-text="imagePromptsText"
+              :image-assets-text="imageAssetsText"
+              :image-review-text="imageReviewText"
+              :video-prompts-text="videoPromptsText"
+              :narration-text="narrationText"
+              :subtitles-text="subtitlesText"
+              :render-plan-text="renderPlanText"
+              :character-candidates-text="characterCandidatesText"
+              :character-manifest-text="characterManifestText"
+            />
+          </template>
         </template>
 
         <p v-else class="empty-state">
@@ -2110,6 +2138,27 @@ h1 {
   min-height: 320px;
 }
 
+.render-mode-switch {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+
+.render-mode-switch .label {
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.mode-option {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
 .silent-badge {
   position: absolute;
   top: 0;
@@ -2119,6 +2168,40 @@ h1 {
   padding: 4px 8px;
   font-size: 12px;
   border-radius: 6px;
+}
+
+.manual-render-wrapper {
+  text-align: center;
+  margin-top: 20px;
+}
+
+.manual-render-primary {
+  padding: 14px 36px;
+  font-size: 16px;
+  font-weight: 600;
+  border-radius: 999px;
+  border: none;
+  background: linear-gradient(90deg, #6366f1, #8b5cf6);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(99, 102, 241, 0.35);
+  transition: all 0.2s ease;
+}
+
+.manual-render-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 32px rgba(99, 102, 241, 0.45);
+}
+
+.manual-render-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.manual-hint {
+  font-size: 14px;
+  opacity: 0.7;
+  margin-top: 8px;
 }
 @keyframes final-video-loading {
   0% { transform: translateX(-120%); }
