@@ -756,7 +756,7 @@ class WorkflowRunner:
                 {
                     "candidate_id": "candidate_01",
                     "display_name": main_display_name,
-                    "species": workflow_input.main_character_species.strip() or "rabbit",
+                    "species": workflow_input.main_character_species.strip() or "None",
                     "role_type": "primary",
                     "visual_traits": workflow_input.main_character_visual_traits.strip(),
                     "forbidden_traits": "",
@@ -773,7 +773,7 @@ class WorkflowRunner:
                 {
                     "candidate_id": f"candidate_{len(items) + 1:02d}",
                     "display_name": secondary_display_name,
-                    "species": workflow_input.secondary_character_species.strip() or "turtle",
+                    "species": workflow_input.secondary_character_species.strip() or "None",
                     "role_type": "secondary",
                     "visual_traits": workflow_input.secondary_character_visual_traits.strip(),
                     "forbidden_traits": "",
@@ -1514,6 +1514,7 @@ class WorkflowRunner:
         ctx: StepContext,
         outputs: Optional[Dict[str, Any]] = None,
     ) -> str:
+        # 1️⃣ manifest 优先
         if outputs:
             manifest_item = self._manifest_character_by_role(outputs, "primary")
             if manifest_item is not None:
@@ -1521,6 +1522,7 @@ class WorkflowRunner:
                 if display_value:
                     return display_value
 
+        # 2️⃣ 手填
         display_value = str(
             getattr(ctx.input, "main_character_display", "") or ""
         ).strip()
@@ -1531,8 +1533,13 @@ class WorkflowRunner:
         if main_value:
             return main_value
 
-        return self._character_style_label(ctx.input.character_style)
+        # 3️⃣ 关键修复：使用 topic 作为角色
+        topic = str(ctx.input.topic or "").strip()
+        if topic:
+            return topic
 
+        # 4️⃣ 最终 fallback
+        return self._character_style_label(ctx.input.character_style)
     def _secondary_character_display_label(
         self,
         ctx: StepContext,
