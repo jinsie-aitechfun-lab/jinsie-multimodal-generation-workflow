@@ -490,6 +490,31 @@ class RunnerAudioRenderSupport:
         audio_segments = outputs.get("audio_segments") or {}
         items_source = audio_segments.get("items") or []
 
+        # ---- fallback: silent 场景也要能生成字幕（用 storyboard.scenes 驱动时间轴）----
+        if not items_source:
+            storyboard = outputs.get("storyboard") or {}
+            scenes = storyboard.get("scenes") or []
+            if isinstance(scenes, list) and scenes:
+                synthesized = []
+                for scene in scenes:
+                    if not isinstance(scene, dict):
+                        continue
+                    text = str(scene.get("narration") or "").strip()
+                    if not text:
+                        continue
+                    duration_sec = float(scene.get("duration_sec") or 0.0)
+                    if duration_sec <= 0:
+                        duration_sec = 3.0
+                    synthesized.append(
+                        {
+                            "text": text,
+                            "duration_sec": duration_sec,
+                            "scene_id": scene.get("scene_id"),
+                            "shot_id": scene.get("shot_id"),
+                        }
+                    )
+                items_source = synthesized
+
         items: List[Dict[str, Any]] = []
         current_start = 0.0
         srt_lines: List[str] = []
@@ -746,6 +771,86 @@ class RunnerAudioRenderSupport:
         # ========= 合成 final =========
         final_video_path = video_run_dir / "final.mp4"
 
+        # ====== 若字幕时间轴超过视频时长：按比例压缩到 base_video 实际时长（silent/有声都适用）======
+        def _ffprobe_duration_sec(video_path: Path) -> float:
+            try:
+                out = subprocess.check_output(
+                    [
+                        "ffprobe",
+                        "-hide_banner",
+                        "-loglevel",
+                        "error",
+                        "-show_entries",
+                        "format=duration",
+                        "-of",
+                        "default=noprint_wrappers=1:nokey=1",
+                        str(video_path),
+                    ],
+                    text=True,
+                ).strip()
+                return float(out) if out else 0.0
+            except Exception:
+                return 0.0
+
+        def _parse_ts(ts: str) -> float:
+            hh, mm, rest = ts.split(":")
+            ss, ms = rest.split(",")
+            return int(hh) * 3600 + int(mm) * 60 + int(ss) + int(ms) / 1000.0
+
+        def _fmt_ts(sec: float) -> str:
+            if sec < 0:
+                sec = 0.0
+            ms = int(round((sec - int(sec)) * 1000))
+            total = int(sec)
+            hh = total // 3600
+            mm = (total % 3600) // 60
+            ss = total % 60
+            return f"{hh:02d}:{mm:02d}:{ss:02d},{ms:03d}"
+
+        def _rescale_srt_to_duration(srt_path: Path, target_duration: float) -> None:
+            if target_duration <= 0:
+                return
+            if not srt_path.exists():
+                return
+            txt = srt_path.read_text(encoding="utf-8", errors="ignore")
+            if not txt.strip():
+                return
+
+            lines = txt.splitlines()
+            last_end = 0.0
+            for line in lines:
+                if "-->" in line:
+                    try:
+                        end = line.split("-->")[1].strip()
+                        last_end = max(last_end, _parse_ts(end))
+                    except Exception:
+                        pass
+
+            # 已经不超过视频时长就不处理
+            if last_end <= 0 or last_end <= target_duration + 0.01:
+                return
+
+            scale = target_duration / last_end
+
+            out_lines = []
+            for line in lines:
+                if "-->" not in line:
+                    out_lines.append(line)
+                    continue
+                try:
+                    a, b = line.split("-->")
+                    start = _parse_ts(a.strip()) * scale
+                    end = _parse_ts(b.strip()) * scale
+                    if end <= start:
+                        end = start + 0.2
+                    out_lines.append(f"{_fmt_ts(start)} --> {_fmt_ts(end)}")
+                except Exception:
+                    out_lines.append(line)
+
+            srt_path.write_text("\n".join(out_lines).rstrip() + "\n", encoding="utf-8")
+
+        video_duration = _ffprobe_duration_sec(base_video_path)
+        _rescale_srt_to_duration(subtitle_path, video_duration)
         if has_audio and merged_audio_path:
             escaped_subtitle_path = (
                 str(subtitle_path)
