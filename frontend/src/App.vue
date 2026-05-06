@@ -7,18 +7,7 @@ import WorkflowRunPanel, {
 } from './components/WorkflowRunPanel.vue'
 import SampleAssetsPanel from './components/SampleAssetsPanel.vue'
 import FinalVideoPanel from './components/FinalVideoPanel.vue'
-type StepName =
-  | 'story'
-  | 'storyboard'
-  | 'image_prompts'
-  | 'image_assets'
-  | 'video_prompts'
-  | 'dialogue_script'
-  | 'audio_segments'
-  | 'narration'
-  | 'subtitles'
-  | 'render_plan'
-  | 'final_video'
+type StepName = string
 
 type StepResult = {
   name?: string
