@@ -40,6 +40,8 @@ export type WorkflowRunFormState = {
   secondaryCharacterSpecies: string
   secondaryCharacterVisualTraits: string
   secondaryCharacterForbiddenTraits: string
+  renderMode: 'auto' | 'manual'
+  audioEnabled: boolean
 }
 
 const props = defineProps<{
@@ -145,7 +147,6 @@ function applyPresetSingle() {
   console.log('[preset] single clicked')
   emit('update:formState', {
     ...props.formState,
-    voiceoverEnabled: true,
     subtitleEnabled: true,
     voiceMode: 'single',
 
@@ -170,7 +171,6 @@ function applyPresetCharacter() {
   console.log('[preset] character clicked')
   emit('update:formState', {
     ...props.formState,
-    voiceoverEnabled: true,
     subtitleEnabled: true,
     voiceMode: 'character',
 
@@ -191,7 +191,6 @@ function applyPresetMulti() {
   console.log('[preset] multi clicked')
   emit('update:formState', {
     ...props.formState,
-    voiceoverEnabled: true,
     subtitleEnabled: true,
     voiceMode: 'multi',
 
@@ -396,13 +395,16 @@ function getTopicManualMismatchWarning(): string {
 
         <label class="checkbox-field">
           <input
-            :checked="formState.voiceoverEnabled"
+            :checked="formState.audioEnabled ? formState.voiceoverEnabled : false"
+            :disabled="!formState.audioEnabled"
             type="checkbox"
             @change="
-              updateFormState(
-                'voiceoverEnabled',
-                ($event.target as HTMLInputElement).checked
-              )
+              emit('update:formState', {
+                ...props.formState,
+                voiceoverEnabled: props.formState.audioEnabled
+                  ? ($event.target as HTMLInputElement).checked
+                  : false,
+              })
             "
           />
           <span>Enable Voiceover</span>
@@ -420,7 +422,50 @@ function getTopicManualMismatchWarning(): string {
             <option value="multi">multi · 亲子双人轮流</option>
             <option value="character">character · 角色配音</option>
           </select>
+          <div class="mode-config">
+            <div class="config-label">Render Mode</div>
 
+            <label>
+              <input
+                type="radio"
+                value="auto"
+                :checked="formState.renderMode === 'auto'"
+                @change="updateFormState('renderMode', 'auto')"
+              />
+              Auto
+            </label>
+
+            <label>
+              <input
+                type="radio"
+                value="manual"
+                :checked="formState.renderMode === 'manual'"
+                @change="updateFormState('renderMode', 'manual')"
+              />
+              Manual
+            </label>
+          </div>
+
+          <div class="audio-config">
+            <label>
+              <input
+                type="checkbox"
+                :checked="formState.audioEnabled"
+                @change="
+                  (e) => {
+                    const checked = (e.target as HTMLInputElement).checked
+                    emit('update:formState', {
+                      ...props.formState,
+                      audioEnabled: checked,
+                      // 你同意的语义：关音频 = 关配音
+                      voiceoverEnabled: checked ? true : false,
+                    })
+                  }
+                "
+              />
+              Enable Audio
+            </label>
+          </div>
           <div class="quickStart">
             <div class="quickStartTitle">Quick Start · 快捷模板</div>
             <p v-if="getTopicManualMismatchWarning()" class="warn">

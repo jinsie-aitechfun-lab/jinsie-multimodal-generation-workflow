@@ -188,8 +188,6 @@ type ReviewPlaceholderItem = {
   state: 'waiting' | 'refreshing' | 'done'
 }
 
-type RenderMode = 'auto' | 'manual'
-const renderMode = ref<RenderMode>('auto')
 const userHasInteractedWithImages = ref(false)
 
 const DEFAULT_WORKFLOW_FORM: WorkflowRunFormState = {
@@ -220,6 +218,8 @@ const DEFAULT_WORKFLOW_FORM: WorkflowRunFormState = {
   secondaryCharacterSpecies: '',
   secondaryCharacterVisualTraits: '',
   secondaryCharacterForbiddenTraits: '',
+  renderMode: 'auto',
+  audioEnabled: true,
 }
 
 const STEP_OPTIONS: Array<{ label: string; value: StepName }> = [
@@ -281,6 +281,14 @@ function pushRecentFinalVideoUrl(url: string) {
 }
 const finalVideoRendering = ref(false)
 const workflowForm = ref<WorkflowRunFormState>({ ...DEFAULT_WORKFLOW_FORM })
+function onUpdateFormState(next: WorkflowRunFormState) {
+  console.log('[parent] onUpdateFormState audioEnabled=', next.audioEnabled, 'voiceoverEnabled=', next.voiceoverEnabled)
+  workflowForm.value = next
+}
+
+function onUpdateSelectedSteps(next: StepName[]) {
+  selectedSteps.value = next
+}
 const characterCandidatesText = ref('')
 const characterManifestText = ref('')
 
@@ -325,11 +333,13 @@ const isWorkflowReadyForRender = computed(() => {
   const scenes = Array.isArray(storyboard?.scenes) ? storyboard.scenes : []
   const imageAssetList = Array.isArray(imageAssets?.assets) ? imageAssets.assets : []
   const audioItems = Array.isArray(audioSegments?.items) ? audioSegments.items : []
+  const audioEnabled = audioSegments?.enabled === true
+  const audioOk = !audioEnabled || audioItems.length > 0
 
   return (
     scenes.length > 0 &&
     imageAssetList.length >= scenes.length &&
-    audioItems.length > 0
+    audioOk
   )
 })
 
@@ -351,7 +361,7 @@ watch(
   () => isWorkflowReadyForRender.value,
   (ready) => {
     if (!ready) return
-    if (renderMode.value !== 'auto') return
+    if (workflowForm.value.renderMode !== 'auto') return
     if (!currentWorkflowResponse.value) return
 
     renderFinalVideoIfReady(currentWorkflowResponse.value)
@@ -913,7 +923,6 @@ async function selectImageAsset(sceneId: string, assetRef: ImageAssetRef) {
 
     applyWorkflowResponse(mergedResponse)
     userHasInteractedWithImages.value = true
-    renderMode.value = 'manual'
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '手动选图请求失败'
   } finally {
@@ -1148,7 +1157,8 @@ async function runWorkflow() {
   activeTab.value = 'review'
 
   const form = workflowForm.value
-
+  console.log('RENDER MODE SENT', form.renderMode)
+  console.log('AUDIO ENABLED SENT', form.audioEnabled)
   // ---- characters: manual override (when enabled) ----
   const manualCharacters: StructuredCharacterInput[] = form.structuredCharactersEnabled
     ? [
@@ -1276,13 +1286,15 @@ async function runWorkflow() {
     visual_style: form.visualStyle,
     character_style: form.characterStyle,
     voice_style: form.voiceStyle,
-    voiceover_enabled: form.voiceoverEnabled,
+    voiceover_enabled: form.audioEnabled ? form.voiceoverEnabled : false,
     voice_mode: form.voiceMode,
     duration_sec: form.durationSec,
     language: form.language,
     subtitle_enabled: form.subtitleEnabled,
     video_provider: form.videoProvider,
     output_mode: form.outputMode,
+    render_mode: form.renderMode,
+    audio_enabled: form.audioEnabled,
   }
 
   if (form.voiceMode === 'multi') {
@@ -1320,11 +1332,17 @@ async function runWorkflow() {
     }
   }
 
+  const stepsSet = new Set(selectedSteps.value)
+
+  if (form.subtitleEnabled) {
+    stepsSet.add('subtitles')
+  }
+
   const payload = {
     workflow_id: 'storybook-demo',
     session_id: sessionId,
     input: inputPayload,
-    steps: selectedSteps.value.map((name) => ({ name })),
+    steps: Array.from(stepsSet).map((name) => ({ name })),
   }
   currentWorkflowPayload.value = payload as WorkflowRunPayload
 
@@ -1444,8 +1462,8 @@ async function runWorkflow() {
           :form-state="workflowForm"
           :selected-steps="selectedSteps"
           :step-options="STEP_OPTIONS"
-          @update:form-state="workflowForm = $event"
-          @update:selected-steps="selectedSteps = $event"
+          @update:form-state="onUpdateFormState"
+          @update:selected-steps="onUpdateSelectedSteps"
           @run="runWorkflow"
         />
       </section>
@@ -1454,24 +1472,8 @@ async function runWorkflow() {
           <section class="result-panel final-video-hero">
             <div class="render-mode-switch">
               <span class="label">Render Mode:</span>
-              <label class="mode-option">
-                <input
-                  type="radio"
-                  value="auto"
-                  v-model="renderMode"
-                />
-                Auto
-              </label>
-
-              <label class="mode-option">
-                <input
-                  type="radio"
-                  value="manual"
-                  v-model="renderMode"
-                />
-                Manual
-              </label>
-            </div>    
+              <span class="value">{{ workflowForm.renderMode }}</span>
+            </div>   
             <FinalVideoPanel
               :final-video-url="finalVideoUrl"
               :final-video-text="finalVideoText"
@@ -1479,11 +1481,11 @@ async function runWorkflow() {
               :render-in-flight="finalVideoRenderInFlight"
               :loading="loading || refreshingImageReview || finalVideoRenderInFlight"
               @render="renderFinalVideoIfReady(currentWorkflowResponse || {})"
-              :show-render-button="renderMode === 'auto'"
+              :show-render-button="workflowForm.renderMode === 'auto'"
             />
             <!-- Manual 主操作按钮 -->
             <div
-              v-if="renderMode === 'manual'"
+              v-if="workflowForm.renderMode === 'manual'"
               class="manual-render-wrapper"
             >
               <button

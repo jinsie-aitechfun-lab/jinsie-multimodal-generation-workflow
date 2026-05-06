@@ -139,6 +139,14 @@ class WorkflowInput(BaseModel):
     subtitle_enabled: bool = Field(default=True)
     video_provider: str = Field(default="mock")
     output_mode: str = Field(default="full_video")
+    render_mode: str = Field(
+        default="auto",
+        description="Render strategy: auto or manual",
+    )
+    audio_enabled: bool = Field(
+        default=True,
+        description="Whether audio generation is enabled for this run",
+    )
 
 
 class WorkflowRunRequest(BaseModel):
