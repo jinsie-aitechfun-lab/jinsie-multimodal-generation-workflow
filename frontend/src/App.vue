@@ -2,9 +2,7 @@
 import { computed, ref, watch} from 'vue'
 import InteractiveImageReview from './components/InteractiveImageReview.vue'
 import WorkflowResultsPanel from './components/WorkflowResultsPanel.vue'
-import WorkflowRunPanel, {
-  type WorkflowRunFormState,
-} from './components/WorkflowRunPanel.vue'
+import WorkflowRunPanel from './components/WorkflowRunPanel.vue'
 import SampleAssetsPanel from './components/SampleAssetsPanel.vue'
 import FinalVideoPanel from './components/FinalVideoPanel.vue'
 type StepName = string
@@ -179,7 +177,7 @@ type ReviewPlaceholderItem = {
 
 const userHasInteractedWithImages = ref(false)
 
-const DEFAULT_WORKFLOW_FORM: WorkflowRunFormState = {
+const DEFAULT_WORKFLOW_FORM: any = {
   sessionId: 'demo-session-001',
   topic: '写一个关于小猫冒险的故事',
   audience: 'children',
@@ -269,8 +267,8 @@ function pushRecentFinalVideoUrl(url: string) {
   ].slice(0, 10)
 }
 const finalVideoRendering = ref(false)
-const workflowForm = ref<WorkflowRunFormState>({ ...DEFAULT_WORKFLOW_FORM })
-function onUpdateFormState(next: WorkflowRunFormState) {
+const workflowForm = ref<any>({ ...DEFAULT_WORKFLOW_FORM })
+function onUpdateFormState(next: any) {
   console.log('[parent] onUpdateFormState audioEnabled=', next.audioEnabled, 'voiceoverEnabled=', next.voiceoverEnabled)
   workflowForm.value = next
 }
