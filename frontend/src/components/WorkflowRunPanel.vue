@@ -1,16 +1,5 @@
 <script setup lang="ts">
-type StepName =
-  | 'story'
-  | 'storyboard'
-  | 'image_prompts'
-  | 'image_assets'
-  | 'video_prompts'
-  | 'dialogue_script'
-  | 'audio_segments'
-  | 'narration'
-  | 'subtitles'
-  | 'render_plan'
-  | 'final_video'
+type StepName = string
 
 export type WorkflowRunFormState = {
   sessionId: string
@@ -20,11 +9,15 @@ export type WorkflowRunFormState = {
   visualStyle: string
   characterStyle: string
   voiceStyle: string
+
+  audioEnabled: boolean
   voiceoverEnabled: boolean
-  voiceMode: string
+
+  voiceMode: 'single' | 'multi' | 'character'
   narratorVoiceStyle: string
   motherVoiceStyle: string
   childVoiceStyle: string
+
   durationSec: number
   language: string
   subtitleEnabled: boolean
@@ -40,9 +33,11 @@ export type WorkflowRunFormState = {
   secondaryCharacterSpecies: string
   secondaryCharacterVisualTraits: string
   secondaryCharacterForbiddenTraits: string
+
   renderMode: 'auto' | 'manual'
-  audioEnabled: boolean
 }
+
+type StepOption = { label: string; value: StepName }
 
 const props = defineProps<{
   loading: boolean
@@ -50,12 +45,12 @@ const props = defineProps<{
   errorMessage: string
   formState: WorkflowRunFormState
   selectedSteps: StepName[]
-  stepOptions: Array<{ label: string; value: StepName }>
+  stepOptions: StepOption[]
 }>()
 
 const emit = defineEmits<{
-  (e: 'update:formState', value: WorkflowRunFormState): void
-  (e: 'update:selectedSteps', value: StepName[]): void
+  (e: 'update:formState', v: WorkflowRunFormState): void
+  (e: 'update:selectedSteps', v: StepName[]): void
   (e: 'run'): void
 }>()
 
@@ -393,22 +388,77 @@ function getTopicManualMismatchWarning(): string {
           />
         </label>
 
-        <label class="checkbox-field">
-          <input
-            :checked="formState.audioEnabled ? formState.voiceoverEnabled : false"
-            :disabled="!formState.audioEnabled"
-            type="checkbox"
-            @change="
-              emit('update:formState', {
-                ...props.formState,
-                voiceoverEnabled: props.formState.audioEnabled
-                  ? ($event.target as HTMLInputElement).checked
-                  : false,
-              })
-            "
-          />
-          <span>Enable Voiceover</span>
-        </label>
+        <!-- ===== Render & Audio controls (UI-only layout) ===== -->
+        <div class="render-audio-block">
+          <div class="block-title">Render & Audio</div>
+
+          <div class="row">
+            <div class="row-label">Render Mode</div>
+
+            <label class="radio">
+              <input
+                type="radio"
+                value="auto"
+                :checked="formState.renderMode === 'auto'"
+                @change="updateFormState('renderMode', 'auto')"
+              />
+              Auto
+            </label>
+
+            <label class="radio">
+              <input
+                type="radio"
+                value="manual"
+                :checked="formState.renderMode === 'manual'"
+                @change="updateFormState('renderMode', 'manual')"
+              />
+              Manual
+            </label>
+          </div>
+
+          <div class="row">
+            <label class="checkbox">
+              <input
+                type="checkbox"
+                :checked="formState.audioEnabled"
+                @change="
+                  (e) => {
+                    const checked = (e.target as HTMLInputElement).checked
+                    emit('update:formState', {
+                      ...props.formState,
+                      audioEnabled: checked,
+                      voiceoverEnabled: checked ? true : false,
+                    })
+                  }
+                "
+              />
+              <span>Enable Audio</span>
+            </label>
+            <span class="hint">Audio is the master switch.</span>
+          </div>
+
+          <div class="row">
+            <label class="checkbox" :class="{ disabled: !formState.audioEnabled }">
+              <input
+                :checked="formState.audioEnabled ? formState.voiceoverEnabled : false"
+                :disabled="!formState.audioEnabled"
+                type="checkbox"
+                @change="
+                  emit('update:formState', {
+                    ...props.formState,
+                    voiceoverEnabled: props.formState.audioEnabled
+                      ? ($event.target as HTMLInputElement).checked
+                      : false,
+                  })
+                "
+              />
+              <span>Enable Voiceover</span>
+            </label>
+            <span v-if="!formState.audioEnabled" class="hint"
+              >Turn on Audio to enable voiceover.</span
+            >
+          </div>
+        </div>
 
         <label class="field">
           <span>Voice Mode</span>
@@ -422,50 +472,7 @@ function getTopicManualMismatchWarning(): string {
             <option value="multi">multi · 亲子双人轮流</option>
             <option value="character">character · 角色配音</option>
           </select>
-          <div class="mode-config">
-            <div class="config-label">Render Mode</div>
 
-            <label>
-              <input
-                type="radio"
-                value="auto"
-                :checked="formState.renderMode === 'auto'"
-                @change="updateFormState('renderMode', 'auto')"
-              />
-              Auto
-            </label>
-
-            <label>
-              <input
-                type="radio"
-                value="manual"
-                :checked="formState.renderMode === 'manual'"
-                @change="updateFormState('renderMode', 'manual')"
-              />
-              Manual
-            </label>
-          </div>
-
-          <div class="audio-config">
-            <label>
-              <input
-                type="checkbox"
-                :checked="formState.audioEnabled"
-                @change="
-                  (e) => {
-                    const checked = (e.target as HTMLInputElement).checked
-                    emit('update:formState', {
-                      ...props.formState,
-                      audioEnabled: checked,
-                      // 你同意的语义：关音频 = 关配音
-                      voiceoverEnabled: checked ? true : false,
-                    })
-                  }
-                "
-              />
-              Enable Audio
-            </label>
-          </div>
           <div class="quickStart">
             <div class="quickStartTitle">Quick Start · 快捷模板</div>
             <p v-if="getTopicManualMismatchWarning()" class="warn">
@@ -979,6 +986,54 @@ function getTopicManualMismatchWarning(): string {
   margin-top: 16px;
   color: #dc2626;
   font-size: 14px;
+}
+
+/* ===== Render & Audio block (UI-only) ===== */
+.render-audio-block {
+  grid-column: 1 / -1;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  padding: 12px 12px;
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.render-audio-block .block-title {
+  font-weight: 600;
+  margin-bottom: 10px;
+  color: #111827;
+  font-size: 13px;
+}
+
+.render-audio-block .row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.render-audio-block .row-label {
+  min-width: 110px;
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.render-audio-block .checkbox,
+.render-audio-block .radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.render-audio-block .checkbox.disabled {
+  opacity: 0.55;
+}
+
+.render-audio-block .hint {
+  margin: 0;
+  font-size: 12px;
+  opacity: 0.65;
+  color: #111827;
 }
 
 /* Quick Start / Advanced (minimal UI, product-friendly) */
