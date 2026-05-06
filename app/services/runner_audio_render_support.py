@@ -4,7 +4,6 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
@@ -35,9 +34,7 @@ class RunnerAudioRenderSupport:
 
         return voice_mode
 
-    def run_dialogue_script(
-        self, ctx: Any, outputs: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def run_dialogue_script(self, ctx: Any, outputs: Dict[str, Any]) -> Dict[str, Any]:
         sentence_shots = outputs.get("sentence_shots") or {}
         shot_items = sentence_shots.get("items") or []
 
@@ -113,7 +110,9 @@ class RunnerAudioRenderSupport:
 
             character_profiles = self._runner._character_speaker_profiles(ctx)
             main_character_speaker = self._runner._character_speaker_name(ctx)
-            secondary_character_speaker = self._runner._secondary_character_speaker_name(ctx)
+            secondary_character_speaker = (
+                self._runner._secondary_character_speaker_name(ctx)
+            )
 
             for index, shot in enumerate(shot_items, start=1):
                 text = str(shot.get("audio_text") or shot.get("text") or "").strip()
@@ -139,7 +138,9 @@ class RunnerAudioRenderSupport:
                 "speaker_profiles": {
                     "narrator": character_profiles["narrator"],
                     main_character_speaker: character_profiles["main_character"],
-                    secondary_character_speaker: character_profiles["secondary_character"],
+                    secondary_character_speaker: character_profiles[
+                        "secondary_character"
+                    ],
                 },
                 "lines": lines,
             }
@@ -206,7 +207,9 @@ class RunnerAudioRenderSupport:
 
         character_profiles = self._runner._character_speaker_profiles(ctx)
         main_character_speaker = self._runner._character_speaker_name(ctx)
-        secondary_character_speaker = self._runner._secondary_character_speaker_name(ctx)
+        secondary_character_speaker = self._runner._secondary_character_speaker_name(
+            ctx
+        )
 
         for index, scene in enumerate(scenes, start=1):
             text = str(scene.get("narration", "")).strip()
@@ -242,9 +245,7 @@ class RunnerAudioRenderSupport:
             "lines": lines,
         }
 
-    def run_audio_segments(
-        self, ctx: Any, outputs: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def run_audio_segments(self, ctx: Any, outputs: Dict[str, Any]) -> Dict[str, Any]:
         dialogue_script = outputs.get("dialogue_script") or {}
         lines = dialogue_script.get("lines") or []
 
@@ -320,7 +321,9 @@ class RunnerAudioRenderSupport:
                     asset_status = "generated"
                     generation_mode = "real_tts"
 
-                    actual_duration_sec = self._runner._probe_audio_duration_seconds(output_path)
+                    actual_duration_sec = self._runner._probe_audio_duration_seconds(
+                        output_path
+                    )
                     if actual_duration_sec is not None:
                         duration_sec = actual_duration_sec
                         duration_source = "ffprobe"
@@ -395,11 +398,15 @@ class RunnerAudioRenderSupport:
             items.append(item)
             assets.append(asset)
 
-        directory_manifest = self._runner._write_audio_directory_manifest(ctx.run_id, assets)
+        directory_manifest = self._runner._write_audio_directory_manifest(
+            ctx.run_id, assets
+        )
         scene_asset_map = self._runner._group_audio_assets_by_scene(assets)
 
         overall_provider = (
-            self._runner._tts_provider_name() if real_generation_count > 0 else "mock_tts"
+            self._runner._tts_provider_name()
+            if real_generation_count > 0
+            else "mock_tts"
         )
 
         return {
@@ -417,9 +424,7 @@ class RunnerAudioRenderSupport:
             "scene_asset_map": scene_asset_map,
         }
 
-    def run_narration(
-        self, ctx: Any, outputs: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def run_narration(self, ctx: Any, outputs: Dict[str, Any]) -> Dict[str, Any]:
         dialogue_script = outputs.get("dialogue_script") or {}
         dialogue_lines = dialogue_script.get("lines") or []
 
@@ -478,9 +483,7 @@ class RunnerAudioRenderSupport:
             "segments": segments,
         }
 
-    def run_subtitles(
-        self, ctx: Any, outputs: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def run_subtitles(self, ctx: Any, outputs: Dict[str, Any]) -> Dict[str, Any]:
         if not ctx.input.subtitle_enabled:
             return {"enabled": False, "items": [], "srt_preview": ""}
 
@@ -560,13 +563,21 @@ class RunnerAudioRenderSupport:
             for item in image_assets_list
             if item.get("scene_id")
         }
-
+        print("image_assets_list len =", len(image_assets_list))
+        print("audio_items len =", len(audio_items))
         concat_lines: List[str] = []
         video_run_dir = self._runner._ensure_video_run_dir(ctx.run_id)
         concat_file = video_run_dir / "scene_concat.txt"
         last_image_path: Optional[Path] = None
 
-        for item in audio_items:
+        # 如果有音频，用音频驱动时长
+        if audio_items:
+            loop_items = audio_items
+        else:
+            # 无音频时，用图片列表驱动
+            loop_items = image_assets_list
+
+        for item in loop_items:
             shot_id = str(item.get("shot_id") or "")
             scene_id = str(item.get("scene_id") or "")
 
@@ -575,6 +586,10 @@ class RunnerAudioRenderSupport:
                 image_asset = image_by_shot.get(shot_id)
             if image_asset is None and scene_id:
                 image_asset = image_by_scene.get(scene_id)
+            if image_asset is None and not audio_items:
+                # 无音频时 item 本身就是 image_asset
+                image_asset = item
+
             if image_asset is None:
                 continue
 
@@ -582,26 +597,32 @@ class RunnerAudioRenderSupport:
             resolved_relative_path = ""
 
             if isinstance(selected_asset_ref, dict) and selected_asset_ref:
-                resolved_relative_path = str(selected_asset_ref.get("relative_path") or "").strip()
+                resolved_relative_path = str(
+                    selected_asset_ref.get("relative_path") or ""
+                ).strip()
 
             if not resolved_relative_path:
-                resolved_relative_path = str(image_asset.get("relative_path") or "").strip()
+                resolved_relative_path = str(
+                    image_asset.get("relative_path") or ""
+                ).strip()
 
             if not resolved_relative_path:
                 continue
 
             image_path = PROJECT_ROOT / resolved_relative_path
-            duration_sec = float(item.get("duration_sec") or 0.0)
-            if duration_sec <= 0:
-                duration_sec = float(item.get("duration_estimate_sec") or 3.0)
-            if duration_sec <= 0:
+
+            if audio_items:
+                duration_sec = float(item.get("duration_sec") or 0.0)
+                if duration_sec <= 0:
+                    duration_sec = float(item.get("duration_estimate_sec") or 3.0)
+            else:
+                # 无音频时默认每张 3 秒
                 duration_sec = 3.0
 
             escaped_image_path = str(image_path).replace("'", "'\\''")
             concat_lines.append(f"file '{escaped_image_path}'")
             concat_lines.append(f"duration {duration_sec:.3f}")
             last_image_path = image_path
-
         if last_image_path is not None:
             escaped_last_image_path = str(last_image_path).replace("'", "'\\''")
             concat_lines.append(f"file '{escaped_last_image_path}'")
@@ -609,9 +630,7 @@ class RunnerAudioRenderSupport:
         concat_file.write_text("\n".join(concat_lines) + "\n", encoding="utf-8")
         return concat_file
 
-    def run_final_video(
-        self, ctx: Any, outputs: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def run_final_video(self, ctx: Any, outputs: Dict[str, Any]) -> Dict[str, Any]:
         image_assets = outputs.get("image_assets") or {}
         audio_segments = outputs.get("audio_segments") or {}
         subtitles = outputs.get("subtitles") or {}
@@ -637,9 +656,7 @@ class RunnerAudioRenderSupport:
         video_run_dir = self._runner._ensure_video_run_dir(ctx.run_id)
 
         # ========= 生成 base video =========
-        concat_file = self.build_video_concat_file(
-            ctx, image_assets, audio_segments
-        )
+        concat_file = self.build_video_concat_file(ctx, image_assets, audio_segments)
 
         base_video_path = video_run_dir / "base_video.mp4"
 
@@ -717,15 +734,27 @@ class RunnerAudioRenderSupport:
 
         # ========= 写字幕 =========
         subtitle_path = video_run_dir / "subtitles.srt"
-        subtitle_path.write_text(
-            str(subtitles.get("srt_preview", "")).strip() + "\n",
-            encoding="utf-8",
-        )
+        srt_text = str(subtitles.get("srt_preview", "") or "").strip()
+
+        if srt_text:
+            subtitle_path.write_text(srt_text + "\n", encoding="utf-8")
+        else:
+            # silent/skip subtitles 时，避免留下只有 '\n' 的“假非空字幕文件”
+            if subtitle_path.exists():
+                subtitle_path.unlink()
 
         # ========= 合成 final =========
         final_video_path = video_run_dir / "final.mp4"
 
         if has_audio and merged_audio_path:
+            escaped_subtitle_path = (
+                str(subtitle_path)
+                .replace("\\", "\\\\")
+                .replace(":", "\\:")
+                .replace("'", "\\'")
+            )
+
+            subtitle_filter = f"subtitles='{escaped_subtitle_path}'"
             subprocess.run(
                 [
                     "ffmpeg",
@@ -735,7 +764,7 @@ class RunnerAudioRenderSupport:
                     "-i",
                     str(merged_audio_path),
                     "-vf",
-                    f"subtitles={subtitle_path}",
+                    subtitle_filter,
                     "-c:v",
                     "libx264",
                     "-pix_fmt",
@@ -748,23 +777,49 @@ class RunnerAudioRenderSupport:
                 check=True,
             )
         else:
-            subprocess.run(
-                [
-                    "ffmpeg",
-                    "-y",
-                    "-i",
-                    str(base_video_path),
-                    "-vf",
-                    f"subtitles={subtitle_path}",
-                    "-c:v",
-                    "libx264",
-                    "-pix_fmt",
-                    "yuv420p",
-                    str(final_video_path),
-                ],
-                check=True,
-            )
+            # 如果字幕文件不存在或为空，就不要加字幕滤镜
+            if subtitle_path.exists() and subtitle_path.stat().st_size > 0:
+                escaped_subtitle_path = (
+                    str(subtitle_path)
+                    .replace("\\", "\\\\")
+                    .replace(":", "\\:")
+                    .replace("'", "\\'")
+                )
+                subtitle_filter = f"subtitles='{escaped_subtitle_path}'"
 
+                subprocess.run(
+                    [
+                        "ffmpeg",
+                        "-y",
+                        "-i",
+                        str(base_video_path),
+                        "-vf",
+                        subtitle_filter,
+                        "-c:v",
+                        "libx264",
+                        "-pix_fmt",
+                        "yuv420p",
+                        str(final_video_path),
+                    ],
+                    check=True,
+                )
+            else:
+                print("[final-video] subtitle file missing or empty, skip subtitles")
+
+                subprocess.run(
+                    [
+                        "ffmpeg",
+                        "-y",
+                        "-i",
+                        str(base_video_path),
+                        "-c:v",
+                        "libx264",
+                        "-pix_fmt",
+                        "yuv420p",
+                        str(final_video_path),
+                    ],
+                    check=True,
+                )
         # ========= 统一 return =========
         return {
             "enabled": True,
@@ -776,12 +831,14 @@ class RunnerAudioRenderSupport:
             "duration_sec": round(total_duration_sec, 3),
             "audio_track_path": (
                 f"assets/mock/video/{ctx.run_id}/merged_audio.mp3"
-                if has_audio else None
+                if has_audio
+                else None
             ),
             "subtitle_path": f"assets/mock/video/{ctx.run_id}/subtitles.srt",
             "audio_enabled": has_audio,
             "audio_mode": "tts" if has_audio else "silent",
         }
+
     def rerender_final_video(
         self,
         *,
