@@ -1,9 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-
 type StepName = string
 
-type WorkflowRunFormState = {
+export type WorkflowRunFormState = {
   sessionId: string
   topic: string
   audience: string
