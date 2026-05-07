@@ -114,7 +114,9 @@ class WorkflowRunner:
         self._session_store: Dict[str, Dict[str, Any]] = {}
         self._run_store: Dict[str, Dict[str, Any]] = {}
 
-    def _workflow_input_from_dict(self, workflow_input: Dict[str, Any]) -> WorkflowInput:
+    def _workflow_input_from_dict(
+        self, workflow_input: Dict[str, Any]
+    ) -> WorkflowInput:
         if isinstance(workflow_input, WorkflowInput):
             return workflow_input
         if not isinstance(workflow_input, dict):
@@ -156,7 +158,7 @@ class WorkflowRunner:
             audio_segments=audio_segments,
             subtitles=subtitles,
         )
-   
+
     def build_image_assets_from_selected_assets(
         self,
         *,
@@ -169,7 +171,7 @@ class WorkflowRunner:
             image_review=image_review,
             provider=provider,
         )
-    
+
     def get_real_kling_samples_manifest(self) -> Dict[str, Any]:
         manifest = self._build_real_samples_manifest()
         samples = manifest.get("samples") or []
@@ -254,9 +256,12 @@ class WorkflowRunner:
     def _tts_api_base_url(self) -> str:
         value = os.getenv("TTS_API_BASE_URL", DEFAULT_TTS_API_BASE_URL).strip()
         return value.rstrip("/") or DEFAULT_TTS_API_BASE_URL
+
     def _llm_api_base_url(self) -> str:
-    # 优先走 OPENAI_BASE_URL（你们项目一直按 openai-compatible 使用）
-        base = (os.getenv("OPENAI_BASE_URL") or os.getenv("LLM_API_BASE_URL") or "").strip()
+        # 优先走 OPENAI_BASE_URL（你们项目一直按 openai-compatible 使用）
+        base = (
+            os.getenv("OPENAI_BASE_URL") or os.getenv("LLM_API_BASE_URL") or ""
+        ).strip()
         return base or DEFAULT_LLM_API_BASE_URL
 
     def _llm_api_key(self) -> str:
@@ -281,7 +286,9 @@ class WorkflowRunner:
             return max(5, min(180, int(raw)))
         return DEFAULT_STORY_TIMEOUT_SECONDS
 
-    def _generate_story_with_llm(self, ctx: StepContext, outputs: Dict[str, Any]) -> Dict[str, str]:
+    def _generate_story_with_llm(
+        self, ctx: StepContext, outputs: Dict[str, Any]
+    ) -> Dict[str, str]:
         api_key = self._llm_api_key()
         if not api_key:
             raise RuntimeError("LLM api key is missing (OPENAI_API_KEY/LLM_API_KEY)")
@@ -362,7 +369,8 @@ class WorkflowRunner:
 
         data = json.loads(raw.decode("utf-8", errors="ignore"))
         content = (
-            (((data.get("choices") or [{}])[0]).get("message") or {}).get("content") or ""
+            (((data.get("choices") or [{}])[0]).get("message") or {}).get("content")
+            or ""
         ).strip()
 
         if not content:
@@ -374,8 +382,12 @@ class WorkflowRunner:
         parsed = parse_story_payload(content, topic=topic)
         text = parsed["text"] if parsed and parsed.get("text") else content
 
-        return {"title": title.strip(), "summary": summary.strip(), "text": text.strip()}
-    
+        return {
+            "title": title.strip(),
+            "summary": summary.strip(),
+            "text": text.strip(),
+        }
+
     def _tts_api_key(self) -> str:
         tts_key = os.getenv("TTS_API_KEY", "").strip()
         if tts_key:
@@ -456,6 +468,7 @@ class WorkflowRunner:
             return None
 
         return round(duration, 3)
+
     def _ensure_video_run_dir(self, run_id: str) -> Path:
         run_dir = MOCK_VIDEO_ROOT / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -655,14 +668,16 @@ class WorkflowRunner:
         step_results: List[StepResult] = []
 
         character_candidates = self._build_character_candidates(req.input)
-        character_manifest = self._build_character_manifest(req.input, character_candidates)
+        character_manifest = self._build_character_manifest(
+            req.input, character_candidates
+        )
 
         # P0-05: structured_characters_enabled=false 时，按 topic 自动补 primary manifest
         if (not req.input.structured_characters_enabled) and (not character_manifest):
             inferred_primary = infer_primary_character_manifest(req.input.topic)
             if inferred_primary is not None:
                 character_manifest = [inferred_primary]
-                
+
         aggregated_outputs: Dict[str, Any] = {
             "character_candidates": {
                 "enabled": bool(req.input.structured_characters_enabled),
@@ -670,7 +685,8 @@ class WorkflowRunner:
                 "items": character_candidates,
             },
             "character_manifest": {
-                "enabled": bool(req.input.structured_characters_enabled) or bool(character_manifest),
+                "enabled": bool(req.input.structured_characters_enabled)
+                or bool(character_manifest),
                 "count": len(character_manifest),
                 "characters": character_manifest,
             },
@@ -698,8 +714,13 @@ class WorkflowRunner:
                 )
             elif name == "video_prompts":
                 video_prompt_status = str(output.get("status") or "").strip().lower()
-                if video_prompt_status == "pending" and "image_review" not in aggregated_outputs:
-                    aggregated_outputs["image_review"] = self._build_pending_image_review()
+                if (
+                    video_prompt_status == "pending"
+                    and "image_review" not in aggregated_outputs
+                ):
+                    aggregated_outputs["image_review"] = (
+                        self._build_pending_image_review()
+                    )
 
         self._save_run_context(
             workflow_id=req.workflow_id,
@@ -728,7 +749,10 @@ class WorkflowRunner:
             render_package=render_package,
             timestamp=WorkflowRunResponse.now_timestamp(),
         )
-    def _build_character_candidates(self, workflow_input: WorkflowInput) -> List[Dict[str, Any]]:
+
+    def _build_character_candidates(
+        self, workflow_input: WorkflowInput
+    ) -> List[Dict[str, Any]]:
         if workflow_input.structured_characters_enabled and workflow_input.characters:
             items: List[Dict[str, Any]] = []
             for index, character in enumerate(workflow_input.characters, start=1):
@@ -773,7 +797,8 @@ class WorkflowRunner:
                 {
                     "candidate_id": f"candidate_{len(items) + 1:02d}",
                     "display_name": secondary_display_name,
-                    "species": workflow_input.secondary_character_species.strip() or "None",
+                    "species": workflow_input.secondary_character_species.strip()
+                    or "None",
                     "role_type": "secondary",
                     "visual_traits": workflow_input.secondary_character_visual_traits.strip(),
                     "forbidden_traits": "",
@@ -795,20 +820,21 @@ class WorkflowRunner:
             if role_type == "primary":
                 character_id = "char_primary_01"
             else:
-                secondary_index = sum(
-                    1
-                    for item in manifest
-                    if str(item.get("role_type") or "").strip() == "secondary"
-                ) + 1
+                secondary_index = (
+                    sum(
+                        1
+                        for item in manifest
+                        if str(item.get("role_type") or "").strip() == "secondary"
+                    )
+                    + 1
+                )
                 character_id = f"char_secondary_{secondary_index:02d}"
 
             visual_traits_text = str(candidate.get("visual_traits") or "").strip()
             forbidden_traits_text = str(candidate.get("forbidden_traits") or "").strip()
 
             signature_traits = [
-                item.strip()
-                for item in visual_traits_text.split(",")
-                if item.strip()
+                item.strip() for item in visual_traits_text.split(",") if item.strip()
             ]
             forbidden_traits = [
                 item.strip()
@@ -837,13 +863,14 @@ class WorkflowRunner:
 
         return manifest
 
-    def _character_manifest_items(self, outputs: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _character_manifest_items(
+        self, outputs: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
         manifest_output = outputs.get("character_manifest") or {}
         characters = manifest_output.get("characters") or []
         if isinstance(characters, list):
             return characters
         return []
-
 
     def _manifest_character_by_role(
         self,
@@ -896,8 +923,12 @@ class WorkflowRunner:
                 text = str(shot.get("text") or "").strip()
 
                 scene_data = scene_map.get(scene_id) or {}
-                character_block = self._scene_character_prompt_block(outputs, scene_data)
-                negative_block = self._scene_character_negative_block(outputs, scene_data)
+                character_block = self._scene_character_prompt_block(
+                    outputs, scene_data
+                )
+                negative_block = self._scene_character_negative_block(
+                    outputs, scene_data
+                )
 
                 shot_anchor = (
                     f"scene title: {scene_title}, "
@@ -977,7 +1008,9 @@ class WorkflowRunner:
 
         return {"provider": "image_prompt_builder", "prompts": prompts}
 
-    def _scene_character_bindings(self, outputs: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _scene_character_bindings(
+        self, outputs: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
         bindings: List[Dict[str, Any]] = []
         for item in self._character_manifest_items(outputs):
             bindings.append(
@@ -989,7 +1022,7 @@ class WorkflowRunner:
                 }
             )
         return bindings
-    
+
     def _manifest_character_by_id(
         self,
         outputs: Dict[str, Any],
@@ -1091,6 +1124,7 @@ class WorkflowRunner:
             return ""
 
         return "negative constraints: " + ", ".join(deduped)
+
     def _get_session_data(self, session_id: Optional[str]) -> Optional[Dict[str, Any]]:
         if not session_id:
             return None
@@ -1108,7 +1142,8 @@ class WorkflowRunner:
             "last_story": outputs.get("story") or {},
             "last_storyboard": outputs.get("storyboard") or {},
             "last_render_plan": outputs.get("render_plan") or {},
-        }  
+        }
+
     def _get_run_context(self, run_id: str) -> Optional[Dict[str, Any]]:
         normalized_run_id = str(run_id or "").strip()
         if not normalized_run_id:
@@ -1166,6 +1201,7 @@ class WorkflowRunner:
             "reason": reason,
             "selected_assets": [],
         }
+
     def _build_session_memory_summary(
         self,
         session_id: Optional[str],
@@ -1201,13 +1237,11 @@ class WorkflowRunner:
         return summary
 
     def _scene_count(self, duration_sec: int) -> int:
-        if duration_sec <= 30:
-            return 3
         if duration_sec <= 60:
-            return 4
-        if duration_sec <= 90:
-            return 5
-        return 6
+            return 6
+        if duration_sec <= 120:
+            return 12
+        return 18
 
     def _audience_label(self, audience: str) -> str:
         mapping = {
@@ -1263,6 +1297,7 @@ class WorkflowRunner:
     def _api_image_fallback_to_pillow(self) -> bool:
         value = os.getenv("KLING_IMAGE_FALLBACK_TO_PILLOW", "true").strip().lower()
         return value in {"1", "true", "yes", "on"}
+
     def _image_api_key(self) -> str:
         image_key = os.getenv("SILICONFLOW_API_KEY", "").strip()
         if image_key:
@@ -1279,6 +1314,7 @@ class WorkflowRunner:
             return value.rstrip("/")
 
         return "https://api.siliconflow.cn/v1"
+
     def _image_429_strategy(self) -> str:
         value = os.getenv("IMAGE_429_STRATEGY", "pillow_fallback").strip().lower()
         if value in {"pending", "pillow_fallback"}:
@@ -1298,6 +1334,7 @@ class WorkflowRunner:
     def _force_image_rate_limit(self) -> bool:
         value = os.getenv("FORCE_IMAGE_RATE_LIMIT", "").strip().lower()
         return value in {"1", "true", "yes", "on"}
+
     def _build_pending_image_assets_result(
         self,
         *,
@@ -1318,6 +1355,7 @@ class WorkflowRunner:
             "asset_count": 0,
             "assets": [],
         }
+
     def _normalized_video_provider(self, provider: str) -> str:
         value = provider.strip().lower()
         if not value:
@@ -1352,7 +1390,7 @@ class WorkflowRunner:
             normalized = main_character.lower().replace(" ", "_")
             return normalized
         return "main_character"
-    
+
     def _secondary_character_speaker_name(self, ctx: StepContext) -> str:
         secondary_character = str(
             getattr(ctx.input, "secondary_character", "") or ""
@@ -1433,10 +1471,8 @@ class WorkflowRunner:
             return "main_character"
 
         return "narrator"
-    
-    def _resolve_character_speaker(
-        self, ctx: StepContext, text: str
-    ) -> Dict[str, str]:
+
+    def _resolve_character_speaker(self, ctx: StepContext, text: str) -> Dict[str, str]:
         character_profiles = self._character_speaker_profiles(ctx)
         main_character_speaker = self._character_speaker_name(ctx)
         secondary_character_speaker = self._secondary_character_speaker_name(ctx)
@@ -1481,9 +1517,11 @@ class WorkflowRunner:
             "provider": asset.get("provider"),
         }
         return {
-            key: value for key, value in fallback.items()
+            key: value
+            for key, value in fallback.items()
             if value is not None and value != ""
         }
+
     def _build_dialogue_line(
         self,
         *,
@@ -1540,6 +1578,7 @@ class WorkflowRunner:
 
         # 4️⃣ 最终 fallback
         return self._character_style_label(ctx.input.character_style)
+
     def _secondary_character_display_label(
         self,
         ctx: StepContext,
@@ -1558,12 +1597,13 @@ class WorkflowRunner:
         if display_value:
             return display_value
 
-        secondary_value = str(getattr(ctx.input, "secondary_character", "") or "").strip()
+        secondary_value = str(
+            getattr(ctx.input, "secondary_character", "") or ""
+        ).strip()
         if secondary_value:
             return secondary_value
 
         return ""
-
 
     def _has_secondary_character(
         self,
@@ -1571,7 +1611,7 @@ class WorkflowRunner:
         outputs: Optional[Dict[str, Any]] = None,
     ) -> bool:
         return bool(self._secondary_character_display_label(ctx, outputs))
-    
+
     def _main_character_label(self, ctx: StepContext) -> str:
         value = str(getattr(ctx.input, "main_character", "") or "").strip()
         if value:
@@ -1655,12 +1695,13 @@ class WorkflowRunner:
             "cute expressive face, "
             "storybook details"
         )
+
     def _character_prompt_phrase(self, ctx: StepContext) -> str:
         main_character = str(getattr(ctx.input, "main_character", "") or "").strip()
         if main_character:
             return main_character
         return f"{ctx.input.character_style} protagonist"
-    
+
     def _build_story_paragraphs(
         self,
         ctx: StepContext,
@@ -1672,7 +1713,9 @@ class WorkflowRunner:
         visual_label = self._visual_style_label(ctx.input.visual_style)
 
         main_character_display = self._main_character_display_label(ctx, outputs)
-        secondary_character_display = self._secondary_character_display_label(ctx, outputs)
+        secondary_character_display = self._secondary_character_display_label(
+            ctx, outputs
+        )
         has_secondary_character = self._has_secondary_character(ctx, outputs)
 
         if has_secondary_character:
@@ -1713,7 +1756,28 @@ class WorkflowRunner:
         )
 
         return [paragraph_1, paragraph_2, paragraph_3, paragraph_4]
-    
+
+    def _expand_scene_blueprints(
+        self,
+        base: List[Dict[str, str]],
+        scene_count: int,
+    ) -> List[Dict[str, str]]:
+        if scene_count <= 0:
+            return []
+        if not base:
+            return []
+
+        expanded: List[Dict[str, str]] = []
+        for index in range(scene_count):
+            source = base[index % len(base)]
+            cycle = index // len(base)
+            item = dict(source)
+            if cycle > 0:
+                item["scene_title"] = f"{source.get('scene_title', '故事片段')} · 延展 {cycle + 1}"
+            expanded.append(item)
+
+        return expanded
+
     def _scene_blueprints(
         self,
         ctx: StepContext,
@@ -1723,7 +1787,9 @@ class WorkflowRunner:
         tone_label = self._tone_label(ctx.input.tone)
         visual_label = self._visual_style_label(ctx.input.visual_style)
         main_character_display = self._main_character_display_label(ctx, outputs)
-        secondary_character_display = self._secondary_character_display_label(ctx, outputs)
+        secondary_character_display = self._secondary_character_display_label(
+            ctx, outputs
+        )
         has_secondary_character = self._has_secondary_character(ctx, outputs)
 
         if has_secondary_character:
@@ -1783,7 +1849,7 @@ class WorkflowRunner:
                     "transition": "fade",
                 },
             ]
-            return base[:scene_count]
+            return self._expand_scene_blueprints(base, scene_count)
 
         base = [
             {
@@ -1841,7 +1907,8 @@ class WorkflowRunner:
                 "transition": "fade",
             },
         ]
-        return base[:scene_count]
+        return self._expand_scene_blueprints(base, scene_count)
+
     def _image_asset_by_scene_id(
         self, outputs: Dict[str, Any]
     ) -> Dict[str, Dict[str, Any]]:
@@ -1870,6 +1937,7 @@ class WorkflowRunner:
             "mime_type": item.get("mime_type"),
             "provider": provider,
         }
+
     def _build_mock_candidate_asset_refs(
         self,
         item: Dict[str, Any],
@@ -1916,6 +1984,7 @@ class WorkflowRunner:
         self._ensure_mock_candidate_asset_file(primary_ref, mock_ref)
 
         return [primary_ref, mock_ref]
+
     def _ensure_mock_candidate_asset_file(
         self,
         primary_ref: Dict[str, Any],
@@ -1937,6 +2006,7 @@ class WorkflowRunner:
 
         if not target_path.exists():
             shutil.copyfile(source_path, target_path)
+
     def _build_image_review_from_assets(
         self,
         outputs: Dict[str, Any],
@@ -1986,6 +2056,7 @@ class WorkflowRunner:
             "selected_count": len(selected_assets),
             "selected_assets": selected_assets,
         }
+
     def _selection_item_by_scene_id(
         self, outputs: Dict[str, Any]
     ) -> Dict[str, Dict[str, Any]]:
@@ -2002,6 +2073,7 @@ class WorkflowRunner:
                 mapping[scene_id] = item
 
         return mapping
+
     def _selected_asset_ref_by_scene_id(
         self, outputs: Dict[str, Any]
     ) -> Dict[str, Dict[str, Any]]:
@@ -2014,6 +2086,7 @@ class WorkflowRunner:
                 mapping[scene_id] = selected_asset_ref
 
         return mapping
+
     def _build_default_image_review(
         self,
         image_assets_output: Dict[str, Any],
@@ -2021,6 +2094,7 @@ class WorkflowRunner:
         return self._build_image_review_from_assets(
             {"image_assets": image_assets_output}
         )
+
     def _build_image_review_item_from_asset(
         self,
         asset: Dict[str, Any],
@@ -2121,7 +2195,9 @@ class WorkflowRunner:
         if not base_prompt:
             visual_description = str(scene.get("visual_description") or "").strip()
             narration = str(scene.get("narration") or "").strip()
-            base_prompt = visual_description or narration or f"storybook scene {scene_id}"
+            base_prompt = (
+                visual_description or narration or f"storybook scene {scene_id}"
+            )
 
         asset_meta = self._image_asset_metadata(
             scene=scene,
@@ -2132,7 +2208,9 @@ class WorkflowRunner:
         candidate_asset_refs: List[Dict[str, Any]] = []
         adapter = ApiImageGeneratorAdapter(self)
 
-        for candidate_index, candidate_suffix in enumerate(["candidate_a", "candidate_b"]):
+        for candidate_index, candidate_suffix in enumerate(
+            ["candidate_a", "candidate_b"]
+        ):
             candidate_scene = self._scene_candidate_variant(
                 scene=scene,
                 candidate_index=candidate_index,
@@ -2169,11 +2247,10 @@ class WorkflowRunner:
                 raise RuntimeError(
                     f"api image provider returned invalid bytes for scene {scene_id} ({candidate_suffix})"
                 )
-        
+
             output_path = Path(output_path)
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_bytes(bytes(image_bytes))
-            
 
             candidate_asset_refs.append(
                 {
@@ -2201,7 +2278,7 @@ class WorkflowRunner:
             "status": "generated",
             "candidate_asset_refs": candidate_asset_refs,
         }
-    
+
     def _run_single_scene_image_asset(
         self,
         ctx: StepContext,
@@ -2215,6 +2292,7 @@ class WorkflowRunner:
             scene=scene,
             scene_index=scene_index,
         )
+
     def _video_prompt_scene_metadata(
         self,
         scene: Dict[str, Any],
@@ -2253,6 +2331,7 @@ class WorkflowRunner:
                 selection_item.get("review_status") or "unreviewed"
             ).strip(),
         }
+
     def _attach_video_prompt_contract(
         self,
         prompt_item: Dict[str, Any],
@@ -2269,6 +2348,7 @@ class WorkflowRunner:
         enriched["selection_mode"] = meta["selection_mode"]
         enriched["review_status"] = meta["review_status"]
         return enriched
+
     def _build_video_prompt_base(
         self,
         ctx: StepContext,
@@ -2287,9 +2367,7 @@ class WorkflowRunner:
 
         if not visual_description:
             main_character = self._main_character_display_label(ctx)
-            visual_description = (
-                f"{ctx.input.visual_style} 风格画面，主角 {main_character} 出现在当前场景中。"
-            )
+            visual_description = f"{ctx.input.visual_style} 风格画面，主角 {main_character} 出现在当前场景中。"
 
         if not narration:
             narration = scene_title
@@ -2303,6 +2381,7 @@ class WorkflowRunner:
             "shot_type": shot_type,
             "transition": transition,
         }
+
     def _build_video_provider_prompts(
         self,
         ctx: StepContext,
@@ -2319,7 +2398,7 @@ class WorkflowRunner:
             return self._build_jimeng_video_prompts(ctx, scenes, outputs)
 
         raise UnknownVideoProviderError(f"Unknown video provider: {provider}")
-    
+
     def _apply_manual_image_selection(
         self,
         image_review: Dict[str, Any],
@@ -2382,7 +2461,9 @@ class WorkflowRunner:
             found = True
 
         if not found:
-            raise ValueError(f"scene_id not found in image_review: {normalized_scene_id}")
+            raise ValueError(
+                f"scene_id not found in image_review: {normalized_scene_id}"
+            )
 
         updated_review["selected_assets"] = updated_items
         updated_review["selected_count"] = len(
@@ -2419,7 +2500,9 @@ class WorkflowRunner:
                     **(workflow_input or {}),
                     "video_provider": (
                         str(video_provider or "").strip()
-                        or str((workflow_input or {}).get("video_provider") or "").strip()
+                        or str(
+                            (workflow_input or {}).get("video_provider") or ""
+                        ).strip()
                         or "mock"
                     ),
                 }
@@ -2463,6 +2546,7 @@ class WorkflowRunner:
             "image_assets": image_assets,
             "video_prompts": video_prompts,
         }
+
     def refresh_image_review_scene(
         self,
         workflow_id: str,
@@ -2498,7 +2582,9 @@ class WorkflowRunner:
                     **(workflow_input or {}),
                     "video_provider": (
                         str(video_provider or "").strip()
-                        or str((workflow_input or {}).get("video_provider") or "").strip()
+                        or str(
+                            (workflow_input or {}).get("video_provider") or ""
+                        ).strip()
                         or "mock"
                     ),
                 }
@@ -2528,7 +2614,9 @@ class WorkflowRunner:
         )
         outputs["image_assets"] = single_scene_assets
 
-        image_assets_status = str(single_scene_assets.get("status") or "").strip().lower()
+        image_assets_status = (
+            str(single_scene_assets.get("status") or "").strip().lower()
+        )
         if image_assets_status in {"pending", "retrying"}:
             updated_image_review = dict(image_review or {})
             scene_review_item: Dict[str, Any] = {}
@@ -2553,7 +2641,9 @@ class WorkflowRunner:
         outputs["image_assets"] = self.build_image_assets_from_selected_assets(
             run_id=run_id,
             image_review=updated_image_review,
-            provider=str(single_scene_assets.get("provider") or self._image_provider_name()),
+            provider=str(
+                single_scene_assets.get("provider") or self._image_provider_name()
+            ),
         )
 
         video_prompts = self._run_video_prompts(ctx, outputs)
@@ -2564,11 +2654,16 @@ class WorkflowRunner:
             "run_id": run_id,
             "scene_id": normalized_scene_id,
             "scene_image_asset": single_scene_assets,
-            "scene_review_item": scene_review_item if image_assets_status not in {"pending", "retrying"} else {},
+            "scene_review_item": (
+                scene_review_item
+                if image_assets_status not in {"pending", "retrying"}
+                else {}
+            ),
             "image_assets": outputs["image_assets"],
             "image_review": updated_image_review,
             "video_prompts": video_prompts,
         }
+
     def refresh_image_review(
         self,
         workflow_id: str,
@@ -2615,7 +2710,9 @@ class WorkflowRunner:
                     **merged_workflow_input,
                     "video_provider": (
                         str(video_provider or "").strip()
-                        or str(merged_workflow_input.get("video_provider") or "").strip()
+                        or str(
+                            merged_workflow_input.get("video_provider") or ""
+                        ).strip()
                         or "mock"
                     ),
                 }
@@ -2679,6 +2776,7 @@ class WorkflowRunner:
             "image_review": updated_image_review,
             "video_prompts": video_prompts,
         }
+
     def _build_mock_video_prompts(
         self,
         ctx: StepContext,
@@ -2714,6 +2812,7 @@ class WorkflowRunner:
             "integration_status": "mock_only",
             "prompts": prompts,
         }
+
     def _build_kling_video_prompts(
         self,
         ctx: StepContext,
@@ -2747,6 +2846,7 @@ class WorkflowRunner:
             "integration_status": "pending_api_integration",
             "prompts": prompts,
         }
+
     def _build_jimeng_video_prompts(
         self,
         ctx: StepContext,
@@ -2780,6 +2880,7 @@ class WorkflowRunner:
             "integration_status": "pending_api_integration",
             "prompts": prompts,
         }
+
     def _build_render_plan_by_provider(
         self, ctx: StepContext, scenes: List[Dict[str, Any]], subtitles_enabled: bool
     ) -> Dict[str, Any]:
@@ -3035,7 +3136,9 @@ class WorkflowRunner:
         tone_label = self._tone_label(ctx.input.tone)
         audience_label = self._audience_label(ctx.input.audience)
         main_character_display = self._main_character_display_label(ctx, outputs)
-        secondary_character_display = self._secondary_character_display_label(ctx, outputs)
+        secondary_character_display = self._secondary_character_display_label(
+            ctx, outputs
+        )
         has_secondary_character = self._has_secondary_character(ctx, outputs)
 
         # 先尝试 LLM
@@ -3089,7 +3192,12 @@ class WorkflowRunner:
                 cleaned_text = extracted
 
         # 2) 如果清洗后仍然像结构体，判失败，走模板
-        looks_like_struct = cleaned_text.startswith("{") or cleaned_text.startswith("[") or cleaned_text.startswith("{'") or cleaned_text.startswith("['")
+        looks_like_struct = (
+            cleaned_text.startswith("{")
+            or cleaned_text.startswith("[")
+            or cleaned_text.startswith("{'")
+            or cleaned_text.startswith("['")
+        )
         if (not cleaned_text) or looks_like_struct:
             llm_story = None
         else:
@@ -3134,7 +3242,9 @@ class WorkflowRunner:
                 "secondary_character_display": secondary_character_display,
                 "character_consistency_anchor": ctx.input.character_consistency_anchor,
                 "language": ctx.input.language,
-                "structured_characters_enabled": bool(ctx.input.structured_characters_enabled),
+                "structured_characters_enabled": bool(
+                    ctx.input.structured_characters_enabled
+                ),
                 "character_ids": [
                     item.get("character_id")
                     for item in manifest_items
@@ -3142,6 +3252,7 @@ class WorkflowRunner:
                 ],
             },
         }
+
     def _run_storyboard(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -3188,6 +3299,7 @@ class WorkflowRunner:
             "total_duration_sec": total_duration_sec,
             "scenes": scenes,
         }
+
     def _run_sentence_shots(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -3231,6 +3343,7 @@ class WorkflowRunner:
             "shot_count": len(items),
             "items": items,
         }
+
     def _split_story_sentences(self, text: str) -> List[str]:
         normalized = str(text or "").replace("\n", " ").strip()
         if not normalized:
@@ -3920,6 +4033,7 @@ class WorkflowRunner:
             data.extend(f"P6\n{width} {height}\n255\n".encode("ascii"))
             data.extend(pixels)
             return bytes(data)
+
     def _build_scene_png(
         self,
         ctx: StepContext,
@@ -3938,6 +4052,7 @@ class WorkflowRunner:
         image.save(output_buffer, format="PNG")
 
         return output_buffer.getvalue()
+
     def _image_prompt_item_maps(
         self, outputs: Dict[str, Any]
     ) -> tuple[Dict[str, Dict[str, Any]], Dict[str, Dict[str, Any]]]:
@@ -3961,9 +4076,7 @@ class WorkflowRunner:
 
         return prompt_by_scene_id, prompt_by_shot_id
 
-    def _character_ids_from_bindings(
-        self, bindings: List[Dict[str, Any]]
-    ) -> List[str]:
+    def _character_ids_from_bindings(self, bindings: List[Dict[str, Any]]) -> List[str]:
         results: List[str] = []
         seen = set()
 
@@ -4008,6 +4121,7 @@ class WorkflowRunner:
             "character_ids": self._character_ids_from_bindings(characters),
             "prompt": prompt_text,
         }
+
     def _scene_candidate_variant(
         self,
         *,
@@ -4049,13 +4163,13 @@ class WorkflowRunner:
             variant["narration"] = narration
 
         return variant
-    
+
     def _run_image_assets(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
         queue = ImageProviderQueue(self)
         return queue.run(ctx=ctx, outputs=outputs)
-    
+
     def _run_video_prompts(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -4073,6 +4187,7 @@ class WorkflowRunner:
         storyboard = outputs.get("storyboard") or {}
         scenes = storyboard.get("scenes") or []
         return self._build_video_provider_prompts(ctx, scenes, outputs)
+
     def _run_render_plan(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
