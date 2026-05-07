@@ -157,6 +157,8 @@ class ImageProviderQueue:
                         "relative_path": primary_ref["relative_path"],
                         "public_url": primary_ref["public_url"],
                         "mime_type": primary_ref["mime_type"],
+                        "duration_sec": primary_ref.get("duration_sec"),
+                        "duration_estimate_sec": primary_ref.get("duration_estimate_sec"),
                         "status": "generated",
                         "candidate_asset_refs": candidate_asset_refs,
                     }
@@ -201,6 +203,8 @@ class ImageProviderQueue:
                         "relative_path": primary_ref["relative_path"],
                         "public_url": primary_ref["public_url"],
                         "mime_type": primary_ref["mime_type"],
+                        "duration_sec": primary_ref.get("duration_sec"),
+                        "duration_estimate_sec": primary_ref.get("duration_estimate_sec"),
                         "status": "generated",
                         "candidate_asset_refs": candidate_asset_refs,
                     }
@@ -280,6 +284,7 @@ class ImageProviderQueue:
             )
 
             image_bytes = self._generate_candidate_bytes(provider=provider, task=task)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_bytes(bytes(image_bytes))
 
             candidate_asset_refs.append(
@@ -291,6 +296,8 @@ class ImageProviderQueue:
                     "public_url": task.public_url,
                     "mime_type": "image/png",
                     "provider": provider,
+                    "duration_sec": candidate_scene.get("duration_sec"),
+                    "duration_estimate_sec": candidate_scene.get("duration_estimate_sec"),
                 }
             )
 
@@ -346,6 +353,7 @@ class ImageProviderQueue:
             )
 
             image_bytes = self._generate_candidate_bytes(provider=provider, task=task)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_bytes(bytes(image_bytes))
 
             candidate_asset_refs.append(
@@ -356,6 +364,8 @@ class ImageProviderQueue:
                     "public_url": task.public_url,
                     "mime_type": "image/png",
                     "provider": provider,
+                    "duration_sec": candidate_scene.get("duration_sec"),
+                    "duration_estimate_sec": candidate_scene.get("duration_estimate_sec"),
                 }
             )
 

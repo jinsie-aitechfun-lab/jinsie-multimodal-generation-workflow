@@ -37,6 +37,10 @@ class RunnerImageSelectionSupport:
                         "relative_path": selected_asset_ref.get("relative_path"),
                         "public_url": selected_asset_ref.get("public_url"),
                         "mime_type": selected_asset_ref.get("mime_type"),
+                        "duration_sec": item.get("duration_sec")
+                        or selected_asset_ref.get("duration_sec"),
+                        "duration_estimate_sec": item.get("duration_estimate_sec")
+                        or selected_asset_ref.get("duration_estimate_sec"),
                         "selected_asset_ref": dict(selected_asset_ref),
                         "status": "generated",
                         "candidate_asset_refs": item.get("candidate_asset_refs") or [],
