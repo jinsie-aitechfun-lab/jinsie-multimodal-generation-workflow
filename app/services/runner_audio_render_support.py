@@ -641,8 +641,15 @@ class RunnerAudioRenderSupport:
                 if duration_sec <= 0:
                     duration_sec = float(item.get("duration_estimate_sec") or 3.0)
             else:
-                # 无音频时默认每张 3 秒
-                duration_sec = 3.0
+                duration_sec = float(image_asset.get("duration_sec") or 0.0)
+                if duration_sec <= 0:
+                    duration_sec = float(
+                        image_asset.get("duration_estimate_sec") or 0.0
+                    )
+                if duration_sec <= 0:
+                    duration_sec = float(ctx.input.duration_sec) / max(
+                        len(image_assets_list), 1
+                    )
 
             escaped_image_path = str(image_path).replace("'", "'\\''")
             concat_lines.append(f"file '{escaped_image_path}'")
@@ -672,11 +679,21 @@ class RunnerAudioRenderSupport:
 
         # ========= 计算总时长 =========
         total_duration_sec = 0.0
-        for item in audio_item_list:
-            duration_sec = float(item.get("duration_sec") or 0.0)
-            if duration_sec <= 0:
-                duration_sec = float(item.get("duration_estimate_sec") or 0.0)
-            total_duration_sec += max(duration_sec, 0.0)
+        if audio_item_list:
+            for item in audio_item_list:
+                duration_sec = float(item.get("duration_sec") or 0.0)
+                if duration_sec <= 0:
+                    duration_sec = float(item.get("duration_estimate_sec") or 0.0)
+                total_duration_sec += max(duration_sec, 0.0)
+        else:
+            for item in image_asset_list:
+                duration_sec = float(item.get("duration_sec") or 0.0)
+                if duration_sec <= 0:
+                    duration_sec = float(item.get("duration_estimate_sec") or 0.0)
+                total_duration_sec += max(duration_sec, 0.0)
+
+            if total_duration_sec <= 0:
+                total_duration_sec = float(ctx.input.duration_sec)
 
         video_run_dir = self._runner._ensure_video_run_dir(ctx.run_id)
 
@@ -868,6 +885,8 @@ class RunnerAudioRenderSupport:
                     str(base_video_path),
                     "-i",
                     str(merged_audio_path),
+                    "-t",
+                    f"{total_duration_sec:.3f}",
                     "-vf",
                     subtitle_filter,
                     "-c:v",
@@ -898,6 +917,8 @@ class RunnerAudioRenderSupport:
                         "-y",
                         "-i",
                         str(base_video_path),
+                        "-t",
+                        f"{total_duration_sec:.3f}",
                         "-vf",
                         subtitle_filter,
                         "-c:v",
