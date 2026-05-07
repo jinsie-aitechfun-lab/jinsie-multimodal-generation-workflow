@@ -594,13 +594,14 @@ function getTopicManualMismatchWarning(): string {
         </template>
 
         <label class="field">
-          <span>Duration (sec)</span>
+          <span>Duration · 视频时长（秒，60–180）</span>
           <input
             :value="formState.durationSec"
             class="input"
             type="number"
-            min="15"
-            max="300"
+            min="60"
+            max="180"
+            step="60"
             @input="
               updateFormState(
                 'durationSec',
@@ -608,6 +609,7 @@ function getTopicManualMismatchWarning(): string {
               )
             "
           />
+          <span class="hint">推荐默认 120 秒；支持 60 / 120 / 180 秒。</span>
         </label>
 
         <label class="field">

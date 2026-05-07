@@ -134,7 +134,7 @@ class WorkflowInput(BaseModel):
             "'secondary_character': 'warm_male', 'narrator': 'warm_female'}"
         ),
     )
-    duration_sec: int = Field(default=60, ge=15, le=300)
+    duration_sec: int = Field(default=120, ge=60, le=180)
     language: str = Field(default="zh-CN")
     subtitle_enabled: bool = Field(default=True)
     video_provider: str = Field(default="mock")
@@ -245,7 +245,8 @@ class ImageReviewRefreshResponse(BaseModel):
             .isoformat()
             .replace("+00:00", "Z")
         )
-        
+
+
 class ImageReviewRefreshSceneRequest(BaseModel):
     workflow_id: str
     session_id: Optional[str] = None
@@ -276,7 +277,9 @@ class ImageReviewRefreshSceneResponse(BaseModel):
             .replace(microsecond=0)
             .isoformat()
             .replace("+00:00", "Z")
-        )       
+        )
+
+
 class FinalVideoRenderRequest(BaseModel):
     workflow_id: str
     session_id: Optional[str] = None

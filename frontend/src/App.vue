@@ -190,7 +190,7 @@ const DEFAULT_WORKFLOW_FORM: any = {
   narratorVoiceStyle: 'warm_female',
   motherVoiceStyle: 'warm_female',
   childVoiceStyle: 'gentle_child',
-  durationSec: 60,
+  durationSec: 120,
   language: 'zh-CN',
   subtitleEnabled: true,
   videoProvider: 'mock',
