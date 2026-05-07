@@ -1119,6 +1119,10 @@ async function refreshImageReview() {
     sceneRefreshQueue.value = []
     refreshingImageReview.value = false
   }
+
+  if (workflowForm.value.renderMode === 'auto' && currentWorkflowResponse.value) {
+    void renderFinalVideoIfReady(currentWorkflowResponse.value)
+  }
 }
 async function runWorkflow() {
   clearImageReviewAutoRefreshTimer()
