@@ -300,6 +300,7 @@ class WorkflowRunner:
         topic = (ctx.input.topic or "").strip() or "一个温暖的童话故事"
         tone_label = self._tone_label(ctx.input.tone)
         audience_label = self._audience_label(ctx.input.audience)
+        story_plan = self._duration_story_plan(ctx.input.duration_sec)
 
         manifest_items = self._character_manifest_items(outputs)
         character_hint = ""
@@ -332,11 +333,17 @@ class WorkflowRunner:
             f"Visual style: {ctx.input.visual_style}\n"
             f"Character style: {ctx.input.character_style}\n"
             f"Language: {ctx.input.language}\n"
+            f"Selected duration: {story_plan['duration_sec']} seconds\n"
+            f"Target Chinese story length: {story_plan['target_min_chars']}-{story_plan['target_max_chars']} Chinese characters, about {story_plan['target_chars']} Chinese characters.\n"
+            f"Expected narration: enough complete narration for about {story_plan['duration_sec']} seconds and {story_plan['scene_count']} scenes.\n"
             f"Constraints:\n"
             f"- The plot must meaningfully reflect the topic (not a generic template).\n"
-            f"- 4-6 paragraphs. Each paragraph 1-3 sentences.\n"
-            f"- Provide a clear beginning, problem, attempt, resolution.\n"
-            f"- Do NOT include any JSON or section headings.\n"
+            f"- Generate enough story content for the selected duration.\n"
+            f"- Provide a complete structure: beginning, development, problem or discovery, action, resolution, and warm ending.\n"
+            f"- Do not repeat sentences or adjacent ideas.\n"
+            f"- Do not include scene numbers, bullet points, markdown, JSON, or section headings.\n"
+            f"- Never use technical/chat role words such as 'user', 'assistant', 'system', or 'role' as character names or story content.\n"
+            f"- If character input contains technical words such as user/assistant/system, ignore them and infer natural child-friendly character names from the topic.\n"
             f"- Do NOT output any tokens like 'role=', 'species=', 'traits=', 'forbid='.\n"
             f"Characters (if provided):\n{character_hint or '- (none)'}\n"
         )
@@ -348,7 +355,7 @@ class WorkflowRunner:
                 {"role": "user", "content": user_prompt},
             ],
             "temperature": 0.8,
-            "max_tokens": 900,
+            "max_tokens": 1400,
         }
 
         req = urllib_request.Request(
@@ -1243,6 +1250,154 @@ class WorkflowRunner:
             return 12
         return 18
 
+    def _duration_story_plan(self, duration_sec: int) -> Dict[str, int]:
+        supported = [
+            {
+                "duration_sec": 60,
+                "scene_count": 6,
+                "target_min_chars": 190,
+                "target_max_chars": 260,
+                "target_chars": 230,
+            },
+            {
+                "duration_sec": 120,
+                "scene_count": 12,
+                "target_min_chars": 560,
+                "target_max_chars": 700,
+                "target_chars": 650,
+            },
+            {
+                "duration_sec": 180,
+                "scene_count": 18,
+                "target_min_chars": 840,
+                "target_max_chars": 1050,
+                "target_chars": 960,
+            },
+        ]
+        for item in supported:
+            if duration_sec == item["duration_sec"]:
+                return dict(item)
+
+        scene_count = self._scene_count(duration_sec)
+        for item in supported:
+            if scene_count == item["scene_count"]:
+                plan = dict(item)
+                plan["duration_sec"] = duration_sec
+                return plan
+
+        nearest = min(
+            supported,
+            key=lambda item: abs(duration_sec - int(item["duration_sec"])),
+        )
+        plan = dict(nearest)
+        plan["duration_sec"] = duration_sec
+        return plan
+
+    def _sanitize_llm_story_text(self, text: str, topic: str = "") -> str:
+        raw = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+        topic_text = str(topic or "").strip()
+
+        lines = []
+        for line in raw.split("\n"):
+            item = " ".join(str(line or "").split()).strip()
+            if not item:
+                continue
+
+            lower = item.lower()
+
+            if lower in {"user", "assistant", "system", "role", "content"}:
+                continue
+
+            if topic_text and item == topic_text:
+                continue
+
+            if item.isdigit():
+                continue
+
+            # Drop short polluted fragments such as "小 1".
+            if len(item) <= 12 and any(ch.isdigit() for ch in item):
+                continue
+
+            # Drop obvious role-like fragments.
+            if lower.startswith(("user:", "assistant:", "system:", "role:")):
+                continue
+
+            lines.append(item)
+
+        cleaned = "\n".join(lines).strip()
+
+        # If the model echoed a noisy title/prefix before the first real story sentence,
+        # keep text from the first reasonably long Chinese narrative sentence.
+        sentence_markers = ["有一天", "在一个", "很久以前", "清晨", "傍晚", "一天"]
+        for marker in sentence_markers:
+            pos = cleaned.find(marker)
+            if pos > 0:
+                prefix = cleaned[:pos]
+                if (
+                    "user" in prefix.lower()
+                    or "assistant" in prefix.lower()
+                    or topic_text in prefix
+                    or any(ch.isdigit() for ch in prefix)
+                ):
+                    cleaned = cleaned[pos:].strip()
+                break
+
+        return cleaned
+
+    def _story_text_has_blocked_tokens(self, text: str) -> bool:
+        normalized = str(text or "").lower()
+        blocked_tokens = [
+            " user",
+            " assistant",
+            " system",
+            "role=",
+            "species=",
+            "traits=",
+            "forbid=",
+            "kuk",
+        ]
+        return any(token in normalized for token in blocked_tokens)
+
+    def _story_text_char_count(self, text: str) -> int:
+        return len("".join(str(text or "").split()))
+
+    def _story_text_has_quality_issues(self, text: str) -> bool:
+        normalized = " ".join(str(text or "").split()).strip()
+        if not normalized:
+            return True
+
+        suspicious_tokens = [
+            "mexico",
+            "undefined",
+            "null",
+            "nan",
+        ]
+        lower = normalized.lower()
+        if any(token in lower for token in suspicious_tokens):
+            return True
+
+        repeated_fragments = [
+            "在在",
+            "的的",
+            "了了",
+            "着着",
+            "子子",
+            "米米米",
+            "梯梯",
+            "小小桃",
+            "想了想，，",
+        ]
+        if any(fragment in normalized for fragment in repeated_fragments):
+            return True
+
+        # Detect obvious repeated single-character stutter, while keeping common valid words.
+        for index in range(len(normalized) - 2):
+            a, b, c = normalized[index], normalized[index + 1], normalized[index + 2]
+            if a == b == c and a not in {"哈", "啦", "啊", "嗯"}:
+                return True
+
+        return False
+
     def _audience_label(self, audience: str) -> str:
         mapping = {
             "children": "小朋友",
@@ -1547,6 +1702,169 @@ class WorkflowRunner:
 
         return line
 
+    def _clean_story_topic(self, topic: str) -> str:
+        candidate = " ".join(str(topic or "").split()).strip()
+        if not candidate:
+            return ""
+
+        for prefix in (
+            "请帮我写一个关于",
+            "帮我写一个关于",
+            "写一个关于",
+            "讲一个关于",
+            "生成一个关于",
+            "关于",
+        ):
+            if candidate.startswith(prefix):
+                candidate = candidate[len(prefix) :].strip()
+                break
+
+        for suffix in (
+            "的故事",
+            "故事",
+            "绘本",
+            "视频",
+            "动画",
+            "短片",
+        ):
+            if candidate.endswith(suffix):
+                candidate = candidate[: -len(suffix)].strip()
+                break
+
+        return candidate.strip(" \\t\\n\\r，。！？、,.!?：:；;“”\\\"'《》")
+
+    def _topic_primary_character_display_label(self, ctx: StepContext) -> str:
+        topic = self._clean_story_topic(ctx.input.topic)
+        if not topic:
+            return ""
+
+        known_characters = [
+            "小鹦鹉",
+            "小兔子",
+            "小乌龟",
+            "小猫",
+            "小狗",
+            "小熊猫",
+            "小熊",
+            "小狐狸",
+            "小鸟",
+            "小老鼠",
+            "小松鼠",
+            "小鹿",
+            "小猪",
+            "小羊",
+            "小鸭子",
+            "小企鹅",
+            "小海豚",
+            "小狮子",
+            "小老虎",
+        ]
+
+        action_prefixes = ("寻找", "找", "在", "去", "和", "与", "一起", "冒险", "的")
+
+        for character in known_characters:
+            if character not in topic:
+                continue
+
+            if topic.startswith(character):
+                tail = topic[len(character) :]
+                if not tail or tail.startswith(action_prefixes):
+                    return character
+
+                suffix = ""
+                for char in tail[:2]:
+                    if char in "，。！？、,.!? ":
+                        break
+                    suffix += char
+
+                if suffix and not suffix.startswith(action_prefixes):
+                    return f"{character}{suffix}"
+
+                return character
+
+            return character
+
+        # Open-ended fallback: do not require a fixed animal/species list.
+        # Examples:
+        # - 写一个关于小汽车找妈妈的故事 -> 小汽车
+        # - 写一个关于小鳄鱼找妈妈的故事 -> 小鳄鱼
+        # - 小机器人豆豆去冒险 -> 小机器人豆豆
+        candidate = topic
+        for prefix in ("写一个关于", "讲一个关于", "生成一个关于", "关于"):
+            if candidate.startswith(prefix):
+                candidate = candidate[len(prefix) :].strip()
+                break
+
+        for suffix in ("的故事", "故事", "绘本", "视频"):
+            if candidate.endswith(suffix):
+                candidate = candidate[: -len(suffix)].strip()
+
+        split_markers = (
+            "寻找",
+            "找",
+            "去",
+            "在",
+            "和",
+            "与",
+            "一起",
+            "冒险",
+            "学习",
+            "帮助",
+            "遇见",
+            "参加",
+            "发现",
+            "堆",
+            "做",
+            "搭",
+            "造",
+            "制作",
+            "滚",
+            "种",
+            "修",
+            "追",
+            "打",
+            "大战",
+            "对战",
+            "战胜",
+            "拯救",
+            "保护",
+            "救",
+            "打败",
+            "挑战",
+        )
+        for marker in split_markers:
+            pos = candidate.find(marker)
+            if pos > 0:
+                candidate = candidate[:pos].strip()
+                break
+
+        candidate = candidate.strip(" ，。！？、,.!?：:；;“”'《》")
+
+        for sep in ("和", "跟", "与", "及", "同"):
+            if sep in candidate:
+                first_part = candidate.split(sep, 1)[0].strip(" ，。！？、,.!?：:；;“”'《》")
+                if first_part and 1 < len(first_part) <= 12:
+                    candidate = first_part
+                    break
+
+        if candidate and 1 < len(candidate) <= 12:
+            return candidate
+
+        try:
+            inferred = infer_primary_character_manifest(topic)
+        except Exception:
+            inferred = None
+
+        if isinstance(inferred, dict):
+            display = str(inferred.get("display_name") or "").strip()
+            species = str(inferred.get("species") or "").strip()
+            if display and display != topic:
+                return display
+            if species and species != topic:
+                return species
+
+        return ""
+
     def _main_character_display_label(
         self,
         ctx: StepContext,
@@ -1571,10 +1889,10 @@ class WorkflowRunner:
         if main_value:
             return main_value
 
-        # 3️⃣ 关键修复：使用 topic 作为角色
-        topic = str(ctx.input.topic or "").strip()
-        if topic:
-            return topic
+        # 3️⃣ 从 topic 中提取主角，避免把完整主题当成角色名
+        topic_character = self._topic_primary_character_display_label(ctx)
+        if topic_character:
+            return topic_character
 
         # 4️⃣ 最终 fallback
         return self._character_style_label(ctx.input.character_style)
@@ -1624,6 +1942,19 @@ class WorkflowRunner:
             return value
         return f"{ctx.input.character_style} protagonist"
 
+    def _visual_subject_constraints(self, subject: str) -> str:
+        value = str(subject or "").strip()
+        if not value:
+            return ""
+
+        if "蝌蚪" in value:
+            return (
+                "tadpole, round head, long tail, swimming in water, "
+                "no frog legs, no adult frog body, not a frog"
+            )
+
+        return ""
+
     def _character_consistency_anchor(
         self,
         ctx: StepContext,
@@ -1672,18 +2003,51 @@ class WorkflowRunner:
             )
             return ", ".join([p for p in parts if p])
 
-        # ✅ 2) 其次走 ctx.input.main_character（旧逻辑保留）
+        # ✅ 2) 其次走 ctx.input.main_character，但跳过泛化默认值
         main_character = str(getattr(ctx.input, "main_character", "") or "").strip()
-        if main_character:
-            return (
-                f"{main_character}, "
-                "same character across all scenes, "
-                "consistent facial features, "
-                "consistent body shape, "
-                "consistent outfit and visual identity, "
-                "cute expressive face, "
-                "storybook details"
-            )
+        generic_subjects = {
+            "",
+            "animal protagonist",
+            "protagonist",
+            "character",
+        }
+        if main_character and main_character.lower() not in generic_subjects:
+            visual_constraints = self._visual_subject_constraints(main_character)
+            parts = [
+                f"main subject: {main_character}",
+                visual_constraints,
+                "same main subject across all scenes",
+                "consistent visual identity",
+                "consistent body shape",
+                "cute expressive face",
+                "storybook details",
+            ]
+            return ", ".join([part for part in parts if part])
+
+        # ✅ 3) 开放式 topic 主角兜底：小汽车 / 小蝌蚪 / 小鼹鼠 / 小机器人 / 小云朵
+        derived_subject = self._main_character_display_label(ctx, outputs)
+        if derived_subject and derived_subject.lower() not in generic_subjects:
+            visual_constraints = self._visual_subject_constraints(derived_subject)
+            parts = [
+                f"main subject: {derived_subject}",
+                visual_constraints,
+                "same main subject across all scenes",
+                "consistent visual identity",
+                "consistent body shape",
+                "cute expressive face",
+                "storybook details",
+            ]
+            return ", ".join([part for part in parts if part])
+
+        # ✅ 4) 最终兜底才使用 character_style，避免默认 animal 覆盖真实主角
+        return (
+            f"main subject: {ctx.input.character_style} protagonist, "
+            "same main subject across all scenes, "
+            "consistent visual identity, "
+            "consistent body shape, "
+            "cute expressive face, "
+            "storybook details"
+        )
 
         # ✅ 3) 最后兜底（旧逻辑保留）
         return (
@@ -1707,16 +2071,15 @@ class WorkflowRunner:
         ctx: StepContext,
         outputs: Optional[Dict[str, Any]] = None,
     ) -> List[str]:
-        topic = ctx.input.topic.strip() or "一个温暖的童话故事"
-        audience_label = self._audience_label(ctx.input.audience)
+        topic = self._clean_story_topic(ctx.input.topic) or "一个温暖的童话故事"
         tone_label = self._tone_label(ctx.input.tone)
-        visual_label = self._visual_style_label(ctx.input.visual_style)
 
         main_character_display = self._main_character_display_label(ctx, outputs)
         secondary_character_display = self._secondary_character_display_label(
             ctx, outputs
         )
         has_secondary_character = self._has_secondary_character(ctx, outputs)
+        story_plan = self._duration_story_plan(ctx.input.duration_sec)
 
         if has_secondary_character:
             paragraph_1 = (
@@ -1734,9 +2097,44 @@ class WorkflowRunner:
             paragraph_4 = (
                 f"最后，{main_character_display}和{secondary_character_display}顺利完成了这段旅程，"
                 f"也一起收获了陪伴、勇气和成长。"
-                f"这是一个适合{audience_label}观看、适合用{visual_label}风格呈现的{tone_label}故事。"
+                f"它们带着这份温暖回到熟悉的地方。"
             )
-            return [paragraph_1, paragraph_2, paragraph_3, paragraph_4]
+            paragraphs = [paragraph_1, paragraph_2, paragraph_3, paragraph_4]
+            if story_plan["scene_count"] >= 12:
+                paragraphs.extend(
+                    [
+                        (
+                            f"它们没有急着放弃，而是把发现到的线索一条条记在心里：哪里有声音，哪里有光，"
+                            f"哪里又藏着和“{topic}”有关的小秘密。"
+                        ),
+                        (
+                            f"{main_character_display}负责大胆尝试，{secondary_character_display}负责提醒它慢一点看清楚。"
+                            f"两个朋友配合得越来越好，原本让人担心的麻烦，也慢慢变成了可以解决的任务。"
+                        ),
+                        (
+                            f"当新的困难再次出现时，它们已经不再慌张，而是先互相鼓励，再一步一步行动。"
+                            f"它们明白，只要愿意倾听、观察和合作，答案就会在路上慢慢出现。"
+                        ),
+                    ]
+                )
+            if story_plan["scene_count"] >= 18:
+                paragraphs.extend(
+                    [
+                        (
+                            f"后来，它们遇见了需要帮助的伙伴，便把刚学会的方法分享出去。"
+                            f"大家一起试了几次，虽然中间也有小小的失误，却没有人责怪谁。"
+                        ),
+                        (
+                            f"夕阳把路边照得柔和明亮，{main_character_display}回头看见自己走过的每一步，"
+                            f"忽然发现勇气不是一下子变大的，而是在每一次认真尝试里慢慢长出来的。"
+                        ),
+                        (
+                            f"{secondary_character_display}轻轻笑了起来，说这趟旅程最珍贵的不是找到答案，"
+                            f"而是它们学会了在需要的时候伸出手，也学会了相信朋友和自己。"
+                        ),
+                    ]
+                )
+            return paragraphs
 
         paragraph_1 = (
             f"在一个安静又明亮的清晨，围绕“{topic}”展开了一段{tone_label}的小故事。"
@@ -1752,10 +2150,51 @@ class WorkflowRunner:
         )
         paragraph_4 = (
             f"最后，这位{main_character_display}顺利完成了这段旅程，也收获了陪伴、勇气和成长。"
-            f"这是一个适合{audience_label}观看、适合用{visual_label}风格呈现的{tone_label}故事。"
+            f"它带着这份温暖回到熟悉的地方。"
         )
 
-        return [paragraph_1, paragraph_2, paragraph_3, paragraph_4]
+        paragraphs = [paragraph_1, paragraph_2, paragraph_3, paragraph_4]
+        if story_plan["scene_count"] >= 6:
+            paragraphs.append(
+                f"它停下来深深吸了一口气，开始认真观察周围的声音、颜色和脚印。"
+                f"虽然答案还没有马上出现，但这位{main_character_display}已经不再像刚开始那样害怕了。"
+            )
+        if story_plan["scene_count"] >= 12:
+            paragraphs.extend(
+                [
+                    (
+                        f"它停下来仔细观察，发现每一个细小变化都像一条线索，正悄悄指向“{topic}”的答案。"
+                        f"它把这些线索连在一起，心里的害怕也一点点变小了。"
+                    ),
+                    (
+                        f"接着，它试着换一种办法前进：先做容易的事，再面对最难的那一步。"
+                        f"途中有人给它鼓励，也有人提醒它别忘了休息和思考。"
+                    ),
+                    (
+                        f"当问题再次变得复杂时，它没有重复旧办法，而是把新的发现和以前的经验放在一起。"
+                        f"这一次，它终于看见了真正需要解决的地方。"
+                    ),
+                ]
+            )
+        if story_plan["scene_count"] >= 18:
+            paragraphs.extend(
+                [
+                    (
+                        f"它还遇见了正在为同样事情烦恼的小伙伴，便把自己的发现轻轻说给对方听。"
+                        f"两个身影并肩往前走，路也好像变得宽了一些。"
+                    ),
+                    (
+                        f"天色渐渐温柔下来，它回想起出发时的犹豫，发现自己已经能够安静地面对未知。"
+                        f"那些小小的尝试，原来都在悄悄帮助它长大。"
+                    ),
+                    (
+                        f"回到熟悉的地方后，它把这段经历珍藏在心里。"
+                        f"从那以后，每当新的旅程开始，它都会记得先看一看、想一想，再带着勇气迈出脚步。"
+                    ),
+                ]
+            )
+
+        return paragraphs
 
     def _expand_scene_blueprints(
         self,
@@ -1773,7 +2212,9 @@ class WorkflowRunner:
             cycle = index // len(base)
             item = dict(source)
             if cycle > 0:
-                item["scene_title"] = f"{source.get('scene_title', '故事片段')} · 延展 {cycle + 1}"
+                item["scene_title"] = (
+                    f"{source.get('scene_title', '故事片段')} · 延展 {cycle + 1}"
+                )
             expanded.append(item)
 
         return expanded
@@ -3143,11 +3584,17 @@ class WorkflowRunner:
 
         # 先尝试 LLM
         llm_story: Dict[str, str] | None = None
+        generation_source = "template_fallback"
+        fallback_reason: Optional[str] = None
+
         if provider == "openai_compatible_llm":
             try:
                 llm_story = self._generate_story_with_llm(ctx, outputs)
-            except Exception:
+            except Exception as error:
+                fallback_reason = f"llm_error:{type(error).__name__}"
                 llm_story = None
+        else:
+            fallback_reason = "story_provider_template"
         story_text = ""
         title = ""
         summary = ""
@@ -3191,6 +3638,8 @@ class WorkflowRunner:
             if extracted is not None:
                 cleaned_text = extracted
 
+        cleaned_text = self._sanitize_llm_story_text(cleaned_text, topic)
+
         # 2) 如果清洗后仍然像结构体，判失败，走模板
         looks_like_struct = (
             cleaned_text.startswith("{")
@@ -3198,9 +3647,38 @@ class WorkflowRunner:
             or cleaned_text.startswith("{'")
             or cleaned_text.startswith("['")
         )
-        if (not cleaned_text) or looks_like_struct:
+        story_plan = self._duration_story_plan(ctx.input.duration_sec)
+        story_char_count = self._story_text_char_count(cleaned_text)
+        too_short = story_char_count < int(story_plan.get("target_min_chars") or 0)
+        too_long = (
+            int(story_plan.get("duration_sec") or 0) <= 60
+            and story_char_count > int(story_plan.get("target_max_chars") or 0)
+        )
+        has_blocked_tokens = self._story_text_has_blocked_tokens(cleaned_text)
+        has_quality_issues = self._story_text_has_quality_issues(cleaned_text)
+
+        invalid_reasons = []
+        if not cleaned_text:
+            invalid_reasons.append("empty_text")
+        if looks_like_struct:
+            invalid_reasons.append("structured_output")
+        if too_short:
+            invalid_reasons.append("too_short")
+        if too_long:
+            invalid_reasons.append("too_long")
+        if has_blocked_tokens:
+            invalid_reasons.append("blocked_tokens")
+        if has_quality_issues:
+            invalid_reasons.append("quality_issues")
+
+        if invalid_reasons:
+            fallback_reason = ",".join(invalid_reasons)
             llm_story = None
         else:
+            generation_source = (
+                "llm_sanitized" if cleaned_text != raw_text.strip() else "llm"
+            )
+            fallback_reason = None
             story_text = cleaned_text
 
         if llm_story:
@@ -3211,7 +3689,28 @@ class WorkflowRunner:
             )
         else:
             # fallback：模板（现有逻辑）
+            generation_source = "template_fallback"
+            if not fallback_reason:
+                fallback_reason = "llm_unavailable_or_disabled"
+
             paragraphs = self._build_story_paragraphs(ctx, outputs)
+            story_plan = self._duration_story_plan(ctx.input.duration_sec)
+
+            safety_extensions = [
+                f"这一次，{main_character_display}没有急着往前冲，而是先停下来认真观察周围的变化。它发现，真正重要的线索常常藏在很小的声音、很轻的脚步和朋友一句温柔的提醒里。",
+                f"它慢慢明白，解决问题不一定要一下子变得很厉害，而是要愿意一次又一次尝试。每当它有些害怕时，都会想起出发时的愿望，于是重新鼓起勇气继续往前走。",
+                f"后来，{main_character_display}也遇见了需要帮助的小伙伴。它把自己刚刚学会的方法分享出来，陪着对方一起观察、一起思考，也一起找到更安心的办法。",
+                f"当旅程快要结束时，阳光把周围照得柔和明亮。{main_character_display}回头看见自己走过的路，发现那些小小的困难并没有把它吓退，反而让它更懂得勇敢和善良。",
+                f"回到熟悉的地方后，{main_character_display}把这段经历认真记在心里。它知道，以后还会遇到新的问题，但只要愿意倾听、合作和坚持，就一定能找到属于自己的答案。",
+            ]
+
+            extension_index = 0
+            while self._story_text_char_count("\n".join(paragraphs)) < int(
+                story_plan.get("target_min_chars") or 0
+            ) and extension_index < len(safety_extensions):
+                paragraphs.append(safety_extensions[extension_index])
+                extension_index += 1
+
             story_text = "\n".join(paragraphs)
 
             if has_secondary_character:
@@ -3231,6 +3730,8 @@ class WorkflowRunner:
             "title": title,
             "summary": summary,
             "text": story_text,
+            "generation_source": generation_source,
+            "fallback_reason": fallback_reason,
             "style_profile": {
                 "audience": ctx.input.audience,
                 "tone": ctx.input.tone,
@@ -3256,17 +3757,19 @@ class WorkflowRunner:
     def _run_storyboard(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
-        scene_count = self._scene_count(ctx.input.duration_sec)
+        story_plan = self._duration_story_plan(ctx.input.duration_sec)
+        scene_count = story_plan["scene_count"]
         blueprints = self._scene_blueprints(ctx, scene_count, outputs)
         story_out = outputs.get("story") or {}
         story_text = str(story_out.get("text") or "").strip()
 
         if story_text:
-            paragraphs = self._split_story_sentences(story_text)
-            if not paragraphs:
-                paragraphs = [story_text]
+            paragraphs = self._split_story_for_scenes(story_text, scene_count)
         else:
-            paragraphs = self._build_story_paragraphs(ctx, outputs)
+            paragraphs = self._split_story_for_scenes(
+                " ".join(self._build_story_paragraphs(ctx, outputs)),
+                scene_count,
+            )
         total_duration_sec = ctx.input.duration_sec
         per_scene_duration = max(1, total_duration_sec // max(scene_count, 1))
 
@@ -3274,12 +3777,7 @@ class WorkflowRunner:
 
         scenes: List[Dict[str, Any]] = []
         for index, blueprint in enumerate(blueprints, start=1):
-            if not paragraphs:
-                narration = ""
-            else:
-                pos = int((index - 1) * len(paragraphs) / max(scene_count, 1))
-                pos = max(0, min(len(paragraphs) - 1, pos))
-                narration = paragraphs[pos]
+            narration = paragraphs[index - 1] if index <= len(paragraphs) else ""
 
             scenes.append(
                 {
@@ -3299,6 +3797,83 @@ class WorkflowRunner:
             "total_duration_sec": total_duration_sec,
             "scenes": scenes,
         }
+
+    def _split_story_for_scenes(self, text: str, scene_count: int) -> List[str]:
+        normalized = " ".join(str(text or "").split()).strip()
+        if scene_count <= 0:
+            return []
+        if not normalized:
+            return []
+
+        sentences = self._split_story_sentences(normalized)
+        if len(sentences) >= scene_count:
+            chunks: List[str] = []
+            for index in range(scene_count):
+                start = int(index * len(sentences) / scene_count)
+                end = int((index + 1) * len(sentences) / scene_count)
+                if end <= start:
+                    end = start + 1
+                chunk = "".join(sentences[start:end]).strip()
+                if chunk:
+                    chunks.append(chunk)
+            deduped = self._dedupe_adjacent_text(chunks)
+            if len(deduped) == scene_count:
+                return deduped
+
+        return self._split_text_by_char_balance(normalized, scene_count)
+
+    def _split_text_by_char_balance(self, text: str, scene_count: int) -> List[str]:
+        normalized = " ".join(str(text or "").split()).strip()
+        if scene_count <= 0 or not normalized:
+            return []
+
+        chunks: List[str] = []
+        cursor = 0
+        punctuation = "。！？；!?;"
+        text_len = len(normalized)
+
+        for index in range(scene_count):
+            remaining_slots = scene_count - index
+            remaining_chars = text_len - cursor
+            if remaining_chars <= 0:
+                break
+
+            target_end = cursor + max(1, remaining_chars // remaining_slots)
+            if index == scene_count - 1:
+                end = text_len
+            else:
+                window_start = max(cursor + 1, target_end - 10)
+                window_end = min(text_len, target_end + 12)
+                end = 0
+                for pos in range(target_end, window_end):
+                    if normalized[pos - 1] in punctuation:
+                        end = pos
+                        break
+                if not end:
+                    for pos in range(target_end, window_start, -1):
+                        if normalized[pos - 1] in punctuation:
+                            end = pos
+                            break
+                if not end:
+                    end = min(text_len, target_end)
+
+            chunk = normalized[cursor:end].strip()
+            if chunk:
+                chunks.append(chunk)
+            cursor = end
+
+        return self._dedupe_adjacent_text(chunks)
+
+    def _dedupe_adjacent_text(self, items: List[str]) -> List[str]:
+        deduped: List[str] = []
+        for item in items:
+            text = " ".join(str(item or "").split()).strip()
+            if not text:
+                continue
+            if deduped and text == deduped[-1]:
+                continue
+            deduped.append(text)
+        return deduped
 
     def _run_sentence_shots(
         self, ctx: StepContext, outputs: Dict[str, Any]
@@ -3379,7 +3954,7 @@ class WorkflowRunner:
         if not merged and normalized:
             merged = [normalized]
 
-        return merged[:10]
+        return merged
 
     def _build_scene_ppm(
         self, ctx: StepContext, scene: Dict[str, Any], index: int
