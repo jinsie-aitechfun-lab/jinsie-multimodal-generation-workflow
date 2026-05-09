@@ -68,6 +68,51 @@ def build_subject_negative_prompt_block(profile: Dict[str, Any]) -> str:
     return f"subject negative constraints: {must_avoid}"
 
 
+def build_character_separation_block(outputs: Dict[str, Any]) -> str:
+    manifest = outputs.get("character_manifest") or {}
+    characters = manifest.get("characters") or []
+
+    if not isinstance(characters, list) or len(characters) < 2:
+        return ""
+
+    parts: List[str] = [
+        "character separation: keep every character visually distinct",
+        "do not transfer visual traits, body parts, clothing, shell, ears, tail, or accessories between characters",
+        "each character must keep only its own defined appearance traits",
+        "supporting characters may appear, but they must not change the main subject identity",
+    ]
+
+    for item in characters:
+        if not isinstance(item, dict):
+            continue
+
+        name = _clean_text(item.get("display_name"))
+        species = _clean_text(item.get("species"))
+        traits = item.get("signature_traits") or item.get("visual_traits") or []
+        forbidden = item.get("forbidden_traits") or []
+
+        if isinstance(traits, list):
+            traits_text = _join_list(traits)
+        else:
+            traits_text = _clean_text(traits)
+
+        if isinstance(forbidden, list):
+            forbidden_text = _join_list(forbidden)
+        else:
+            forbidden_text = _clean_text(forbidden)
+
+        character_parts = [
+            f"{name} ({species})" if name and species else name or species,
+            f"must keep only: {traits_text}" if traits_text else "",
+            f"must avoid: {forbidden_text}" if forbidden_text else "",
+        ]
+        character_text = "; ".join(part for part in character_parts if part)
+        if character_text:
+            parts.append(character_text)
+
+    return "; ".join(parts)
+
+
 def build_scene_action_binding_block(
     *,
     visual_description: str,
@@ -113,6 +158,7 @@ def build_image_prompt_policy_blocks(
     return {
         "profile": profile,
         "visual_profile_block": build_visual_profile_prompt_block(profile),
+        "character_separation_block": build_character_separation_block(outputs),
         "scene_action_block": build_scene_action_binding_block(
             visual_description=visual_description,
             narration=narration,
