@@ -26,7 +26,10 @@ from app.services.runner_image_selection_support import RunnerImageSelectionSupp
 from app.services.image_provider_queue import ImageProviderQueue
 from app.services.image_provider_adapter import ApiImageGeneratorAdapter
 from app.services.image_provider_types import ImageGenerationTask
-from app.services.image_prompt_policy import build_image_prompt_policy_blocks
+from app.services.image_prompt_policy import (
+    build_image_prompt_policy_blocks,
+    clean_image_prompt_text,
+)
 from app.services.runner_single_scene_image_support import RunnerSingleSceneImageSupport
 from app.services.topic_character_infer import infer_primary_character_manifest
 from app.services.llm_output_sanitizer import parse_story_payload
@@ -945,11 +948,13 @@ class WorkflowRunner:
                     outputs, scene_data
                 )
 
+                clean_visual_description = clean_image_prompt_text(visual_description)
+
                 shot_anchor = (
                     f"scene title: {scene_title}, "
                     f"camera shot: {shot_type}, "
                     f"transition feeling: {transition}, "
-                    f"visual focus: {visual_description}"
+                    f"visual focus: {clean_visual_description}"
                 )
 
                 story_anchor = f"story context: {text}"
@@ -1006,11 +1011,13 @@ class WorkflowRunner:
             character_block = self._scene_character_prompt_block(outputs, scene)
             negative_block = self._scene_character_negative_block(outputs, scene)
 
+            clean_visual_description = clean_image_prompt_text(visual_description)
+
             scene_anchor = (
                 f"scene title: {scene_title}, "
                 f"camera shot: {shot_type}, "
                 f"transition feeling: {transition}, "
-                f"visual focus: {visual_description}"
+                f"visual focus: {clean_visual_description}"
             )
 
             story_anchor = f"story context: {narration}"
