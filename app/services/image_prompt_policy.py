@@ -40,6 +40,7 @@ def build_visual_profile_prompt_block(profile: Dict[str, Any]) -> str:
     source = _clean_text(profile.get("profile_source"))
     identity = _clean_text(profile.get("visual_identity"))
     must_keep = _join_list(profile.get("must_keep"))
+    required_presence = _join_list(profile.get("required_presence_rules"))
 
     if not subject and not identity:
         return ""
@@ -50,6 +51,7 @@ def build_visual_profile_prompt_block(profile: Dict[str, Any]) -> str:
         f"main subject: {subject}" if subject else "",
         f"fixed visual identity: {identity}" if identity else "",
         f"must keep exactly: {must_keep}" if must_keep else "",
+        f"required presence: {required_presence}" if required_presence else "",
         "the main subject is the protagonist of the image, not a background prop",
         "if the story context mentions other characters, keep them secondary and do not replace the main subject",
         "use the same character design in every generated image",

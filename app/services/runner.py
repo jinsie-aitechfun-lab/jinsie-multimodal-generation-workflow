@@ -26,6 +26,7 @@ from app.services.runner_image_selection_support import RunnerImageSelectionSupp
 from app.services.image_provider_queue import ImageProviderQueue
 from app.services.image_provider_adapter import ApiImageGeneratorAdapter
 from app.services.image_provider_types import ImageGenerationTask
+from app.services.character_visual_profile_llm import build_llm_character_visual_profile
 from app.services.image_prompt_policy import (
     build_image_prompt_policy_blocks,
     clean_image_prompt_text,
@@ -922,7 +923,16 @@ class WorkflowRunner:
         character_anchor = self._character_consistency_anchor(ctx, outputs)
 
         prompts: List[Dict[str, Any]] = []
-        character_visual_profile: Dict[str, Any] = {}
+        character_visual_profile: Dict[str, Any] = build_llm_character_visual_profile(
+            self,
+            ctx,
+            outputs,
+            subject_hint=character_anchor,
+        )
+        profile_outputs: Dict[str, Any] = {
+            **outputs,
+            "character_visual_profile": character_visual_profile,
+        }
 
         if shot_items:
             scene_map: Dict[str, Dict[str, Any]] = {
@@ -960,7 +970,7 @@ class WorkflowRunner:
                 story_anchor = f"story context: {text}"
                 policy_blocks = build_image_prompt_policy_blocks(
                     workflow_input=ctx.input,
-                    outputs=outputs,
+                    outputs=profile_outputs,
                     visual_description=visual_description,
                     narration=text,
                     subject_hint=character_anchor,
@@ -1024,7 +1034,7 @@ class WorkflowRunner:
             story_anchor = f"story context: {narration}"
             policy_blocks = build_image_prompt_policy_blocks(
                 workflow_input=ctx.input,
-                outputs=outputs,
+                outputs=profile_outputs,
                 visual_description=visual_description,
                 narration=narration,
                 subject_hint=character_anchor,

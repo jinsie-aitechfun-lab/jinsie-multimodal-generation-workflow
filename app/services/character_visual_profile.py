@@ -99,11 +99,18 @@ def _known_risk_rules(subject: str) -> Dict[str, List[str]]:
                 "sitting frog",
                 "land animal body",
             ],
+            "required_presence_rules": [
+                "visible tadpole must appear as the main subject in every scene",
+                "frog mother may appear only as a secondary character when the story needs it",
+                "do not replace tadpole with frog",
+                "do not replace the tadpole with an adult frog",
+            ],
         }
 
     return {
         "must_keep": [],
         "must_avoid": [],
+        "required_presence_rules": [],
     }
 
 
@@ -243,12 +250,17 @@ def build_character_visual_profile(
 
     must_keep = _generic_must_keep(subject)
     must_avoid = _generic_must_avoid()
+    required_presence_rules = [
+        f"{subject} must be clearly visible in every scene",
+        "the main subject must not be replaced by supporting characters, props, or background objects",
+    ]
 
     if main_traits:
         must_keep.insert(0, main_traits)
 
     must_keep.extend(risk_rules["must_keep"])
     must_avoid.extend(risk_rules["must_avoid"])
+    required_presence_rules.extend(risk_rules["required_presence_rules"])
 
     return {
         "subject": subject,
@@ -256,6 +268,7 @@ def build_character_visual_profile(
         "visual_identity": visual_identity,
         "must_keep": _dedupe(must_keep),
         "must_avoid": _dedupe(must_avoid),
+        "required_presence_rules": _dedupe(required_presence_rules),
         "reference_image": None,
         "llm_profile_ready": False,
     }
