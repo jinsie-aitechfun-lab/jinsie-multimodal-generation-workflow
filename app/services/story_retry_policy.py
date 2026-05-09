@@ -78,6 +78,98 @@ def build_story_closing_sentence(topic: str) -> str:
     return f"{subject}心里暖暖的，明白勇敢尝试就会带来美好的收获。"
 
 
+def story_text_matches_topic(text: str, topic: str) -> bool:
+    clean_topic = normalize_story_topic(topic)
+    normalized_text = " ".join(str(text or "").split())
+
+    keyword_groups: list[tuple[str, tuple[str, ...]]] = [
+        ("雪糕", ("雪糕", "冰淇淋")),
+        ("冰淇淋", ("雪糕", "冰淇淋")),
+        ("自行车", ("自行车",)),
+        ("雪人", ("雪人", "雪")),
+        ("堆雪", ("雪人", "雪")),
+        ("怪兽", ("怪兽",)),
+        ("奥特曼", ("奥特曼",)),
+        ("小汽车", ("小汽车",)),
+        ("小恐龙", ("小恐龙", "恐龙")),
+    ]
+
+    for topic_keyword, text_keywords in keyword_groups:
+        if topic_keyword in clean_topic:
+            return any(keyword in normalized_text for keyword in text_keywords)
+
+    return True
+
+
+def build_story_topic_anchor_sentence(topic: str) -> str:
+    clean_topic = normalize_story_topic(topic)
+    subject = story_main_subject(clean_topic)
+
+    if "雪糕" in clean_topic or "冰淇淋" in clean_topic:
+        return f"{subject}重新捧起雪糕，小心地尝了一口，也学会了和朋友分享清凉。"
+
+    if "自行车" in clean_topic:
+        return f"{subject}扶稳自行车，继续慢慢练习，终于比刚开始骑得更稳了。"
+
+    if "雪人" in clean_topic or "堆雪" in clean_topic:
+        return f"{subject}认真整理雪人的帽子和围巾，让雪人稳稳站在雪地里。"
+
+    if "怪兽" in clean_topic:
+        return f"{subject}勇敢面对小怪兽，也学会了用善意保护大家。"
+
+    if "旅行" in clean_topic:
+        return f"{subject}继续完成这次旅行，把一路上的风景都记在心里。"
+
+    return build_story_closing_sentence(clean_topic)
+
+
+def build_story_completion_sentences(topic: str) -> list[str]:
+    clean_topic = normalize_story_topic(topic)
+    subject = story_main_subject(clean_topic)
+    closing_sentence = build_story_closing_sentence(clean_topic)
+
+    if "骑自行车" in clean_topic or "自行车" in clean_topic:
+        return [
+            f"{subject}一次次扶正车把，慢慢找到平衡，也不再害怕摔倒。",
+            f"它沿着小路继续练习，虽然速度不快，却每一步都比刚开始更稳。",
+            f"朋友们在旁边鼓励它，{subject}也越来越相信自己能够做到。",
+            closing_sentence,
+        ]
+
+    if "旅行" in clean_topic:
+        return [
+            f"{subject}继续向前出发，看见了新的风景，也遇到了愿意互相帮助的朋友。",
+            f"路上虽然有一点小困难，但{subject}没有着急，而是停下来认真想办法。",
+            f"它慢慢调整方向，继续沿着小路前进，把这次旅行变成了一次勇敢的尝试。",
+            f"沿途的风景一点点展开，{subject}也学会了在陌生地方保持耐心和好奇。",
+            f"当它回头看见走过的路时，才发现自己已经比出发时更勇敢了。",
+            closing_sentence,
+        ]
+
+    if "雪糕" in clean_topic or "冰淇淋" in clean_topic:
+        return [
+            f"{subject}小心地捧着雪糕，也学会了和朋友一起分享清凉和快乐。",
+            closing_sentence,
+        ]
+
+    if "雪人" in clean_topic or "堆雪" in clean_topic:
+        return [
+            f"{subject}又认真整理了雪人的帽子和围巾，让雪人稳稳地站在雪地里。",
+            closing_sentence,
+        ]
+
+    if "怪兽" in clean_topic:
+        return [
+            f"{subject}没有急着放弃，而是勇敢地保护大家，也学会了用善意解决问题。",
+            closing_sentence,
+        ]
+
+    return [
+        f"{subject}继续认真尝试，慢慢找到了解决问题的方法。",
+        closing_sentence,
+    ]
+
+
 def story_text_has_quality_issues(text: str) -> bool:
     normalized = " ".join(str(text or "").split()).strip()
     if not normalized:
@@ -166,6 +258,7 @@ def validate_story_text(
     )
     has_blocked_tokens = runner._story_text_has_blocked_tokens(cleaned_text)
     has_quality_issues = story_text_has_quality_issues(cleaned_text)
+    has_topic_mismatch = not story_text_matches_topic(cleaned_text, topic)
 
     invalid_reasons: List[str] = []
     if not cleaned_text:
@@ -180,6 +273,8 @@ def validate_story_text(
         invalid_reasons.append("blocked_tokens")
     if has_quality_issues:
         invalid_reasons.append("quality_issues")
+    if has_topic_mismatch:
+        invalid_reasons.append("topic_mismatch")
 
     return cleaned_text, invalid_reasons
 
@@ -317,7 +412,7 @@ def repair_retry_story_text(
 
     # Remove dangling dialogue questions and dialogue fragments that often remain after LLM repair.
     cleaned = re.sub(
-        r"[^。！？!?]{0,50}(你能帮我吗|可以帮我吗|要帮我吗)[^。！？!?]*[？?]",
+        r"[^。！？!?]{0,50}(你能帮我吗|可以帮我吗|要帮我吗|你能带上我吗|能带上我吗)[^。！？!?]*[？?]",
         "",
         cleaned,
     )
@@ -337,7 +432,12 @@ def repair_retry_story_text(
         cleaned,
     )
     cleaned = re.sub(
-        r"[^。！？!?]{0,30}(你真勇敢|我一定要|我不会|我还有很多要学)[^。！？!?]{0,30}[。！？!?]?",
+        r"[^。！？!?]{0,30}(你真勇敢|我一定要|我不会|我还有很多要学|当然可以|太好了|我也想看看|我要去摘松果)[^。！？!?]{0,30}[。！？!?]?",
+        "",
+        cleaned,
+    )
+    cleaned = re.sub(
+        r"[^。！？!?]{0,30}(我们想带你去我们家|带你去我们家|看看我们画的画)[^。！？!?]{0,40}[。！？!?]?",
         "",
         cleaned,
     )
@@ -451,6 +551,52 @@ def repair_retry_story_text(
             # If no candidate can satisfy the minimum length, keep the cleaned
             # original text instead of replacing it with only a generic closing
             # sentence. The validator will still reject it as too_short when needed.
+
+    duration_sec = int(story_plan.get("duration_sec") or 0)
+    min_tolerance = 10 if duration_sec <= 60 else 20
+    effective_target_min = max(0, target_min - min_tolerance)
+
+    if cleaned and runner._story_text_char_count(cleaned) < effective_target_min:
+        base = cleaned.rstrip("，、；：")
+        if base and not base.endswith(("。", "！", "？")):
+            base += "。"
+
+        for sentence in build_story_completion_sentences(topic):
+            if sentence in base:
+                continue
+
+            candidate = base + sentence
+            if target_max <= 0 or runner._story_text_char_count(candidate) <= target_max:
+                base = candidate
+
+            if runner._story_text_char_count(base) >= effective_target_min:
+                break
+
+        cleaned = base
+
+    if cleaned and not story_text_matches_topic(cleaned, topic):
+        anchor_sentence = build_story_topic_anchor_sentence(topic)
+        base = cleaned.rstrip("，、；：")
+        if base and not base.endswith(("。", "！", "？")):
+            base += "。"
+
+        candidate = base + anchor_sentence
+        if target_max <= 0 or runner._story_text_char_count(candidate) <= target_max:
+            cleaned = candidate
+        else:
+            sentences = [
+                item.strip()
+                for item in re.split(r"(?<=[。！？!?])", base)
+                if item.strip()
+            ]
+            for keep_count in range(len(sentences) - 1, 0, -1):
+                candidate = "".join(sentences[:keep_count] + [anchor_sentence])
+                if (
+                    runner._story_text_char_count(candidate) >= effective_target_min
+                    and runner._story_text_char_count(candidate) <= target_max
+                ):
+                    cleaned = candidate
+                    break
 
     return cleaned.strip()
 
