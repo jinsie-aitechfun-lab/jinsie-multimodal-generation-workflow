@@ -55,6 +55,13 @@ def story_main_subject(topic: str) -> str:
     if match:
         return match.group(1)
 
+    animal_match = re.search(
+        r"([\u4e00-\u9fff]{1,4}(狗|猫|兔|熊|鸟|龙|鼠|龟|猴|羊|鹿|虎|马|牛))",
+        value,
+    )
+    if animal_match:
+        return animal_match.group(1)
+
     return "主角"
 
 
@@ -105,6 +112,7 @@ def story_text_has_quality_issues(text: str) -> bool:
         "了了",
         "着着",
         "再再",
+        "它它",
         "子子",
         "米米米",
         "梯梯",
@@ -349,6 +357,7 @@ def repair_retry_story_text(
         "在在": "在",
         "着着": "着",
         "再再": "再",
+        "它它": "它",
         "小小鼹鼠": "小鼹鼠",
         "雪里": "雪人",
         "铲铲": "小铲子",
@@ -439,10 +448,9 @@ def repair_retry_story_text(
                 ):
                     cleaned = candidate
                     break
-            else:
-                candidate = closing_sentence
-                if runner._story_text_char_count(candidate) <= target_max:
-                    cleaned = candidate
+            # If no candidate can satisfy the minimum length, keep the cleaned
+            # original text instead of replacing it with only a generic closing
+            # sentence. The validator will still reject it as too_short when needed.
 
     return cleaned.strip()
 
