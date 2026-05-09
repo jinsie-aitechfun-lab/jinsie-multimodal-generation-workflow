@@ -946,6 +946,8 @@ class RunnerAudioRenderSupport:
                     ],
                     check=True,
                 )
+        final_video_duration_sec = _ffprobe_duration_sec(final_video_path)
+
         # ========= 统一 return =========
         return {
             "enabled": True,
@@ -955,6 +957,8 @@ class RunnerAudioRenderSupport:
             "relative_path": f"assets/mock/video/{ctx.run_id}/final.mp4",
             "public_url": f"/assets/mock/video/{ctx.run_id}/final.mp4",
             "duration_sec": round(total_duration_sec, 3),
+            "actual_duration_sec": round(final_video_duration_sec, 3),
+            "base_video_duration_sec": round(video_duration, 3),
             "audio_track_path": (
                 f"assets/mock/video/{ctx.run_id}/merged_audio.mp3"
                 if has_audio
