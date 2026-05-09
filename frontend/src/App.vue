@@ -412,8 +412,38 @@ const hasReviewContent = computed(() => {
   )
 })
 
+const storyDiagnostics = computed(() => {
+  const story = currentWorkflowResponse.value?.outputs?.story
+
+  if (!story || typeof story !== 'object') {
+    return null
+  }
+
+  const storyRecord = story as Record<string, unknown>
+  const text = typeof storyRecord.text === 'string' ? storyRecord.text : ''
+  const compactText = text.replace(/\s+/g, '')
+
+  return {
+    title: typeof storyRecord.title === 'string' ? storyRecord.title : '—',
+    generationSource:
+      typeof storyRecord.generation_source === 'string'
+        ? storyRecord.generation_source
+        : '—',
+    fallbackReason:
+      typeof storyRecord.fallback_reason === 'string' &&
+      storyRecord.fallback_reason.trim()
+        ? storyRecord.fallback_reason
+        : 'None',
+    characterCount: compactText.length,
+  }
+})
+
 const hasDebugContent = computed(() => {
-  return Boolean(stepSummaries.value.length > 0 || resultText.value)
+  return Boolean(
+    storyDiagnostics.value ||
+      stepSummaries.value.length > 0 ||
+      resultText.value
+  )
 })
 
 
@@ -1613,6 +1643,29 @@ async function runWorkflow() {
         </p>
 
         <template v-else>
+          <section v-if="storyDiagnostics" class="summary-panel">
+            <h2 class="section-title">Story Diagnostics</h2>
+
+            <div class="diagnostics-grid">
+              <div class="diagnostics-item">
+                <span class="diagnostics-label">Title</span>
+                <strong>{{ storyDiagnostics.title }}</strong>
+              </div>
+              <div class="diagnostics-item">
+                <span class="diagnostics-label">Source</span>
+                <strong>{{ storyDiagnostics.generationSource }}</strong>
+              </div>
+              <div class="diagnostics-item">
+                <span class="diagnostics-label">Fallback reason</span>
+                <strong>{{ storyDiagnostics.fallbackReason }}</strong>
+              </div>
+              <div class="diagnostics-item">
+                <span class="diagnostics-label">Character count</span>
+                <strong>{{ storyDiagnostics.characterCount }}</strong>
+              </div>
+            </div>
+          </section>
+
           <section v-if="stepSummaries.length > 0" class="summary-panel">
             <h2 class="section-title">Steps Summary</h2>
 
@@ -1764,6 +1817,34 @@ h1 {
   color: #2563eb;
   font-size: 13px;
   font-weight: 600;
+}
+
+.diagnostics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.diagnostics-item {
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.diagnostics-label {
+  display: block;
+  margin-bottom: 6px;
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.diagnostics-item strong {
+  color: #111827;
+  font-size: 14px;
+  line-height: 1.5;
+  word-break: break-word;
 }
 
 .summary-preview,
