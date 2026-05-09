@@ -29,6 +29,12 @@ from app.services.image_provider_types import ImageGenerationTask
 from app.services.runner_single_scene_image_support import RunnerSingleSceneImageSupport
 from app.services.topic_character_infer import infer_primary_character_manifest
 from app.services.llm_output_sanitizer import parse_story_payload
+from app.services.story_retry_policy import (
+    repair_retry_story_text,
+    retry_story_with_llm,
+    story_text_has_quality_issues,
+    validate_story_text,
+)
 
 
 class UnknownStepError(Exception):
@@ -1362,41 +1368,7 @@ class WorkflowRunner:
         return len("".join(str(text or "").split()))
 
     def _story_text_has_quality_issues(self, text: str) -> bool:
-        normalized = " ".join(str(text or "").split()).strip()
-        if not normalized:
-            return True
-
-        suspicious_tokens = [
-            "mexico",
-            "undefined",
-            "null",
-            "nan",
-        ]
-        lower = normalized.lower()
-        if any(token in lower for token in suspicious_tokens):
-            return True
-
-        repeated_fragments = [
-            "在在",
-            "的的",
-            "了了",
-            "着着",
-            "子子",
-            "米米米",
-            "梯梯",
-            "小小桃",
-            "想了想，，",
-        ]
-        if any(fragment in normalized for fragment in repeated_fragments):
-            return True
-
-        # Detect obvious repeated single-character stutter, while keeping common valid words.
-        for index in range(len(normalized) - 2):
-            a, b, c = normalized[index], normalized[index + 1], normalized[index + 2]
-            if a == b == c and a not in {"哈", "啦", "啊", "嗯"}:
-                return True
-
-        return False
+        return story_text_has_quality_issues(text)
 
     def _audience_label(self, audience: str) -> str:
         mapping = {
@@ -3640,46 +3612,91 @@ class WorkflowRunner:
 
         cleaned_text = self._sanitize_llm_story_text(cleaned_text, topic)
 
-        # 2) 如果清洗后仍然像结构体，判失败，走模板
-        looks_like_struct = (
-            cleaned_text.startswith("{")
-            or cleaned_text.startswith("[")
-            or cleaned_text.startswith("{'")
-            or cleaned_text.startswith("['")
-        )
         story_plan = self._duration_story_plan(ctx.input.duration_sec)
-        story_char_count = self._story_text_char_count(cleaned_text)
-        too_short = story_char_count < int(story_plan.get("target_min_chars") or 0)
-        too_long = (
-            int(story_plan.get("duration_sec") or 0) <= 60
-            and story_char_count > int(story_plan.get("target_max_chars") or 0)
+        cleaned_text, invalid_reasons = validate_story_text(
+            self,
+            cleaned_text,
+            topic,
+            story_plan,
         )
-        has_blocked_tokens = self._story_text_has_blocked_tokens(cleaned_text)
-        has_quality_issues = self._story_text_has_quality_issues(cleaned_text)
 
-        invalid_reasons = []
-        if not cleaned_text:
-            invalid_reasons.append("empty_text")
-        if looks_like_struct:
-            invalid_reasons.append("structured_output")
-        if too_short:
-            invalid_reasons.append("too_short")
-        if too_long:
-            invalid_reasons.append("too_long")
-        if has_blocked_tokens:
-            invalid_reasons.append("blocked_tokens")
-        if has_quality_issues:
-            invalid_reasons.append("quality_issues")
+        if invalid_reasons and provider == "openai_compatible_llm" and cleaned_text:
+            retry_story: Dict[str, str] | None = None
+            retry_error: Optional[str] = None
+
+            try:
+                retry_story = retry_story_with_llm(
+                    self,
+                    ctx,
+                    outputs,
+                    cleaned_text,
+                    invalid_reasons,
+                )
+            except Exception as error:
+                retry_error = f"retry_error:{type(error).__name__}"
+
+            if retry_story:
+                retry_cleaned_text, retry_invalid_reasons = validate_story_text(
+                    self,
+                    retry_story.get("text", "") or "",
+                    topic,
+                    story_plan,
+                )
+
+                if not retry_invalid_reasons:
+                    llm_story = retry_story
+                    title = retry_story.get("title", "") or title
+                    summary = retry_story.get("summary", "") or summary
+                    story_text = retry_cleaned_text
+                    generation_source = (
+                        "llm_compressed"
+                        if "too_long" in invalid_reasons
+                        else "llm_retried"
+                    )
+                    fallback_reason = None
+                    invalid_reasons = []
+                else:
+                    repaired_text = repair_retry_story_text(
+                        self,
+                        retry_cleaned_text,
+                        topic,
+                        story_plan,
+                    )
+                    repaired_cleaned_text, repaired_invalid_reasons = validate_story_text(
+                        self,
+                        repaired_text,
+                        topic,
+                        story_plan,
+                    )
+
+                    if not repaired_invalid_reasons:
+                        llm_story = retry_story
+                        title = retry_story.get("title", "") or title
+                        summary = retry_story.get("summary", "") or summary
+                        story_text = repaired_cleaned_text
+                        generation_source = "llm_repaired"
+                        fallback_reason = None
+                        invalid_reasons = []
+                    else:
+                        fallback_reason = "retry_failed:" + ",".join(
+                            repaired_invalid_reasons
+                        )
+                        llm_story = None
+            elif retry_error:
+                fallback_reason = retry_error
+                llm_story = None
 
         if invalid_reasons:
-            fallback_reason = ",".join(invalid_reasons)
+            if not fallback_reason:
+                fallback_reason = ",".join(invalid_reasons)
             llm_story = None
         else:
-            generation_source = (
-                "llm_sanitized" if cleaned_text != raw_text.strip() else "llm"
-            )
+            if generation_source == "template_fallback":
+                generation_source = (
+                    "llm_sanitized" if cleaned_text != raw_text.strip() else "llm"
+                )
+                story_text = cleaned_text
             fallback_reason = None
-            story_text = cleaned_text
 
         if llm_story:
             # LLM OK：使用正文
