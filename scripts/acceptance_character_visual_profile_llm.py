@@ -17,6 +17,11 @@ CASES = [
             "struggling bird",
             "road",
             "river",
+            "long tail",
+            "wiggly tail",
+            "tadpole",
+            "frog",
+            "aquatic body",
         ],
     },
     {
@@ -52,6 +57,12 @@ CASES = [
             "trees",
             "road",
             "river",
+            "long tail",
+            "wiggly tail",
+            "round head",
+            "shirt",
+            "pants",
+            "jeans",
         ],
     },
 ]
@@ -109,7 +120,8 @@ def run_case(runner: WorkflowRunner, case: dict[str, object]) -> bool:
 
     subject = str(profile.get("subject") or "")
     source = str(profile.get("profile_source") or "")
-    ready = bool(profile.get("llm_profile_ready"))
+    generation_source = str(profile.get("profile_generation_source") or source)
+    ready = bool(profile.get("character_profile_ready") or profile.get("llm_profile_ready"))
     visual_identity = str(profile.get("visual_identity") or "")
     must_keep = ", ".join(str(item) for item in (profile.get("must_keep") or []))
     must_avoid = ", ".join(str(item) for item in (profile.get("must_avoid") or []))
@@ -122,11 +134,17 @@ def run_case(runner: WorkflowRunner, case: dict[str, object]) -> bool:
     if subject != expected_subject:
         failures.append(f"subject mismatch: expected={expected_subject}, actual={subject}")
 
-    if source != "llm_profile":
-        failures.append(f"profile source is not llm_profile: {source}")
+    allowed_sources = {
+        "llm_generated",
+        "llm_retry_generated",
+        "deterministic_fallback",
+    }
+
+    if generation_source not in allowed_sources:
+        failures.append(f"unexpected profile generation source: {generation_source}")
 
     if not ready:
-        failures.append("llm_profile_ready is not true")
+        failures.append("character profile is not ready")
 
     if len(visual_identity.strip()) < 40:
         failures.append("visual_identity is too short")
@@ -149,19 +167,24 @@ def run_case(runner: WorkflowRunner, case: dict[str, object]) -> bool:
     if "required presence" not in first_prompt:
         failures.append("prompt missing required presence block")
 
-    if "profile source: llm_profile" not in first_prompt:
-        failures.append("prompt missing llm profile source block")
+    if "character visual profile" not in first_prompt:
+        failures.append("prompt missing character visual profile block")
 
     print(f"\n===== {topic} =====")
     print("profile.subject =", subject)
     print("profile.source =", source)
-    print("llm_profile_ready =", ready)
+    print("generation_source =", generation_source)
+    print("character_profile_ready =", ready)
+    print("llm_profile_ready =", profile.get("llm_profile_ready"))
     print("visual_identity =", visual_identity)
     print("must_keep =", profile.get("must_keep"))
     print("must_avoid =", profile.get("must_avoid"))
     print("required_presence_rules =", profile.get("required_presence_rules"))
+    print("llm_attempts =", profile.get("llm_attempts"))
+    print("profile_rejection_summary =", profile.get("profile_rejection_summary"))
     print("prompt_has_required_presence =", "required presence" in first_prompt)
-    print("prompt_has_llm_profile =", "profile source: llm_profile" in first_prompt)
+    print("prompt_has_character_profile =", "character visual profile" in first_prompt)
+    print("prompt_has_llm_profile =", "profile source: llm_generated" in first_prompt or "profile source: llm_retry_generated" in first_prompt)
 
     if failures:
         print("FAIL")

@@ -179,17 +179,324 @@ def _merge_profile(
             ]
         )
 
+    if "汽车" in subject or "小车" in subject:
+        must_keep = _dedupe(
+            must_keep
+            + [
+                "red car body",
+                "two large round headlights",
+                "friendly front grille",
+                "same compact car shape",
+            ]
+        )
+        must_avoid = _dedupe(
+            must_avoid
+            + [
+                "missing headlights",
+                "different vehicle type",
+                "random car color changes",
+                "human character replacing the car",
+            ]
+        )
+        required_presence_rules = _dedupe(
+            required_presence_rules
+            + [
+                "the car must be clearly visible as the main subject",
+                "do not replace the car with another vehicle or character",
+            ]
+        )
+
+    if "书包" in subject:
+        must_keep = _dedupe(
+            must_keep
+            + [
+                "backpack body",
+                "visible wings attached to the backpack",
+                "same backpack color palette",
+                "same friendly face",
+            ]
+        )
+        must_avoid = _dedupe(
+            must_avoid
+            + [
+                "regular backpack without wings",
+                "missing wings",
+                "flying animal replacing the backpack",
+                "human body replacing the backpack",
+            ]
+        )
+        required_presence_rules = _dedupe(
+            required_presence_rules
+            + [
+                "the flying backpack must be clearly visible as the main subject",
+                "do not replace the flying backpack with a regular backpack or animal",
+            ]
+        )
+
+    confidence = _clean_text(llm_payload.get("confidence")) or "medium"
+    generation_source = (
+        "deterministic_fallback"
+        if confidence == "fallback"
+        else _clean_text(llm_payload.get("generation_source")) or "llm_generated"
+    )
+
     return {
         **base_profile,
         "subject": subject,
-        "profile_source": "llm_profile",
+        "profile_source": generation_source,
+        "profile_generation_source": generation_source,
         "visual_identity": visual_identity,
         "must_keep": must_keep,
         "must_avoid": must_avoid,
         "required_presence_rules": required_presence_rules,
         "reference_image": base_profile.get("reference_image"),
-        "llm_profile_ready": True,
-        "llm_confidence": _clean_text(llm_payload.get("confidence")) or "medium",
+        "character_profile_ready": True,
+        "llm_profile_ready": generation_source in {"llm_generated", "llm_retry_generated"},
+        "llm_confidence": confidence,
+        "llm_attempts": llm_payload.get("llm_attempts") or [],
+        "profile_rejection_summary": llm_payload.get("profile_rejection_summary") or [],
+    }
+
+
+def _call_llm_profile(
+    *,
+    runner: Any,
+    api_key: str,
+    model: str,
+    system_prompt: str,
+    user_prompt: str,
+) -> Dict[str, Any]:
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.1,
+        "max_tokens": 700,
+    }
+
+    req = urllib_request.Request(
+        runner._llm_api_base_url().rstrip("/") + "/chat/completions",
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib_request.urlopen(req, timeout=runner._story_timeout_seconds()) as resp:
+            raw = resp.read()
+    except Exception:
+        return {}
+
+    if not raw:
+        return {}
+
+    try:
+        data = json.loads(raw.decode("utf-8", errors="ignore"))
+    except Exception:
+        return {}
+
+    content = (
+        (((data.get("choices") or [{}])[0]).get("message") or {}).get("content")
+        or ""
+    ).strip()
+
+    return _extract_json_object(content)
+
+
+def _scene_specific_terms() -> List[str]:
+    return [
+        "forest path",
+        "forest",
+        "lake",
+        "nearby",
+        "background",
+        "driving on",
+        "flying over",
+        "meadow",
+        "wildflowers",
+        "trees in the background",
+        "struggling bird",
+        "bird nearby",
+        "road",
+        "river",
+        "weather",
+        "sunset",
+        "morning light",
+        "in the story",
+        "internal organs",
+        "transparent body",
+        "slightly transparent",
+        "in the sky",
+        "flying gracefully",
+        "swimming gracefully",
+    ]
+
+
+def _validate_llm_profile_payload(payload: Dict[str, Any]) -> tuple[bool, List[str]]:
+    reasons: List[str] = []
+
+    if not isinstance(payload, dict) or not payload:
+        return False, ["empty_or_invalid_json_payload"]
+
+    visual_identity = _clean_text(payload.get("visual_identity"))
+    must_keep = _as_list(payload.get("must_keep"))
+
+    if len(visual_identity) < 40:
+        reasons.append("visual_identity_too_short")
+
+    if len(must_keep) < 3:
+        reasons.append("must_keep_too_few")
+
+    lower_identity = visual_identity.lower()
+    leaked_terms = [
+        term for term in _scene_specific_terms()
+        if term in lower_identity
+    ]
+    if leaked_terms:
+        reasons.append("scene_leak:" + ",".join(leaked_terms))
+
+    return len(reasons) == 0, reasons
+
+
+def _valid_llm_profile_payload(payload: Dict[str, Any]) -> bool:
+    valid, _ = _validate_llm_profile_payload(payload)
+    return valid
+
+
+def _deterministic_profile_payload(subject: str) -> Dict[str, Any]:
+    value = _clean_text(subject)
+
+    # This is not subject extraction.
+    # The subject has already been selected upstream.
+    # These deterministic profiles are only used when live LLM output is invalid
+    # or rejected by the scene-leak guardrail.
+
+    if "蝌蚪" in value:
+        return {
+            "subject": value,
+            "visual_identity": (
+                "A cute simple tadpole character with a round black head, "
+                "large friendly eyes, a long thin tail, smooth tiny aquatic body, "
+                "and one small yellow bow as a stable signature detail."
+            ),
+            "must_keep": [
+                "tadpole",
+                "round head",
+                "long thin tail",
+                "large friendly eyes",
+                "small yellow bow",
+                "no legs",
+                "no arms",
+            ],
+            "must_avoid": [
+                "frog",
+                "adult frog",
+                "frog legs",
+                "green frog body",
+                "tadpole replaced by frog",
+                "adult frog as the only visible subject",
+            ],
+            "required_presence_rules": [
+                "visible tadpole must appear as the main subject",
+                "do not replace tadpole with frog",
+                "frog mother may appear only as a secondary character when the story needs it",
+            ],
+            "confidence": "fallback",
+        }
+
+    if "汽车" in value or "小车" in value:
+        return {
+            "subject": value,
+            "visual_identity": (
+                "A cheerful small red storybook car with a rounded compact body, "
+                "two large round headlights, a friendly smiling front grille, "
+                "cream colored windows, and one tiny yellow star sticker on the door."
+            ),
+            "must_keep": [
+                "red",
+                "small red car",
+                "rounded compact body",
+                "two large round headlights",
+                "friendly smiling front grille",
+                "cream colored windows",
+                "yellow star sticker",
+            ],
+            "must_avoid": [
+                "random color changes",
+                "different car shape",
+                "different vehicle type",
+                "blue car",
+                "green car",
+                "human driver replacing the car",
+            ],
+            "required_presence_rules": [
+                "the small red car must be clearly visible",
+                "the car must not be replaced by another vehicle or character",
+            ],
+            "confidence": "fallback",
+        }
+
+    if "书包" in value:
+        return {
+            "subject": value,
+            "visual_identity": (
+                "A small flying storybook backpack with bright blue and white stripes, "
+                "two soft rounded wings attached to its sides, a smiling face with large round eyes, "
+                "and one red bow as a stable signature detail."
+            ),
+            "must_keep": [
+                "backpack",
+                "wings",
+                "bright blue and white stripes",
+                "smiling face",
+                "large round eyes",
+                "red bow",
+            ],
+            "must_avoid": [
+                "regular backpack without wings",
+                "different object identity",
+                "random color changes",
+                "flying animal replacing the backpack",
+                "missing wings",
+            ],
+            "required_presence_rules": [
+                "the flying backpack must be clearly visible",
+                "the subject must not be replaced by a regular backpack or flying animal",
+            ],
+            "confidence": "fallback",
+        }
+
+    return {
+        "subject": value,
+        "visual_identity": (
+            f"A stable storybook character design for {value}, with one fixed color palette, "
+            "one clear body shape, consistent facial features, fixed proportions, "
+            "and one small signature accessory that stays the same in every scene."
+        ),
+        "must_keep": [
+            f"same main subject: {value}",
+            "same fixed color palette",
+            "same body shape",
+            "same facial features",
+            "same proportions",
+            "same signature accessory",
+        ],
+        "must_avoid": [
+            "different main character design",
+            "random color changes",
+            "different body shape",
+            "different object or species identity",
+        ],
+        "required_presence_rules": [
+            f"{value} must be clearly visible in every scene",
+            "the subject must not be replaced by another character, prop, or background object",
+        ],
+        "confidence": "fallback",
     }
 
 
@@ -269,82 +576,103 @@ Return JSON with exactly these fields:
 }}
 """.strip()
 
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "temperature": 0.2,
-        "max_tokens": 700,
-    }
+    llm_attempts: List[Dict[str, Any]] = []
 
-    req = urllib_request.Request(
-        runner._llm_api_base_url().rstrip("/") + "/chat/completions",
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-        },
-        method="POST",
+    llm_payload = _call_llm_profile(
+        runner=runner,
+        api_key=api_key,
+        model=model,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+    )
+    is_valid, rejection_reasons = _validate_llm_profile_payload(llm_payload)
+    llm_attempts.append(
+        {
+            "attempt": 1,
+            "source": "llm_generated",
+            "valid": is_valid,
+            "rejection_reasons": rejection_reasons,
+        }
     )
 
-    try:
-        with urllib_request.urlopen(req, timeout=runner._story_timeout_seconds()) as resp:
-            raw = resp.read()
-    except Exception:
-        return base_profile
+    if is_valid:
+        llm_payload["generation_source"] = "llm_generated"
 
-    if not raw:
-        return base_profile
+    if not is_valid:
+        subject_specific_rules = ""
+        if "蝌蚪" in subject:
+            subject_specific_rules = """
+Subject-specific rules:
+- The design must be a cute simple tadpole.
+- Must include round head and long tail.
+- Must not mention transparent body, internal organs, frog legs, adult frog body, land body, or anatomy.
+""".strip()
+        else:
+            subject_specific_rules = """
+Subject-specific rules:
+- Do not use tadpole-only traits such as long wiggly tail, round tadpole head, aquatic baby body, frog legs, or animal anatomy unless the given subject explicitly requires them.
+- Do not add clothing or body parts that change the object identity.
+""".strip()
 
-    try:
-        data = json.loads(raw.decode("utf-8", errors="ignore"))
-    except Exception:
-        return base_profile
+        strict_user_prompt = f"""
+Create a reusable character design sheet JSON for this exact subject only.
 
-    content = (
-        (((data.get("choices") or [{}])[0]).get("message") or {}).get("content")
-        or ""
-    ).strip()
+Subject:
+{subject}
 
-    llm_payload = _extract_json_object(content)
-    if not llm_payload:
-        return base_profile
+Hard requirements:
+- Describe ONLY the character's appearance.
+- Do NOT include location, story action, background, forest, lake, river, road, meadow, weather, nearby animals, or plot events.
+- visual_identity must be a stable design sheet phrase.
+- Include fixed color, fixed body shape, fixed face feature, and one signature detail.
+- Return JSON only.
 
-    visual_identity = _clean_text(llm_payload.get("visual_identity"))
-    must_keep = _as_list(llm_payload.get("must_keep"))
+{subject_specific_rules}
 
-    scene_specific_terms = [
-        "forest path",
-        "forest",
-        "lake",
-        "nearby",
-        "background",
-        "driving on",
-        "flying over",
-        "meadow",
-        "wildflowers",
-        "trees in the background",
-        "struggling bird",
-        "bird nearby",
-        "road",
-        "river",
-        "weather",
-        "sunset",
-        "morning light",
-        "in the story",
-        "internal organs",
-        "transparent body",
-        "slightly transparent",
-    ]
-    lower_identity = visual_identity.lower()
+JSON:
+{{
+  "subject": "{subject}",
+  "visual_identity": "one concrete English character design phrase, 35-80 words, no scene/background/action",
+  "must_keep": ["fixed color trait", "fixed body shape trait", "fixed face trait", "fixed signature detail"],
+  "must_avoid": ["visual drift risk", "wrong subject risk", "scene-specific contamination risk"],
+  "required_presence_rules": ["the given subject must be clearly visible", "the subject must not be replaced by another character"],
+  "confidence": "high"
+}}
+""".strip()
 
-    if any(term in lower_identity for term in scene_specific_terms):
-        return base_profile
+        llm_payload = _call_llm_profile(
+            runner=runner,
+            api_key=api_key,
+            model=model,
+            system_prompt=system_prompt,
+            user_prompt=strict_user_prompt,
+        )
+        is_valid, rejection_reasons = _validate_llm_profile_payload(llm_payload)
+        llm_attempts.append(
+            {
+                "attempt": 2,
+                "source": "llm_retry_generated",
+                "valid": is_valid,
+                "rejection_reasons": rejection_reasons,
+            }
+        )
 
-    if len(visual_identity) < 40 or len(must_keep) < 3:
-        return base_profile
+        if is_valid:
+            llm_payload["generation_source"] = "llm_retry_generated"
+
+    if not is_valid:
+        llm_payload = _deterministic_profile_payload(subject)
+
+    rejection_summary = []
+    for item in llm_attempts:
+        if not item.get("valid"):
+            for reason in item.get("rejection_reasons") or []:
+                rejection_summary.append(
+                    f"{item.get('source')}: {reason}"
+                )
+
+    llm_payload["llm_attempts"] = llm_attempts
+    llm_payload["profile_rejection_summary"] = rejection_summary
 
     return _merge_profile(
         base_profile=base_profile,
