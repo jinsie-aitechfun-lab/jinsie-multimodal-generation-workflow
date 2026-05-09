@@ -26,6 +26,10 @@ from app.services.runner_image_selection_support import RunnerImageSelectionSupp
 from app.services.image_provider_queue import ImageProviderQueue
 from app.services.image_provider_adapter import ApiImageGeneratorAdapter
 from app.services.image_provider_types import ImageGenerationTask
+from app.services.image_prompt_policy import (
+    build_image_prompt_policy_blocks,
+    clean_image_prompt_text,
+)
 from app.services.runner_single_scene_image_support import RunnerSingleSceneImageSupport
 from app.services.topic_character_infer import infer_primary_character_manifest
 from app.services.llm_output_sanitizer import parse_story_payload
@@ -918,6 +922,7 @@ class WorkflowRunner:
         character_anchor = self._character_consistency_anchor(ctx, outputs)
 
         prompts: List[Dict[str, Any]] = []
+        character_visual_profile: Dict[str, Any] = {}
 
         if shot_items:
             scene_map: Dict[str, Dict[str, Any]] = {
@@ -943,23 +948,38 @@ class WorkflowRunner:
                     outputs, scene_data
                 )
 
+                clean_visual_description = clean_image_prompt_text(visual_description)
+
                 shot_anchor = (
                     f"scene title: {scene_title}, "
                     f"camera shot: {shot_type}, "
                     f"transition feeling: {transition}, "
-                    f"visual focus: {visual_description}"
+                    f"visual focus: {clean_visual_description}"
                 )
 
                 story_anchor = f"story context: {text}"
+                policy_blocks = build_image_prompt_policy_blocks(
+                    workflow_input=ctx.input,
+                    outputs=outputs,
+                    visual_description=visual_description,
+                    narration=text,
+                    subject_hint=character_anchor,
+                )
+                if not character_visual_profile:
+                    character_visual_profile = policy_blocks.get("profile") or {}
 
                 prompt = ", ".join(
                     part
                     for part in [
                         global_style_anchor,
                         character_anchor,
+                        policy_blocks.get("visual_profile_block"),
                         character_block,
+                        policy_blocks.get("character_separation_block"),
                         shot_anchor,
+                        policy_blocks.get("scene_action_block"),
                         story_anchor,
+                        policy_blocks.get("subject_negative_block"),
                         negative_block,
                     ]
                     if part
@@ -975,7 +995,11 @@ class WorkflowRunner:
                     }
                 )
 
-            return {"provider": "image_prompt_builder", "prompts": prompts}
+            return {
+                "provider": "image_prompt_builder",
+                "character_visual_profile": character_visual_profile,
+                "prompts": prompts,
+            }
 
         for scene in scenes:
             scene_id = str(scene.get("scene_id") or "").strip()
@@ -988,23 +1012,38 @@ class WorkflowRunner:
             character_block = self._scene_character_prompt_block(outputs, scene)
             negative_block = self._scene_character_negative_block(outputs, scene)
 
+            clean_visual_description = clean_image_prompt_text(visual_description)
+
             scene_anchor = (
                 f"scene title: {scene_title}, "
                 f"camera shot: {shot_type}, "
                 f"transition feeling: {transition}, "
-                f"visual focus: {visual_description}"
+                f"visual focus: {clean_visual_description}"
             )
 
             story_anchor = f"story context: {narration}"
+            policy_blocks = build_image_prompt_policy_blocks(
+                workflow_input=ctx.input,
+                outputs=outputs,
+                visual_description=visual_description,
+                narration=narration,
+                subject_hint=character_anchor,
+            )
+            if not character_visual_profile:
+                character_visual_profile = policy_blocks.get("profile") or {}
 
             prompt = ", ".join(
                 part
                 for part in [
                     global_style_anchor,
                     character_anchor,
+                    policy_blocks.get("visual_profile_block"),
                     character_block,
+                    policy_blocks.get("character_separation_block"),
                     scene_anchor,
+                    policy_blocks.get("scene_action_block"),
                     story_anchor,
+                    policy_blocks.get("subject_negative_block"),
                     negative_block,
                 ]
                 if part
@@ -1019,7 +1058,11 @@ class WorkflowRunner:
                 }
             )
 
-        return {"provider": "image_prompt_builder", "prompts": prompts}
+        return {
+            "provider": "image_prompt_builder",
+            "character_visual_profile": character_visual_profile,
+            "prompts": prompts,
+        }
 
     def _scene_character_bindings(
         self, outputs: Dict[str, Any]
