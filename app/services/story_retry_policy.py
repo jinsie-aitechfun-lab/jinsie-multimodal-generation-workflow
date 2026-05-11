@@ -6,64 +6,18 @@ from typing import Any, Dict, List, Tuple
 from urllib import request as urllib_request
 
 from app.services.llm_output_sanitizer import parse_story_payload
+from app.services.story_subject_extractor import (
+    normalize_story_topic as extract_normalize_story_topic,
+    story_main_subject as extract_story_main_subject,
+)
 
 
 def normalize_story_topic(topic: str) -> str:
-    value = " ".join(str(topic or "").split()).strip()
-    if not value:
-        return "一个温暖的童话故事"
-
-    patterns = [
-        r"^写一个关于(.+?)的故事$",
-        r"^写一篇关于(.+?)的故事$",
-        r"^讲一个关于(.+?)的故事$",
-        r"^生成一个关于(.+?)的故事$",
-    ]
-    for pattern in patterns:
-        match = re.match(pattern, value)
-        if match:
-            value = match.group(1).strip()
-            break
-
-    value = re.sub(r"^关于", "", value).strip()
-    value = re.sub(r"的故事$", "", value).strip()
-    return value or "一个温暖的童话故事"
+    return extract_normalize_story_topic(topic)
 
 
 def story_main_subject(topic: str) -> str:
-    value = normalize_story_topic(topic)
-
-    for candidate in [
-        "小恐龙",
-        "小鼹鼠",
-        "小兔子",
-        "小乌龟",
-        "小汽车",
-        "小蝌蚪",
-        "小机器人",
-        "小云朵",
-        "小明",
-        "公主",
-        "超人",
-        "孙悟空",
-        "奥特曼",
-    ]:
-        if candidate in value:
-            return candidate
-
-    match = re.search(r"(小[\u4e00-\u9fff]{1,4})", value)
-    if match:
-        return match.group(1)
-
-    animal_match = re.search(
-        r"([\u4e00-\u9fff]{1,4}(狗|猫|兔|熊|鸟|龙|鼠|龟|猴|羊|鹿|虎|马|牛))",
-        value,
-    )
-    if animal_match:
-        return animal_match.group(1)
-
-    return "主角"
-
+    return extract_story_main_subject(topic)
 
 def build_story_closing_sentence(topic: str) -> str:
     clean_topic = normalize_story_topic(topic)
@@ -100,6 +54,56 @@ def story_text_matches_topic(text: str, topic: str) -> bool:
 
     return True
 
+
+def story_subject_is_protagonist(text: str, topic: str) -> bool:
+    clean_topic = normalize_story_topic(topic)
+    subject = story_main_subject(clean_topic)
+    normalized_text = " ".join(str(text or "").split())
+    for prefix in ("这位", "这辆", "这个", "那位", "那辆", "那个"):
+        normalized_text = normalized_text.replace(f"{prefix}{subject}", subject)
+
+    if not subject or subject == "主角":
+        return True
+
+    if subject not in normalized_text:
+        return False
+
+    prop_risk_subjects = {
+        "小汽车",
+        "小书包",
+        "小云朵",
+        "小机器人",
+        "自行车",
+        "雪人",
+    }
+
+    if subject not in prop_risk_subjects:
+        return True
+
+    prop_only_patterns = [
+        rf"(一场|这次|一次|关于|有关){re.escape(subject)}(旅行|冒险|故事|活动)",
+        rf"(开着|坐上|坐在|驾驶|发动|乘坐|搭乘|开动|开进|开到){re.escape(subject)}",
+        rf"{re.escape(subject)}(下避雨|旁边|里面|里|上面|下面)",
+        rf"{re.escape(subject)}(只是|成为|作为)?(交通工具|道具|背景|车辆)",
+    ]
+
+    if any(re.search(pattern, normalized_text) for pattern in prop_only_patterns):
+        return False
+
+    subject_with_optional_name = rf"{re.escape(subject)}[\u4e00-\u9fff]{{0,4}}"
+
+    subject_actor_patterns = [
+        rf"{subject_with_optional_name}(叫|名叫|是一辆|是一个|喜欢|想要|决定|准备|开始|学会|明白)",
+        rf"{subject_with_optional_name}(出发|上路|启程|驶出|驶向|驶过|穿过|停下|继续|回家)",
+        rf"{subject_with_optional_name}(看见|发现|遇见|听见|想到|想了想|说|问|回答)",
+        rf"{subject_with_optional_name}(帮助|陪伴|保护|完成|记住|鼓起勇气)",
+        rf"{subject_with_optional_name}带着",
+        rf"{subject_with_optional_name}沿着",
+        rf"{subject_with_optional_name}慢慢",
+        rf"{subject_with_optional_name}终于",
+    ]
+
+    return any(re.search(pattern, normalized_text) for pattern in subject_actor_patterns)
 
 def build_story_topic_anchor_sentence(topic: str) -> str:
     clean_topic = normalize_story_topic(topic)
@@ -259,6 +263,10 @@ def validate_story_text(
     has_blocked_tokens = runner._story_text_has_blocked_tokens(cleaned_text)
     has_quality_issues = story_text_has_quality_issues(cleaned_text)
     has_topic_mismatch = not story_text_matches_topic(cleaned_text, topic)
+    has_subject_not_protagonist = not story_subject_is_protagonist(
+        cleaned_text,
+        topic,
+    )
 
     invalid_reasons: List[str] = []
     if not cleaned_text:
@@ -275,6 +283,8 @@ def validate_story_text(
         invalid_reasons.append("quality_issues")
     if has_topic_mismatch:
         invalid_reasons.append("topic_mismatch")
+    if has_subject_not_protagonist:
+        invalid_reasons.append("subject_not_protagonist")
 
     return cleaned_text, invalid_reasons
 
@@ -315,6 +325,9 @@ def evaluate_story_retry_mode(
         return "rewrite_complete"
 
     if "quality_issues" in invalid_reasons:
+        return "repair_regenerate"
+
+    if "subject_not_protagonist" in invalid_reasons:
         return "repair_regenerate"
 
     return "repair_regenerate"

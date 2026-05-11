@@ -1154,11 +1154,60 @@ async function refreshImageReview() {
     void renderFinalVideoIfReady(currentWorkflowResponse.value)
   }
 }
+function scheduleImageReviewAutoRefreshIfNeeded() {
+  if (reviewWaitingState.value !== 'deferred_pending' || reviewAutoRefreshFiredOnce) {
+    return
+  }
+
+  reviewAutoRefreshFiredOnce = true
+  clearImageReviewAutoRefreshTimer()
+  imageReviewAutoRefreshTimer = window.setTimeout(() => {
+    if (refreshingImageReview.value) return
+    void refreshImageReview()
+  }, 1200)
+}
+
+async function waitForAsyncWorkflowOutputs(
+  workflowId: string,
+  maxAttempts = 120,
+  intervalMs = 1500,
+): Promise<WorkflowRunResponse | null> {
+  const normalizedWorkflowId = String(workflowId || '').trim()
+  if (!normalizedWorkflowId) {
+    return null
+  }
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    await new Promise((resolve) => window.setTimeout(resolve, intervalMs))
+
+    const response = await fetch(
+      `${apiBaseUrl}/assets/mock/${encodeURIComponent(normalizedWorkflowId)}/outputs.json?ts=${Date.now()}`,
+    )
+
+    if (response.status === 404) {
+      continue
+    }
+
+    if (!response.ok) {
+      throw new Error(`Workflow outputs HTTP ${response.status}`)
+    }
+
+    return (await response.json()) as WorkflowRunResponse
+  }
+
+  return null
+}
+
 async function runWorkflow() {
   clearImageReviewAutoRefreshTimer()
   resultText.value = ''
   currentWorkflowResponse.value = null
   currentWorkflowPayload.value = null
+  selectingSceneId.value = ''
+  refreshingImageReview.value = false
+  sceneRefreshQueue.value = []
+  sceneRefreshingId.value = ''
+  reviewPlaceholders.value = []
   storyText.value = ''
   storyboardText.value = ''
   imagePromptsText.value = ''
@@ -1359,8 +1408,10 @@ async function runWorkflow() {
     stepsSet.add('subtitles')
   }
 
+  const workflowId = `storybook-demo-${Date.now()}`
+
   const payload = {
-    workflow_id: 'storybook-demo',
+    workflow_id: workflowId,
     session_id: sessionId,
     input: inputPayload,
     steps: Array.from(stepsSet).map((name) => ({ name })),
@@ -1395,15 +1446,14 @@ async function runWorkflow() {
 
     applyWorkflowResponse(data)
 
-    if (reviewWaitingState.value === 'deferred_pending' && !reviewAutoRefreshFiredOnce) {
-      reviewAutoRefreshFiredOnce = true
-      clearImageReviewAutoRefreshTimer()
-      imageReviewAutoRefreshTimer = window.setTimeout(() => {
-        // 二次保护：如果此时已经在刷新，则不再触发
-        if (refreshingImageReview.value) return
-        void refreshImageReview()
-      }, 1200)
+    if (!data.outputs && typeof data.workflow_id === 'string' && data.workflow_id.trim()) {
+      const asyncData = await waitForAsyncWorkflowOutputs(data.workflow_id)
+      if (asyncData) {
+        applyWorkflowResponse(asyncData)
+      }
     }
+
+    scheduleImageReviewAutoRefreshIfNeeded()
 
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Request failed'

@@ -71,6 +71,7 @@ class QueueExecutionResult:
     reason: str = ""
     retry_after_sec: Optional[int] = None
     fallback: Dict[str, Any] = field(default_factory=dict)
+    character_anchor: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

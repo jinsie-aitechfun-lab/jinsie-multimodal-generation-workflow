@@ -65,10 +65,34 @@ def compact_char_count(text: str) -> int:
     return len("".join(str(text or "").split()))
 
 
+def _fetch_async_outputs(
+    base_url: str,
+    workflow_id: str,
+    timeout: float,
+    max_wait_sec: float = 90.0,
+    interval_sec: float = 1.0,
+) -> dict[str, Any]:
+    deadline = time.time() + max_wait_sec
+    url = f"{base_url.rstrip()}/assets/mock/{workflow_id}/outputs.json"
+
+    while time.time() < deadline:
+        try:
+            with urllib_request.urlopen(url, timeout=timeout) as resp:
+                raw = resp.read()
+            return json.loads(raw.decode("utf-8"))
+        except urllib_error.HTTPError as error:
+            if error.code != 404:
+                raise
+        time.sleep(interval_sec)
+
+    raise TimeoutError(f"outputs.json not ready for workflow_id={workflow_id}")
+
+
 def post_story_case(base_url: str, case: StoryCase, timeout: float) -> dict[str, Any]:
+    workflow_id = f"acceptance_story_{case.name}_{int(time.time() * 1000)}"
     payload = {
-        "workflow_id": f"acceptance_story_{case.name}",
-        "session_id": f"acceptance_story_{case.name}_{int(time.time())}",
+        "workflow_id": workflow_id,
+        "session_id": f"{workflow_id}_session",
         "steps": [
             {"name": "story"},
         ],
@@ -94,7 +118,15 @@ def post_story_case(base_url: str, case: StoryCase, timeout: float) -> dict[str,
     with urllib_request.urlopen(req, timeout=timeout) as resp:
         raw = resp.read()
 
-    return json.loads(raw.decode("utf-8"))
+    response = json.loads(raw.decode("utf-8"))
+    if response.get("outputs"):
+        return response
+
+    return _fetch_async_outputs(
+        base_url=base_url,
+        workflow_id=str(response.get("workflow_id") or workflow_id),
+        timeout=timeout,
+    )
 
 
 def validate_story(case: StoryCase, response: dict[str, Any]) -> list[str]:

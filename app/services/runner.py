@@ -33,6 +33,7 @@ from app.services.image_prompt_policy import (
 )
 from app.services.runner_single_scene_image_support import RunnerSingleSceneImageSupport
 from app.services.topic_character_infer import infer_primary_character_manifest
+from app.services.story_subject_extractor import extract_story_subjects, story_main_subject
 from app.services.llm_output_sanitizer import parse_story_payload
 from app.services.story_retry_policy import (
     repair_retry_story_text,
@@ -74,6 +75,24 @@ DEFAULT_STORY_TIMEOUT_SECONDS = 60
 
 
 class WorkflowRunner:
+
+    def _run_video_audio_render_plan(self, run_input: dict, outputs: dict):
+        if hasattr(self, "rerender_final_video"):
+            self.rerender_final_video(
+                workflow_id=run_input.get("workflow_id"),
+                session_id=run_input.get("session_id"),
+                run_id=outputs.get("run_id"),
+                workflow_input=run_input,
+                image_assets=outputs.get("image_assets"),
+                audio_segments=outputs.get("audio_segments"),
+                subtitles=outputs.get("subtitles"),
+            )
+
+
+    def _run_async(self, run_input: dict, callback: callable):
+        from app.services.runner_async_wrapper import enqueue_run_task
+        enqueue_run_task(run_input, callback)
+
     """
     Phase 1 upgrade:
     - move from simple demo workflow to structured story-video generation workflow
@@ -690,11 +709,44 @@ class WorkflowRunner:
             req.input, character_candidates
         )
 
-        # P0-05: structured_characters_enabled=false 时，按 topic 自动补 primary manifest
+        # P0-05: structured_characters_enabled=false 时，按 topic 自动补角色 manifest。
+        # 支持 primary + N supporting subjects，避免多角色主题只出现第一个角色。
         if (not req.input.structured_characters_enabled) and (not character_manifest):
-            inferred_primary = infer_primary_character_manifest(req.input.topic)
-            if inferred_primary is not None:
-                character_manifest = [inferred_primary]
+            extracted_subjects = extract_story_subjects(req.input.topic)
+            auto_manifest: List[Dict[str, Any]] = []
+
+            for index, subject in enumerate(extracted_subjects.all_subjects, start=1):
+                role_type = "primary" if index == 1 else "secondary"
+                character_id = (
+                    "char_primary_01"
+                    if role_type == "primary"
+                    else f"char_secondary_{index - 1:02d}"
+                )
+                auto_manifest.append(
+                    {
+                        "character_id": character_id,
+                        "display_name": subject,
+                        "species": subject,
+                        "role_type": role_type,
+                        "signature_traits": [],
+                        "forbidden_traits": [],
+                        "locking_level": "strict",
+                        "reference_assets": {
+                            "status": "pending",
+                            "front_view": None,
+                            "side_view": None,
+                            "three_quarter_view": None,
+                        },
+                        "source": "story_subject_extractor",
+                    }
+                )
+
+            if auto_manifest:
+                character_manifest = auto_manifest
+            else:
+                inferred_primary = infer_primary_character_manifest(req.input.topic)
+                if inferred_primary is not None:
+                    character_manifest = [inferred_primary]
 
         aggregated_outputs: Dict[str, Any] = {
             "character_candidates": {
@@ -1803,117 +1855,9 @@ class WorkflowRunner:
         if not topic:
             return ""
 
-        known_characters = [
-            "小鹦鹉",
-            "小兔子",
-            "小乌龟",
-            "小猫",
-            "小狗",
-            "小熊猫",
-            "小熊",
-            "小狐狸",
-            "小鸟",
-            "小老鼠",
-            "小松鼠",
-            "小鹿",
-            "小猪",
-            "小羊",
-            "小鸭子",
-            "小企鹅",
-            "小海豚",
-            "小狮子",
-            "小老虎",
-        ]
-
-        action_prefixes = ("寻找", "找", "在", "去", "和", "与", "一起", "冒险", "的")
-
-        for character in known_characters:
-            if character not in topic:
-                continue
-
-            if topic.startswith(character):
-                tail = topic[len(character) :]
-                if not tail or tail.startswith(action_prefixes):
-                    return character
-
-                suffix = ""
-                for char in tail[:2]:
-                    if char in "，。！？、,.!? ":
-                        break
-                    suffix += char
-
-                if suffix and not suffix.startswith(action_prefixes):
-                    return f"{character}{suffix}"
-
-                return character
-
-            return character
-
-        # Open-ended fallback: do not require a fixed animal/species list.
-        # Examples:
-        # - 写一个关于小汽车找妈妈的故事 -> 小汽车
-        # - 写一个关于小鳄鱼找妈妈的故事 -> 小鳄鱼
-        # - 小机器人豆豆去冒险 -> 小机器人豆豆
-        candidate = topic
-        for prefix in ("写一个关于", "讲一个关于", "生成一个关于", "关于"):
-            if candidate.startswith(prefix):
-                candidate = candidate[len(prefix) :].strip()
-                break
-
-        for suffix in ("的故事", "故事", "绘本", "视频"):
-            if candidate.endswith(suffix):
-                candidate = candidate[: -len(suffix)].strip()
-
-        split_markers = (
-            "寻找",
-            "找",
-            "去",
-            "在",
-            "和",
-            "与",
-            "一起",
-            "冒险",
-            "学习",
-            "帮助",
-            "遇见",
-            "参加",
-            "发现",
-            "堆",
-            "做",
-            "搭",
-            "造",
-            "制作",
-            "滚",
-            "种",
-            "修",
-            "追",
-            "打",
-            "大战",
-            "对战",
-            "战胜",
-            "拯救",
-            "保护",
-            "救",
-            "打败",
-            "挑战",
-        )
-        for marker in split_markers:
-            pos = candidate.find(marker)
-            if pos > 0:
-                candidate = candidate[:pos].strip()
-                break
-
-        candidate = candidate.strip(" ，。！？、,.!?：:；;“”'《》")
-
-        for sep in ("和", "跟", "与", "及", "同"):
-            if sep in candidate:
-                first_part = candidate.split(sep, 1)[0].strip(" ，。！？、,.!?：:；;“”'《》")
-                if first_part and 1 < len(first_part) <= 12:
-                    candidate = first_part
-                    break
-
-        if candidate and 1 < len(candidate) <= 12:
-            return candidate
+        policy_subject = story_main_subject(topic)
+        if policy_subject and policy_subject != "主角":
+            return policy_subject
 
         try:
             inferred = infer_primary_character_manifest(topic)
@@ -1985,6 +1929,10 @@ class WorkflowRunner:
         ).strip()
         if secondary_value:
             return secondary_value
+
+        extracted_subjects = extract_story_subjects(ctx.input.topic)
+        if extracted_subjects.supporting_subjects:
+            return extracted_subjects.supporting_subjects[0]
 
         return ""
 
