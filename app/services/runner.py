@@ -929,9 +929,33 @@ class WorkflowRunner:
             outputs,
             subject_hint=character_anchor,
         )
+        character_anchor_metadata: Dict[str, Any] = {
+            "enabled": True,
+            "mode": "text_profile_anchor",
+            "anchor_type": "character_reference_anchor",
+            "subject": character_visual_profile.get("subject"),
+            "profile_source": character_visual_profile.get("profile_source"),
+            "profile_generation_source": character_visual_profile.get(
+                "profile_generation_source"
+            ),
+            "visual_identity": character_visual_profile.get("visual_identity"),
+            "reference_images": [],
+            "reference_image": None,
+            "provider_reference_support": {
+                "requested": True,
+                "provider_supports_reference_image": False,
+                "mode": "metadata_only",
+                "reason": (
+                    "current api_image_generator text-to-image adapter does not "
+                    "send reference images yet"
+                ),
+            },
+        }
+
         profile_outputs: Dict[str, Any] = {
             **outputs,
             "character_visual_profile": character_visual_profile,
+            "character_anchor": character_anchor_metadata,
         }
 
         if shot_items:
@@ -1002,12 +1026,18 @@ class WorkflowRunner:
                         "scene_title": scene_title,
                         "characters": scene_data.get("characters") or [],
                         "prompt": prompt,
+                        "character_anchor": character_anchor_metadata,
+                        "reference_images": character_anchor_metadata.get(
+                            "reference_images"
+                        )
+                        or [],
                     }
                 )
 
             return {
                 "provider": "image_prompt_builder",
                 "character_visual_profile": character_visual_profile,
+                "character_anchor": character_anchor_metadata,
                 "prompts": prompts,
             }
 
@@ -1065,12 +1095,18 @@ class WorkflowRunner:
                     "scene_title": scene_title,
                     "characters": scene.get("characters") or [],
                     "prompt": prompt,
+                    "character_anchor": character_anchor_metadata,
+                    "reference_images": character_anchor_metadata.get(
+                        "reference_images"
+                    )
+                    or [],
                 }
             )
 
         return {
             "provider": "image_prompt_builder",
             "character_visual_profile": character_visual_profile,
+            "character_anchor": character_anchor_metadata,
             "prompts": prompts,
         }
 
@@ -1249,6 +1285,10 @@ class WorkflowRunner:
             "enabled": False,
             "run_id": ctx.run_id,
             "provider": self._image_provider_name(),
+            "provider_capabilities": {
+                "supports_reference_image": False,
+                "reference_image_mode": "metadata_only",
+            },
             "status": "pending",
             "reason": "deferred_to_refresh",
             "detail": "image asset generation is deferred to /v1/image-review/refresh",

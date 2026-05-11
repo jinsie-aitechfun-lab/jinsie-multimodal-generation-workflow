@@ -41,6 +41,7 @@ class ImageGenerationTask:
     output_path: Any
     relative_path: str
     public_url: str
+    reference_images: List[Dict[str, Any]] = field(default_factory=list)
     prompt_metadata: Dict[str, Any] = field(default_factory=dict)
 
 

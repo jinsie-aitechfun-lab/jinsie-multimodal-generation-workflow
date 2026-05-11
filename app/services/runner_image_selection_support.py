@@ -26,6 +26,21 @@ class RunnerImageSelectionSupport:
                 if not isinstance(selected_asset_ref, dict):
                     selected_asset_ref = {}
 
+                reference_images = (
+                    item.get("reference_images")
+                    or selected_asset_ref.get("reference_images")
+                    or []
+                )
+                reference_image_support = (
+                    item.get("reference_image_support")
+                    or selected_asset_ref.get("reference_image_support")
+                    or {
+                        "requested": bool(reference_images),
+                        "provider_supports_reference_image": False,
+                        "mode": "metadata_only",
+                    }
+                )
+
                 merged_assets.append(
                     {
                         "scene_id": item.get("scene_id"),
@@ -42,6 +57,8 @@ class RunnerImageSelectionSupport:
                         "duration_estimate_sec": item.get("duration_estimate_sec")
                         or selected_asset_ref.get("duration_estimate_sec"),
                         "selected_asset_ref": dict(selected_asset_ref),
+                        "reference_images": reference_images,
+                        "reference_image_support": reference_image_support,
                         "status": "generated",
                         "candidate_asset_refs": item.get("candidate_asset_refs") or [],
                     }
@@ -51,6 +68,10 @@ class RunnerImageSelectionSupport:
             "enabled": True,
             "run_id": run_id,
             "provider": str(provider or self._runner._image_provider_name()),
+            "provider_capabilities": {
+                "supports_reference_image": False,
+                "reference_image_mode": "metadata_only",
+            },
             "asset_count": len(merged_assets),
             "assets": merged_assets,
         }

@@ -160,6 +160,13 @@ class ImageProviderQueue:
                         "duration_sec": primary_ref.get("duration_sec"),
                         "duration_estimate_sec": primary_ref.get("duration_estimate_sec"),
                         "status": "generated",
+                        "reference_images": primary_ref.get("reference_images") or [],
+                        "reference_image_support": primary_ref.get("reference_image_support")
+                        or {
+                            "requested": bool(primary_ref.get("reference_images") or []),
+                            "provider_supports_reference_image": False,
+                            "mode": "metadata_only",
+                        },
                         "candidate_asset_refs": candidate_asset_refs,
                     }
                 )
@@ -188,6 +195,7 @@ class ImageProviderQueue:
                     scene=scene,
                     scene_id=scene_id,
                     base_prompt=base_prompt,
+                    prompt_item=prompt_item,
                 )
 
                 primary_ref = candidate_asset_refs[0]
@@ -206,6 +214,13 @@ class ImageProviderQueue:
                         "duration_sec": primary_ref.get("duration_sec"),
                         "duration_estimate_sec": primary_ref.get("duration_estimate_sec"),
                         "status": "generated",
+                        "reference_images": primary_ref.get("reference_images") or [],
+                        "reference_image_support": primary_ref.get("reference_image_support")
+                        or {
+                            "requested": bool(primary_ref.get("reference_images") or []),
+                            "provider_supports_reference_image": False,
+                            "mode": "metadata_only",
+                        },
                         "candidate_asset_refs": candidate_asset_refs,
                     }
                 )
@@ -267,6 +282,13 @@ class ImageProviderQueue:
             file_name = f"{shot_id}__{candidate_suffix}.png"
             output_path = run_dir / file_name
 
+            reference_images = (
+                prompt_item.get("reference_images")
+                or (prompt_item.get("character_anchor") or {}).get("reference_images")
+                or []
+            )
+            character_anchor = prompt_item.get("character_anchor") or {}
+
             task = ImageGenerationTask(
                 run_id=ctx.run_id,
                 item_id=shot_id,
@@ -276,10 +298,13 @@ class ImageProviderQueue:
                 output_path=output_path,
                 relative_path=f"assets/mock/image/{ctx.run_id}/{file_name}",
                 public_url=f"/assets/mock/image/{ctx.run_id}/{file_name}",
+                reference_images=reference_images,
                 prompt_metadata={
                     "ctx": ctx,
                     "scene": candidate_scene,
                     "scene_index": index + candidate_index,
+                    "character_anchor": character_anchor,
+                    "reference_images": reference_images,
                 },
             )
 
@@ -298,6 +323,12 @@ class ImageProviderQueue:
                     "provider": provider,
                     "duration_sec": candidate_scene.get("duration_sec"),
                     "duration_estimate_sec": candidate_scene.get("duration_estimate_sec"),
+                    "reference_images": task.reference_images,
+                    "reference_image_support": {
+                        "requested": bool(task.reference_images),
+                        "provider_supports_reference_image": False,
+                        "mode": "metadata_only",
+                    },
                 }
             )
 
@@ -317,6 +348,7 @@ class ImageProviderQueue:
         scene: Dict[str, Any],
         scene_id: str,
         base_prompt: str,
+        prompt_item: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
         candidate_asset_refs: List[Dict[str, Any]] = []
 
@@ -336,6 +368,13 @@ class ImageProviderQueue:
             file_name = f"{scene_id}__{candidate_suffix}.png"
             output_path = run_dir / file_name
 
+            reference_images = (
+                prompt_item.get("reference_images")
+                or (prompt_item.get("character_anchor") or {}).get("reference_images")
+                or []
+            )
+            character_anchor = prompt_item.get("character_anchor") or {}
+
             task = ImageGenerationTask(
                 run_id=ctx.run_id,
                 item_id=scene_id,
@@ -345,10 +384,13 @@ class ImageProviderQueue:
                 output_path=output_path,
                 relative_path=f"assets/mock/image/{ctx.run_id}/{file_name}",
                 public_url=f"/assets/mock/image/{ctx.run_id}/{file_name}",
+                reference_images=reference_images,
                 prompt_metadata={
                     "ctx": ctx,
                     "scene": candidate_scene,
                     "scene_index": index + candidate_index,
+                    "character_anchor": character_anchor,
+                    "reference_images": reference_images,
                 },
             )
 
@@ -366,6 +408,12 @@ class ImageProviderQueue:
                     "provider": provider,
                     "duration_sec": candidate_scene.get("duration_sec"),
                     "duration_estimate_sec": candidate_scene.get("duration_estimate_sec"),
+                    "reference_images": task.reference_images,
+                    "reference_image_support": {
+                        "requested": bool(task.reference_images),
+                        "provider_supports_reference_image": False,
+                        "mode": "metadata_only",
+                    },
                 }
             )
 
@@ -398,6 +446,10 @@ class ImageProviderQueue:
             "enabled": True,
             "run_id": ctx.run_id,
             "provider": result.provider,
+            "provider_capabilities": {
+                "supports_reference_image": False,
+                "reference_image_mode": "metadata_only",
+            },
             "asset_count": len(result.assets),
             "assets": result.assets,
         }
