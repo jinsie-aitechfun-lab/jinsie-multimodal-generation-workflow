@@ -678,3 +678,68 @@ JSON:
         base_profile=base_profile,
         llm_payload=llm_payload,
     )
+
+def _manifest_characters(outputs: Dict[str, Any]) -> List[Dict[str, Any]]:
+    manifest = outputs.get("character_manifest") or {}
+    characters = manifest.get("characters") or []
+    if not isinstance(characters, list):
+        return []
+
+    return [item for item in characters if isinstance(item, dict)]
+
+
+def build_llm_character_visual_profiles(
+    runner: Any,
+    ctx: Any,
+    outputs: Dict[str, Any],
+) -> Dict[str, Any]:
+    profiles: List[Dict[str, Any]] = []
+
+    for item in _manifest_characters(outputs):
+        character_id = _clean_text(item.get("character_id"))
+        display_name = _clean_text(item.get("display_name"))
+        species = _clean_text(item.get("species"))
+        role_type = _clean_text(item.get("role_type")) or "secondary"
+
+        if not display_name and not species:
+            continue
+
+        # Reuse the existing single-profile builder by isolating one manifest item.
+        # The item is temporarily treated as primary only inside this isolated profile build.
+        isolated_character = {
+            **item,
+            "role_type": "primary",
+        }
+        isolated_outputs = {
+            **outputs,
+            "character_manifest": {
+                "enabled": True,
+                "count": 1,
+                "characters": [isolated_character],
+            },
+        }
+
+        subject = display_name or species
+        profile = build_llm_character_visual_profile(
+            runner,
+            ctx,
+            isolated_outputs,
+            subject_hint=f"main subject: {subject}",
+        )
+
+        profiles.append(
+            {
+                **profile,
+                "character_id": character_id,
+                "display_name": display_name,
+                "species": species,
+                "role_type": role_type,
+            }
+        )
+
+    return {
+        "provider": "character_visual_profile_builder",
+        "count": len(profiles),
+        "profiles": profiles,
+    }
+

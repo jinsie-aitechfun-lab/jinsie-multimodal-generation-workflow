@@ -171,6 +171,44 @@ def build_scene_action_binding_block(
     return "; ".join(parts)
 
 
+def build_multi_character_visual_profiles_block(outputs: Dict[str, Any]) -> str:
+    payload = outputs.get("character_visual_profiles") or {}
+    profiles = payload.get("profiles") or []
+
+    if not isinstance(profiles, list) or len(profiles) < 2:
+        return ""
+
+    parts: List[str] = [
+        "multi-character visual profiles",
+        "use each character's own visual profile; do not merge or swap traits between characters",
+    ]
+
+    for profile in profiles:
+        if not isinstance(profile, dict):
+            continue
+
+        name = _clean_text(profile.get("display_name")) or _clean_text(profile.get("subject"))
+        role_type = _clean_text(profile.get("role_type"))
+        species = _clean_text(profile.get("species"))
+        identity = _clean_text(profile.get("visual_identity"))
+        must_keep = _join_list(profile.get("must_keep"))
+        must_avoid = _join_list(profile.get("must_avoid"))
+
+        character_parts = [
+            f"{role_type} character" if role_type else "",
+            f"name: {name}" if name else "",
+            f"species: {species}" if species else "",
+            f"fixed visual identity: {identity}" if identity else "",
+            f"must keep exactly: {must_keep}" if must_keep else "",
+            f"must avoid: {must_avoid}" if must_avoid else "",
+        ]
+        character_text = "; ".join(part for part in character_parts if part)
+        if character_text:
+            parts.append(character_text)
+
+    return "; ".join(parts)
+
+
 def build_image_prompt_policy_blocks(
     *,
     workflow_input: Any,
@@ -188,6 +226,7 @@ def build_image_prompt_policy_blocks(
     return {
         "profile": profile,
         "visual_profile_block": build_visual_profile_prompt_block(profile),
+        "character_visual_profiles_block": build_multi_character_visual_profiles_block(outputs),
         "character_separation_block": build_character_separation_block(outputs),
         "scene_action_block": build_scene_action_binding_block(
             visual_description=visual_description,

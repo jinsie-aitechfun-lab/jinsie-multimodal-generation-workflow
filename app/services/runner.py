@@ -26,7 +26,10 @@ from app.services.runner_image_selection_support import RunnerImageSelectionSupp
 from app.services.image_provider_queue import ImageProviderQueue
 from app.services.image_provider_adapter import ApiImageGeneratorAdapter
 from app.services.image_provider_types import ImageGenerationTask
-from app.services.character_visual_profile_llm import build_llm_character_visual_profile
+from app.services.character_visual_profile_llm import (
+    build_llm_character_visual_profile,
+    build_llm_character_visual_profiles,
+)
 from app.services.image_prompt_policy import (
     build_image_prompt_policy_blocks,
     clean_image_prompt_text,
@@ -981,6 +984,11 @@ class WorkflowRunner:
             outputs,
             subject_hint=character_anchor,
         )
+        character_visual_profiles: Dict[str, Any] = build_llm_character_visual_profiles(
+            self,
+            ctx,
+            outputs,
+        )
         character_anchor_metadata: Dict[str, Any] = {
             "enabled": True,
             "mode": "text_profile_anchor",
@@ -1007,6 +1015,7 @@ class WorkflowRunner:
         profile_outputs: Dict[str, Any] = {
             **outputs,
             "character_visual_profile": character_visual_profile,
+            "character_visual_profiles": character_visual_profiles,
             "character_anchor": character_anchor_metadata,
         }
 
@@ -1063,6 +1072,7 @@ class WorkflowRunner:
                         global_style_anchor,
                         character_anchor,
                         policy_blocks.get("visual_profile_block"),
+                        policy_blocks.get("character_visual_profiles_block"),
                         character_block,
                         scene_required_presence_block,
                         policy_blocks.get("character_separation_block"),
@@ -1093,6 +1103,7 @@ class WorkflowRunner:
             return {
                 "provider": "image_prompt_builder",
                 "character_visual_profile": character_visual_profile,
+                "character_visual_profiles": character_visual_profiles,
                 "character_anchor": character_anchor_metadata,
                 "prompts": prompts,
             }
@@ -1137,6 +1148,7 @@ class WorkflowRunner:
                     global_style_anchor,
                     character_anchor,
                     policy_blocks.get("visual_profile_block"),
+                    policy_blocks.get("character_visual_profiles_block"),
                     character_block,
                     scene_required_presence_block,
                     policy_blocks.get("character_separation_block"),
@@ -1166,6 +1178,7 @@ class WorkflowRunner:
         return {
             "provider": "image_prompt_builder",
             "character_visual_profile": character_visual_profile,
+            "character_visual_profiles": character_visual_profiles,
             "character_anchor": character_anchor_metadata,
             "prompts": prompts,
         }
