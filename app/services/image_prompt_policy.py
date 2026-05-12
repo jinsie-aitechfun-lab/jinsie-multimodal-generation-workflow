@@ -179,32 +179,49 @@ def build_multi_character_visual_profiles_block(outputs: Dict[str, Any]) -> str:
         return ""
 
     parts: List[str] = [
-        "multi-character visual profiles",
-        "use each character's own visual profile; do not merge or swap traits between characters",
+        "multi-character identity lock",
+        "render all required scene characters together in the same frame",
+        "treat every character as a separate visual identity with exclusive ownership of its defining traits",
+        "never merge anatomies, never swap signature traits, and never transfer body parts, shells, ears, tails, fur patterns, skin patterns, or accessories between characters",
+        "a defining trait that belongs to one character must not appear on any other character in the same image",
     ]
 
-    for profile in profiles:
+    character_labels: List[str] = []
+
+    for index, profile in enumerate(profiles, start=1):
         if not isinstance(profile, dict):
             continue
 
-        name = _clean_text(profile.get("display_name")) or _clean_text(profile.get("subject"))
+        name = _clean_text(profile.get("display_name")) or _clean_text(profile.get("subject")) or f"character_{index}"
         role_type = _clean_text(profile.get("role_type"))
         species = _clean_text(profile.get("species"))
         identity = _clean_text(profile.get("visual_identity"))
         must_keep = _join_list(profile.get("must_keep"))
         must_avoid = _join_list(profile.get("must_avoid"))
 
+        character_labels.append(name)
+
         character_parts = [
-            f"{role_type} character" if role_type else "",
-            f"name: {name}" if name else "",
+            f"character {index}",
+            f"name: {name}",
+            f"role: {role_type}" if role_type else "",
             f"species: {species}" if species else "",
             f"fixed visual identity: {identity}" if identity else "",
-            f"must keep exactly: {must_keep}" if must_keep else "",
-            f"must avoid: {must_avoid}" if must_avoid else "",
+            f"this character owns only these defining traits: {must_keep}" if must_keep else "",
+            f"this character must never have these foreign traits: {must_avoid}" if must_avoid else "",
         ]
         character_text = "; ".join(part for part in character_parts if part)
         if character_text:
             parts.append(character_text)
+
+    if len(character_labels) >= 2:
+        parts.append(
+            "cross-character exclusion rule: keep every character visually distinct; do not let one character inherit another character's defining anatomy or signature details"
+        )
+
+    parts.append(
+        "consistency rule: keep the same character design for every character across all scenes; only change pose, expression, framing, background, and current scene action"
+    )
 
     return "; ".join(parts)
 
