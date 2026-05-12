@@ -1030,6 +1030,9 @@ class WorkflowRunner:
                 character_block = self._scene_character_prompt_block(
                     outputs, scene_data
                 )
+                scene_required_presence_block = (
+                    self._scene_character_required_presence_block(outputs, scene_data)
+                )
                 negative_block = self._scene_character_negative_block(
                     outputs, scene_data
                 )
@@ -1061,6 +1064,7 @@ class WorkflowRunner:
                         character_anchor,
                         policy_blocks.get("visual_profile_block"),
                         character_block,
+                        scene_required_presence_block,
                         policy_blocks.get("character_separation_block"),
                         shot_anchor,
                         policy_blocks.get("scene_action_block"),
@@ -1102,6 +1106,9 @@ class WorkflowRunner:
             scene_title = str(scene.get("scene_title", "")).strip()
 
             character_block = self._scene_character_prompt_block(outputs, scene)
+            scene_required_presence_block = (
+                self._scene_character_required_presence_block(outputs, scene)
+            )
             negative_block = self._scene_character_negative_block(outputs, scene)
 
             clean_visual_description = clean_image_prompt_text(visual_description)
@@ -1131,6 +1138,7 @@ class WorkflowRunner:
                     character_anchor,
                     policy_blocks.get("visual_profile_block"),
                     character_block,
+                    scene_required_presence_block,
                     policy_blocks.get("character_separation_block"),
                     scene_anchor,
                     policy_blocks.get("scene_action_block"),
@@ -1191,6 +1199,77 @@ class WorkflowRunner:
                 return item
         return None
 
+
+    def _scene_character_required_presence_block(
+        self,
+        outputs: Dict[str, Any],
+        scene: Dict[str, Any],
+    ) -> str:
+        scene_characters = scene.get("characters") or []
+        if not isinstance(scene_characters, list) or len(scene_characters) < 2:
+            return ""
+
+        required_names: List[str] = []
+        primary_names: List[str] = []
+        secondary_names: List[str] = []
+
+        for binding in scene_characters:
+            if not isinstance(binding, dict):
+                continue
+
+            character_id = str(binding.get("character_id") or "").strip()
+            manifest_item = self._manifest_character_by_id(outputs, character_id)
+            if manifest_item is None:
+                continue
+
+            display_name = str(manifest_item.get("display_name") or "").strip()
+            species = str(manifest_item.get("species") or "").strip()
+            role_type = str(manifest_item.get("role_type") or "").strip()
+
+            name = display_name or species
+            if not name:
+                continue
+
+            if name not in required_names:
+                required_names.append(name)
+
+            if role_type == "primary":
+                if name not in primary_names:
+                    primary_names.append(name)
+            else:
+                if name not in secondary_names:
+                    secondary_names.append(name)
+
+        if len(required_names) < 2:
+            return ""
+
+        required_text = " and ".join(required_names)
+        primary_text = " and ".join(primary_names) if primary_names else required_names[0]
+        secondary_text = " and ".join(secondary_names)
+
+        parts = [
+            f"required scene characters: {required_text}",
+            f"hard requirement: include all of {required_text} together in the same image",
+            f"hard requirement: {required_text} must all be clearly visible at the same time in one coherent composition",
+            "every listed scene character must be a real on-screen character in the frame, not omitted, not hidden, not cropped out, and not reduced to a tiny background decoration",
+            "do not render only one character when multiple required scene characters are listed",
+            "do not omit any listed scene character",
+            "do not merge multiple characters into one body",
+            "do not replace one character with another character",
+            f"{primary_text} remains the main protagonist and visual focus",
+        ]
+
+        if secondary_text:
+            parts.append(
+                f"{secondary_text} are required supporting characters and are not optional background hints"
+            )
+
+        parts.append(
+            "if any required scene character is missing, the image is invalid and should be regenerated"
+        )
+
+        return "; ".join(parts)
+
     def _scene_character_prompt_block(
         self,
         outputs: Dict[str, Any],
@@ -1201,6 +1280,7 @@ class WorkflowRunner:
             return ""
 
         parts: List[str] = []
+        required_names: List[str] = []
 
         for binding in scene_characters:
             if not isinstance(binding, dict):
@@ -1218,6 +1298,10 @@ class WorkflowRunner:
             signature_traits = manifest_item.get("signature_traits") or []
             forbidden_traits = manifest_item.get("forbidden_traits") or []
 
+            name = display_name or species
+            if name and name not in required_names:
+                required_names.append(name)
+
             signature_text = ", ".join(
                 item.strip() for item in signature_traits if str(item).strip()
             )
@@ -1229,6 +1313,10 @@ class WorkflowRunner:
                 f"{role_type} character",
                 f"name: {display_name}" if display_name else "",
                 f"species: {species}" if species else "",
+                "identity lock: keep exactly the same character design in every scene",
+                "appearance lock: keep the same body shape, proportions, facial features, dominant colors, outfit or shell or ears or tail, and the same signature accessory or detail in every scene",
+                "consistency rule: do not redesign this character between scenes; only change pose, camera angle, expression, background, and current action",
+                "presence rule: when this character is required by the scene, it must appear as a real on-screen character in the frame",
                 f"must keep: {signature_text}" if signature_text else "",
                 f"must avoid: {forbidden_text}" if forbidden_text else "",
             ]
@@ -1239,7 +1327,18 @@ class WorkflowRunner:
         if not parts:
             return ""
 
-        return "character definitions: " + " | ".join(parts)
+        scene_cast_text = ""
+        if len(required_names) >= 2:
+            scene_cast_text = (
+                "scene cast lock: render all required scene characters together in the same frame: "
+                + ", ".join(required_names)
+            )
+
+        blocks = []
+        if scene_cast_text:
+            blocks.append(scene_cast_text)
+        blocks.append("character definitions: " + " | ".join(parts))
+        return " ; ".join(blocks)
 
     def _scene_character_negative_block(
         self,
@@ -1267,6 +1366,19 @@ class WorkflowRunner:
                 if value:
                     negatives.append(value)
 
+        generic_negatives = [
+            "missing required scene character",
+            "character omitted from scene",
+            "background-only supporting character",
+            "cropped-out supporting character",
+            "random color changes for the same character",
+            "random character redesign",
+            "trait transfer between characters",
+            "mixed body parts between characters",
+            "merged characters",
+        ]
+        negatives.extend(generic_negatives)
+
         deduped: List[str] = []
         seen = set()
         for item in negatives:
@@ -1277,7 +1389,7 @@ class WorkflowRunner:
         if not deduped:
             return ""
 
-        return "negative constraints: " + ", ".join(deduped)
+        return "subject negative constraints: " + ", ".join(deduped)
 
     def _get_session_data(self, session_id: Optional[str]) -> Optional[Dict[str, Any]]:
         if not session_id:

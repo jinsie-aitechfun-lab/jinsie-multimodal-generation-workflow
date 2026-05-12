@@ -90,17 +90,21 @@ def _extract_open_xiao_subject(piece: str) -> str:
     if start < 0:
         return ""
 
+    prefix = value[:start].strip()
     candidate = value[start:].strip(" \t\n\r，。！？、,.!?：:；;“”\"'《》")
+
     if not candidate.startswith("小"):
         return ""
 
-    if len(candidate) >= 5 and candidate[-1] == candidate[-2] and len(candidate) <= 8:
-        return candidate
+    if len(candidate) > 4:
+        candidate = candidate[:3]
 
-    if len(candidate) <= 4:
-        return candidate
+    if prefix and (len(prefix) <= 2 or prefix.endswith("的")):
+        combined = f"{prefix}{candidate}".strip()
+        if 2 < len(combined) <= 10:
+            return combined
 
-    return candidate[:3]
+    return candidate
 
 
 def _extract_open_leading_subject(piece: str) -> str:
@@ -115,46 +119,82 @@ def _extract_open_leading_subject(piece: str) -> str:
     first_xiao = value.find("小")
     if first_xiao > 0:
         value = value[:first_xiao]
+        if len(value) > 3:
+            value = value[:-1]
 
     match = re.match(r"^([\u4e00-\u9fff]{2,4})", value)
     if not match:
         return ""
 
     candidate = match.group(1).strip(" \t\n\r，。！？、,.!?：:；;“”\"'《》")
+    if not candidate:
+        return ""
 
-    if len(candidate) == 4:
-        candidate = candidate[:3]
+    if len(candidate) <= 2:
+        return candidate
 
-    return candidate
+    if len(candidate) >= 3 and candidate[0] == candidate[1]:
+        return candidate[:3]
 
+    if len(candidate) == 3:
+        return candidate
+
+    return candidate[:2]
+
+
+def _extract_subjects_from_piece(piece: str) -> list[str]:
+    value = _clean_piece(piece)
+    if not value:
+        return []
+
+    subjects: list[str] = []
+    first_xiao = value.find("小")
+
+    if first_xiao > 0:
+        prefix = value[:first_xiao].strip(" \t\n\r，。！？、,.!?：:；;“”\"'《》")
+
+        # 修饰语前缀，例如“会飞的/蓝色/蓝色的”，不作为独立角色。
+        modifier_prefixes = ("红色", "蓝色", "绿色", "黄色", "白色", "黑色", "彩色", "会飞的", "会唱歌的")
+        is_modifier_prefix = prefix.endswith("的") or prefix in modifier_prefixes
+
+        if prefix and not is_modifier_prefix:
+            # 例如“奥特曼打小怪兽”：小 之前是“奥特曼打”，去掉最后的谓词字。
+            if len(prefix) > 3:
+                prefix = prefix[:-1]
+
+            leading = _extract_open_leading_subject(prefix)
+            if leading:
+                subjects.append(leading)
+
+    xiao_subject = _extract_open_xiao_subject(value)
+    if xiao_subject:
+        subjects.append(xiao_subject)
+
+    if not subjects:
+        leading = _extract_open_leading_subject(value)
+        if leading:
+            subjects.append(leading)
+
+    deduped: list[str] = []
+    for subject in subjects:
+        if subject and subject not in deduped:
+            deduped.append(subject)
+    return deduped
 
 def extract_story_subjects(topic: str) -> StorySubjectExtraction:
     clean_topic = normalize_story_topic(topic)
-
     pieces = re.split(r"(?:、|，|,|和|跟|与|及|同|还有|以及)", clean_topic)
 
     subjects: list[str] = []
-
-    leading_subject = _extract_open_leading_subject(clean_topic)
-    if leading_subject:
-        subjects.append(leading_subject)
-
     for piece in pieces:
-        subject = _extract_open_xiao_subject(piece)
-        if not subject:
-            continue
-        if subject not in subjects:
-            subjects.append(subject)
+        for subject in _extract_subjects_from_piece(piece):
+            if subject not in subjects:
+                subjects.append(subject)
 
     if not subjects:
-        fallback = _extract_open_xiao_subject(clean_topic)
-        if fallback:
-            subjects.append(fallback)
-
-    if not subjects:
-        fallback = _extract_open_leading_subject(clean_topic)
-        if fallback:
-            subjects.append(fallback)
+        for subject in _extract_subjects_from_piece(clean_topic):
+            if subject not in subjects:
+                subjects.append(subject)
 
     if not subjects:
         return StorySubjectExtraction()

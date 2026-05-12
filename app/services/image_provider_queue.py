@@ -62,18 +62,10 @@ class ImageProviderQueue:
                 and policy.fallback_enabled
                 and policy.fallback_provider == PROVIDER_PILLOW
             ):
-                fallback_result = self._run_provider(
-                    provider=PROVIDER_PILLOW,
-                    ctx=ctx,
-                    outputs=outputs,
-                )
-                fallback_output = self._to_output_dict(fallback_result, ctx=ctx)
-                fallback_output["fallback"] = {
-                    "from_provider": PROVIDER_API,
-                    "to_provider": PROVIDER_PILLOW,
-                    "reason": str(error),
-                }
-                return fallback_output
+                raise RuntimeError(
+                    "api image generation failed and pillow fallback is disabled for final generation: "
+                    f"{error}"
+                ) from error
 
             raise RuntimeError(
                 f"image asset generation failed with provider={policy.primary_provider}: {error}"
