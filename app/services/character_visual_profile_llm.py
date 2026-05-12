@@ -100,12 +100,12 @@ def _storyboard_context(outputs: Dict[str, Any]) -> str:
 def _should_skip_llm(base_profile: Dict[str, Any]) -> bool:
     source = _clean_text(base_profile.get("profile_source"))
 
-    # Respect explicit/user/manifest profiles. LLM should enhance weak inferred profiles,
-    # not overwrite user-controlled character definitions.
+    # Respect explicit user-controlled profiles.
+    # Manifest profiles can be automatically inferred from topic/story subjects,
+    # so they still need LLM/deterministic enhancement for stable visual identity.
     return source in {
         "manual_anchor",
         "manual_input",
-        "manifest",
         "existing_profile",
     }
 
