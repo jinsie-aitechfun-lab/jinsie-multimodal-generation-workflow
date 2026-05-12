@@ -62,18 +62,10 @@ class ImageProviderQueue:
                 and policy.fallback_enabled
                 and policy.fallback_provider == PROVIDER_PILLOW
             ):
-                fallback_result = self._run_provider(
-                    provider=PROVIDER_PILLOW,
-                    ctx=ctx,
-                    outputs=outputs,
-                )
-                fallback_output = self._to_output_dict(fallback_result, ctx=ctx)
-                fallback_output["fallback"] = {
-                    "from_provider": PROVIDER_API,
-                    "to_provider": PROVIDER_PILLOW,
-                    "reason": str(error),
-                }
-                return fallback_output
+                raise RuntimeError(
+                    "api image generation failed and pillow fallback is disabled for final generation: "
+                    f"{error}"
+                ) from error
 
             raise RuntimeError(
                 f"image asset generation failed with provider={policy.primary_provider}: {error}"
@@ -99,6 +91,13 @@ class ImageProviderQueue:
 
         prompt_by_scene_id, prompt_by_shot_id = self._runner._image_prompt_item_maps(outputs)
         run_dir = self._runner._ensure_image_run_dir(ctx.run_id)
+        character_anchor = self._generate_character_anchor_reference(
+            provider=provider,
+            ctx=ctx,
+            run_dir=run_dir,
+            outputs=outputs,
+        )
+        anchor_reference_images = character_anchor.get("reference_images") or []
         assets: List[Dict[str, Any]] = []
 
         if shot_items:
@@ -141,6 +140,7 @@ class ImageProviderQueue:
                     parent_scene=parent_scene,
                     shot_type=shot_type,
                     transition=transition,
+                    anchor_reference_images=anchor_reference_images,
                 )
 
                 primary_ref = candidate_asset_refs[0]
@@ -160,6 +160,13 @@ class ImageProviderQueue:
                         "duration_sec": primary_ref.get("duration_sec"),
                         "duration_estimate_sec": primary_ref.get("duration_estimate_sec"),
                         "status": "generated",
+                        "reference_images": primary_ref.get("reference_images") or [],
+                        "reference_image_support": primary_ref.get("reference_image_support")
+                        or {
+                            "requested": bool(primary_ref.get("reference_images") or []),
+                            "provider_supports_reference_image": False,
+                            "mode": "metadata_only",
+                        },
                         "candidate_asset_refs": candidate_asset_refs,
                     }
                 )
@@ -188,6 +195,8 @@ class ImageProviderQueue:
                     scene=scene,
                     scene_id=scene_id,
                     base_prompt=base_prompt,
+                    prompt_item=prompt_item,
+                    anchor_reference_images=anchor_reference_images,
                 )
 
                 primary_ref = candidate_asset_refs[0]
@@ -206,6 +215,13 @@ class ImageProviderQueue:
                         "duration_sec": primary_ref.get("duration_sec"),
                         "duration_estimate_sec": primary_ref.get("duration_estimate_sec"),
                         "status": "generated",
+                        "reference_images": primary_ref.get("reference_images") or [],
+                        "reference_image_support": primary_ref.get("reference_image_support")
+                        or {
+                            "requested": bool(primary_ref.get("reference_images") or []),
+                            "provider_supports_reference_image": False,
+                            "mode": "metadata_only",
+                        },
                         "candidate_asset_refs": candidate_asset_refs,
                     }
                 )
@@ -214,7 +230,134 @@ class ImageProviderQueue:
             status="generated",
             provider=provider,
             assets=assets,
+            character_anchor=character_anchor,
         )
+
+    def _build_character_anchor_prompt(
+        self,
+        outputs: Dict[str, Any],
+    ) -> str:
+        image_prompts = outputs.get("image_prompts") or {}
+        profile = image_prompts.get("character_visual_profile") or {}
+        anchor = image_prompts.get("character_anchor") or {}
+
+        subject = str(
+            anchor.get("subject")
+            or profile.get("subject")
+            or "main storybook character"
+        ).strip()
+        visual_identity = str(profile.get("visual_identity") or "").strip()
+        must_keep = profile.get("must_keep") or []
+        must_avoid = profile.get("must_avoid") or []
+
+        keep_text = ", ".join(str(item).strip() for item in must_keep if str(item).strip())
+        avoid_text = ", ".join(str(item).strip() for item in must_avoid if str(item).strip())
+
+        parts = [
+            "character reference sheet",
+            f"single centered full-body design of {subject}",
+            "plain clean light background",
+            "no story scene, no extra characters, no props unless part of the fixed character identity",
+            "front-facing or three-quarter view, clear silhouette, stable reusable design",
+            f"fixed visual identity: {visual_identity}" if visual_identity else "",
+            f"must keep exactly: {keep_text}" if keep_text else "",
+            f"must avoid: {avoid_text}" if avoid_text else "",
+            "children's storybook illustration style, soft pastel palette, clean composition",
+        ]
+
+        return "; ".join(part for part in parts if part)
+
+
+    def _generate_character_anchor_reference(
+        self,
+        *,
+        provider: str,
+        ctx: Any,
+        run_dir: Any,
+        outputs: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        image_prompts = outputs.get("image_prompts") or {}
+        anchor = image_prompts.get("character_anchor") or {}
+
+        if not isinstance(anchor, dict) or not anchor.get("enabled"):
+            return {
+                "enabled": False,
+                "mode": "disabled",
+                "reference_images": [],
+            }
+
+        subject = str(anchor.get("subject") or "main_subject").strip() or "main_subject"
+        anchor_prompt = self._build_character_anchor_prompt(outputs)
+
+        anchor_dir = run_dir / "character_anchor"
+        file_name = "main_subject.png"
+        output_path = anchor_dir / file_name
+
+        relative_path = f"assets/mock/image/{ctx.run_id}/character_anchor/{file_name}"
+        public_url = f"/assets/mock/image/{ctx.run_id}/character_anchor/{file_name}"
+
+        anchor_scene = {
+            "scene_id": "character_anchor",
+            "scene_title": "Character Anchor",
+            "visual_description": anchor_prompt,
+            "narration": "",
+            "duration_sec": 0,
+            "characters": [],
+        }
+
+        task = ImageGenerationTask(
+            run_id=ctx.run_id,
+            item_id="character_anchor",
+            scene_id="character_anchor",
+            prompt=anchor_prompt,
+            candidate_suffix="main_subject",
+            output_path=output_path,
+            relative_path=relative_path,
+            public_url=public_url,
+            reference_images=[],
+            prompt_metadata={
+                "ctx": ctx,
+                "scene": anchor_scene,
+                "scene_index": 1,
+                "character_anchor": anchor,
+                "reference_images": [],
+            },
+        )
+
+        image_bytes = self._generate_candidate_bytes(provider=provider, task=task)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(bytes(image_bytes))
+
+        reference_image = {
+            "role": "main_subject",
+            "subject": subject,
+            "file_name": file_name,
+            "relative_path": relative_path,
+            "public_url": public_url,
+            "mime_type": "image/png",
+            "provider": provider,
+            "source": "generated_character_anchor",
+        }
+
+        return {
+            **anchor,
+            "enabled": True,
+            "mode": "image_reference_anchor",
+            "anchor_type": "character_reference_anchor",
+            "anchor_prompt": anchor_prompt,
+            "reference_image": reference_image,
+            "reference_images": [reference_image],
+            "provider_reference_support": {
+                "requested": True,
+                "provider_supports_reference_image": False,
+                "mode": "metadata_only",
+                "reason": (
+                    "character anchor image is generated and attached as metadata; "
+                    "current provider adapter does not consume reference images yet"
+                ),
+            },
+        }
+
 
     def _generate_shot_candidates(
         self,
@@ -232,6 +375,7 @@ class ImageProviderQueue:
         parent_scene: Dict[str, Any],
         shot_type: str,
         transition: str,
+        anchor_reference_images: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
         candidate_asset_refs: List[Dict[str, Any]] = []
 
@@ -267,6 +411,14 @@ class ImageProviderQueue:
             file_name = f"{shot_id}__{candidate_suffix}.png"
             output_path = run_dir / file_name
 
+            reference_images = (
+                prompt_item.get("reference_images")
+                or (prompt_item.get("character_anchor") or {}).get("reference_images")
+                or anchor_reference_images
+                or []
+            )
+            character_anchor = prompt_item.get("character_anchor") or {}
+
             task = ImageGenerationTask(
                 run_id=ctx.run_id,
                 item_id=shot_id,
@@ -276,10 +428,13 @@ class ImageProviderQueue:
                 output_path=output_path,
                 relative_path=f"assets/mock/image/{ctx.run_id}/{file_name}",
                 public_url=f"/assets/mock/image/{ctx.run_id}/{file_name}",
+                reference_images=reference_images,
                 prompt_metadata={
                     "ctx": ctx,
                     "scene": candidate_scene,
                     "scene_index": index + candidate_index,
+                    "character_anchor": character_anchor,
+                    "reference_images": reference_images,
                 },
             )
 
@@ -298,6 +453,12 @@ class ImageProviderQueue:
                     "provider": provider,
                     "duration_sec": candidate_scene.get("duration_sec"),
                     "duration_estimate_sec": candidate_scene.get("duration_estimate_sec"),
+                    "reference_images": task.reference_images,
+                    "reference_image_support": {
+                        "requested": bool(task.reference_images),
+                        "provider_supports_reference_image": False,
+                        "mode": "metadata_only",
+                    },
                 }
             )
 
@@ -317,6 +478,8 @@ class ImageProviderQueue:
         scene: Dict[str, Any],
         scene_id: str,
         base_prompt: str,
+        prompt_item: Dict[str, Any],
+        anchor_reference_images: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
         candidate_asset_refs: List[Dict[str, Any]] = []
 
@@ -336,6 +499,14 @@ class ImageProviderQueue:
             file_name = f"{scene_id}__{candidate_suffix}.png"
             output_path = run_dir / file_name
 
+            reference_images = (
+                prompt_item.get("reference_images")
+                or (prompt_item.get("character_anchor") or {}).get("reference_images")
+                or anchor_reference_images
+                or []
+            )
+            character_anchor = prompt_item.get("character_anchor") or {}
+
             task = ImageGenerationTask(
                 run_id=ctx.run_id,
                 item_id=scene_id,
@@ -345,10 +516,13 @@ class ImageProviderQueue:
                 output_path=output_path,
                 relative_path=f"assets/mock/image/{ctx.run_id}/{file_name}",
                 public_url=f"/assets/mock/image/{ctx.run_id}/{file_name}",
+                reference_images=reference_images,
                 prompt_metadata={
                     "ctx": ctx,
                     "scene": candidate_scene,
                     "scene_index": index + candidate_index,
+                    "character_anchor": character_anchor,
+                    "reference_images": reference_images,
                 },
             )
 
@@ -366,6 +540,12 @@ class ImageProviderQueue:
                     "provider": provider,
                     "duration_sec": candidate_scene.get("duration_sec"),
                     "duration_estimate_sec": candidate_scene.get("duration_estimate_sec"),
+                    "reference_images": task.reference_images,
+                    "reference_image_support": {
+                        "requested": bool(task.reference_images),
+                        "provider_supports_reference_image": False,
+                        "mode": "metadata_only",
+                    },
                 }
             )
 
@@ -398,6 +578,11 @@ class ImageProviderQueue:
             "enabled": True,
             "run_id": ctx.run_id,
             "provider": result.provider,
+            "provider_capabilities": {
+                "supports_reference_image": False,
+                "reference_image_mode": "metadata_only",
+            },
+            "character_anchor": result.character_anchor,
             "asset_count": len(result.assets),
             "assets": result.assets,
         }

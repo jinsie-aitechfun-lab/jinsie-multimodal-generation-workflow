@@ -1,8 +1,11 @@
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi import Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+
 
 from app.schemas.workflow import (
     FinalVideoRenderRequest,
@@ -63,19 +66,27 @@ def get_real_kling_sample(sample_id: str):
     return sample
 
 
-@app.post("/v1/workflow/run", response_model=WorkflowRunResponse)
-def run_workflow(req: WorkflowRunRequest):
-    print("[workflow] request received", req.workflow_id, req.session_id)
-    try:
-        result = _runner.run(req)
-        print("[workflow] completed", result.run_id)
-        return result
-    except UnknownStepError as e:
-        print("[workflow] unknown step error", str(e))
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        print("[workflow] runtime error", repr(e))
-        raise
+@app.post("/v1/workflow/run")
+def run_workflow(req: dict = Body(...)):
+    workflow_id = req.get("workflow_id") or f"wf_{int(time.time()*1000)}"
+
+    def on_complete(outputs: dict):
+        import os, json
+
+        out_dir = os.path.join("assets/mock", workflow_id)
+        os.makedirs(out_dir, exist_ok=True)
+        out_path = os.path.join(out_dir, "outputs.json")
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(outputs, f, ensure_ascii=False, indent=2)
+        print(f"[AsyncRunner] workflow {workflow_id} completed.")
+
+    from app.services.runner import WorkflowRunner
+
+    _runner._run_async(
+        req.dict() if hasattr(req, "dict") else dict(req), callback=on_complete
+    )
+
+    return {"workflow_id": workflow_id, "status": "processing"}
 
 
 @app.post("/v1/image-review/select", response_model=ImageReviewSelectResponse)
@@ -110,6 +121,8 @@ def select_image_review_asset(req: ImageReviewSelectRequest):
     except Exception as e:
         print("[image-review] runtime error", repr(e))
         raise
+
+
 @app.post("/v1/final-video/render", response_model=FinalVideoRenderResponse)
 def render_final_video(req: FinalVideoRenderRequest):
     print("[final-video] render request received", req.workflow_id, req.run_id)
@@ -170,7 +183,9 @@ def refresh_image_review(req: ImageReviewRefreshRequest):
         raise
 
 
-@app.post("/v1/image-review/refresh-scene", response_model=ImageReviewRefreshSceneResponse)
+@app.post(
+    "/v1/image-review/refresh-scene", response_model=ImageReviewRefreshSceneResponse
+)
 def refresh_image_review_scene(req: ImageReviewRefreshSceneRequest):
     print(
         "[image-review] refresh-scene request received",
@@ -208,3 +223,6 @@ def refresh_image_review_scene(req: ImageReviewRefreshSceneRequest):
     except Exception as e:
         print("[image-review] refresh-scene runtime error", repr(e))
         raise
+
+
+from fastapi import Body

@@ -35,11 +35,39 @@ def clean_image_prompt_text(value: Any) -> str:
     return text.strip()
 
 
+def build_known_failure_mode_block(profile: Dict[str, Any]) -> str:
+    subject = _clean_text(profile.get("subject"))
+    must_keep_text = _join_list(profile.get("must_keep"))
+    must_avoid_text = _join_list(profile.get("must_avoid"))
+    required_presence_text = _join_list(profile.get("required_presence_rules"))
+
+    if "蝌蚪" not in subject and "tadpole" not in subject.lower():
+        return ""
+
+    parts = [
+        "known failure mode reinforcement",
+        "the main subject is a tadpole, not a frog",
+        "must show a visible tadpole as the main subject in every scene",
+        "must show a round tadpole head, a long thin tail, and a small aquatic baby body",
+        "the tadpole must not be replaced by an adult frog",
+        "no four legs, no frog legs, no arms, no adult frog body",
+        "if a mother frog appears, she must be a supporting character only",
+        "the tadpole must remain clearly visible as the main subject even when other characters appear",
+        f"tadpole must keep: {must_keep_text}" if must_keep_text else "",
+        f"tadpole must avoid: {must_avoid_text}" if must_avoid_text else "",
+        f"tadpole required presence: {required_presence_text}" if required_presence_text else "",
+    ]
+
+    return "; ".join(part for part in parts if part)
+
+
 def build_visual_profile_prompt_block(profile: Dict[str, Any]) -> str:
     subject = _clean_text(profile.get("subject"))
     source = _clean_text(profile.get("profile_source"))
     identity = _clean_text(profile.get("visual_identity"))
     must_keep = _join_list(profile.get("must_keep"))
+    required_presence = _join_list(profile.get("required_presence_rules"))
+    known_failure_mode = build_known_failure_mode_block(profile)
 
     if not subject and not identity:
         return ""
@@ -50,6 +78,8 @@ def build_visual_profile_prompt_block(profile: Dict[str, Any]) -> str:
         f"main subject: {subject}" if subject else "",
         f"fixed visual identity: {identity}" if identity else "",
         f"must keep exactly: {must_keep}" if must_keep else "",
+        f"required presence: {required_presence}" if required_presence else "",
+        known_failure_mode,
         "the main subject is the protagonist of the image, not a background prop",
         "if the story context mentions other characters, keep them secondary and do not replace the main subject",
         "use the same character design in every generated image",

@@ -26,12 +26,14 @@ from app.services.runner_image_selection_support import RunnerImageSelectionSupp
 from app.services.image_provider_queue import ImageProviderQueue
 from app.services.image_provider_adapter import ApiImageGeneratorAdapter
 from app.services.image_provider_types import ImageGenerationTask
+from app.services.character_visual_profile_llm import build_llm_character_visual_profile
 from app.services.image_prompt_policy import (
     build_image_prompt_policy_blocks,
     clean_image_prompt_text,
 )
 from app.services.runner_single_scene_image_support import RunnerSingleSceneImageSupport
 from app.services.topic_character_infer import infer_primary_character_manifest
+from app.services.story_subject_extractor import extract_story_subjects, story_main_subject
 from app.services.llm_output_sanitizer import parse_story_payload
 from app.services.story_retry_policy import (
     repair_retry_story_text,
@@ -73,6 +75,24 @@ DEFAULT_STORY_TIMEOUT_SECONDS = 60
 
 
 class WorkflowRunner:
+
+    def _run_video_audio_render_plan(self, run_input: dict, outputs: dict):
+        if hasattr(self, "rerender_final_video"):
+            self.rerender_final_video(
+                workflow_id=run_input.get("workflow_id"),
+                session_id=run_input.get("session_id"),
+                run_id=outputs.get("run_id"),
+                workflow_input=run_input,
+                image_assets=outputs.get("image_assets"),
+                audio_segments=outputs.get("audio_segments"),
+                subtitles=outputs.get("subtitles"),
+            )
+
+
+    def _run_async(self, run_input: dict, callback: callable):
+        from app.services.runner_async_wrapper import enqueue_run_task
+        enqueue_run_task(run_input, callback)
+
     """
     Phase 1 upgrade:
     - move from simple demo workflow to structured story-video generation workflow
@@ -689,11 +709,44 @@ class WorkflowRunner:
             req.input, character_candidates
         )
 
-        # P0-05: structured_characters_enabled=false 时，按 topic 自动补 primary manifest
+        # P0-05: structured_characters_enabled=false 时，按 topic 自动补角色 manifest。
+        # 支持 primary + N supporting subjects，避免多角色主题只出现第一个角色。
         if (not req.input.structured_characters_enabled) and (not character_manifest):
-            inferred_primary = infer_primary_character_manifest(req.input.topic)
-            if inferred_primary is not None:
-                character_manifest = [inferred_primary]
+            extracted_subjects = extract_story_subjects(req.input.topic)
+            auto_manifest: List[Dict[str, Any]] = []
+
+            for index, subject in enumerate(extracted_subjects.all_subjects, start=1):
+                role_type = "primary" if index == 1 else "secondary"
+                character_id = (
+                    "char_primary_01"
+                    if role_type == "primary"
+                    else f"char_secondary_{index - 1:02d}"
+                )
+                auto_manifest.append(
+                    {
+                        "character_id": character_id,
+                        "display_name": subject,
+                        "species": subject,
+                        "role_type": role_type,
+                        "signature_traits": [],
+                        "forbidden_traits": [],
+                        "locking_level": "strict",
+                        "reference_assets": {
+                            "status": "pending",
+                            "front_view": None,
+                            "side_view": None,
+                            "three_quarter_view": None,
+                        },
+                        "source": "story_subject_extractor",
+                    }
+                )
+
+            if auto_manifest:
+                character_manifest = auto_manifest
+            else:
+                inferred_primary = infer_primary_character_manifest(req.input.topic)
+                if inferred_primary is not None:
+                    character_manifest = [inferred_primary]
 
         aggregated_outputs: Dict[str, Any] = {
             "character_candidates": {
@@ -922,7 +975,40 @@ class WorkflowRunner:
         character_anchor = self._character_consistency_anchor(ctx, outputs)
 
         prompts: List[Dict[str, Any]] = []
-        character_visual_profile: Dict[str, Any] = {}
+        character_visual_profile: Dict[str, Any] = build_llm_character_visual_profile(
+            self,
+            ctx,
+            outputs,
+            subject_hint=character_anchor,
+        )
+        character_anchor_metadata: Dict[str, Any] = {
+            "enabled": True,
+            "mode": "text_profile_anchor",
+            "anchor_type": "character_reference_anchor",
+            "subject": character_visual_profile.get("subject"),
+            "profile_source": character_visual_profile.get("profile_source"),
+            "profile_generation_source": character_visual_profile.get(
+                "profile_generation_source"
+            ),
+            "visual_identity": character_visual_profile.get("visual_identity"),
+            "reference_images": [],
+            "reference_image": None,
+            "provider_reference_support": {
+                "requested": True,
+                "provider_supports_reference_image": False,
+                "mode": "metadata_only",
+                "reason": (
+                    "current api_image_generator text-to-image adapter does not "
+                    "send reference images yet"
+                ),
+            },
+        }
+
+        profile_outputs: Dict[str, Any] = {
+            **outputs,
+            "character_visual_profile": character_visual_profile,
+            "character_anchor": character_anchor_metadata,
+        }
 
         if shot_items:
             scene_map: Dict[str, Dict[str, Any]] = {
@@ -944,6 +1030,9 @@ class WorkflowRunner:
                 character_block = self._scene_character_prompt_block(
                     outputs, scene_data
                 )
+                scene_required_presence_block = (
+                    self._scene_character_required_presence_block(outputs, scene_data)
+                )
                 negative_block = self._scene_character_negative_block(
                     outputs, scene_data
                 )
@@ -960,7 +1049,7 @@ class WorkflowRunner:
                 story_anchor = f"story context: {text}"
                 policy_blocks = build_image_prompt_policy_blocks(
                     workflow_input=ctx.input,
-                    outputs=outputs,
+                    outputs=profile_outputs,
                     visual_description=visual_description,
                     narration=text,
                     subject_hint=character_anchor,
@@ -975,6 +1064,7 @@ class WorkflowRunner:
                         character_anchor,
                         policy_blocks.get("visual_profile_block"),
                         character_block,
+                        scene_required_presence_block,
                         policy_blocks.get("character_separation_block"),
                         shot_anchor,
                         policy_blocks.get("scene_action_block"),
@@ -992,12 +1082,18 @@ class WorkflowRunner:
                         "scene_title": scene_title,
                         "characters": scene_data.get("characters") or [],
                         "prompt": prompt,
+                        "character_anchor": character_anchor_metadata,
+                        "reference_images": character_anchor_metadata.get(
+                            "reference_images"
+                        )
+                        or [],
                     }
                 )
 
             return {
                 "provider": "image_prompt_builder",
                 "character_visual_profile": character_visual_profile,
+                "character_anchor": character_anchor_metadata,
                 "prompts": prompts,
             }
 
@@ -1010,6 +1106,9 @@ class WorkflowRunner:
             scene_title = str(scene.get("scene_title", "")).strip()
 
             character_block = self._scene_character_prompt_block(outputs, scene)
+            scene_required_presence_block = (
+                self._scene_character_required_presence_block(outputs, scene)
+            )
             negative_block = self._scene_character_negative_block(outputs, scene)
 
             clean_visual_description = clean_image_prompt_text(visual_description)
@@ -1024,7 +1123,7 @@ class WorkflowRunner:
             story_anchor = f"story context: {narration}"
             policy_blocks = build_image_prompt_policy_blocks(
                 workflow_input=ctx.input,
-                outputs=outputs,
+                outputs=profile_outputs,
                 visual_description=visual_description,
                 narration=narration,
                 subject_hint=character_anchor,
@@ -1039,6 +1138,7 @@ class WorkflowRunner:
                     character_anchor,
                     policy_blocks.get("visual_profile_block"),
                     character_block,
+                    scene_required_presence_block,
                     policy_blocks.get("character_separation_block"),
                     scene_anchor,
                     policy_blocks.get("scene_action_block"),
@@ -1055,12 +1155,18 @@ class WorkflowRunner:
                     "scene_title": scene_title,
                     "characters": scene.get("characters") or [],
                     "prompt": prompt,
+                    "character_anchor": character_anchor_metadata,
+                    "reference_images": character_anchor_metadata.get(
+                        "reference_images"
+                    )
+                    or [],
                 }
             )
 
         return {
             "provider": "image_prompt_builder",
             "character_visual_profile": character_visual_profile,
+            "character_anchor": character_anchor_metadata,
             "prompts": prompts,
         }
 
@@ -1093,6 +1199,77 @@ class WorkflowRunner:
                 return item
         return None
 
+
+    def _scene_character_required_presence_block(
+        self,
+        outputs: Dict[str, Any],
+        scene: Dict[str, Any],
+    ) -> str:
+        scene_characters = scene.get("characters") or []
+        if not isinstance(scene_characters, list) or len(scene_characters) < 2:
+            return ""
+
+        required_names: List[str] = []
+        primary_names: List[str] = []
+        secondary_names: List[str] = []
+
+        for binding in scene_characters:
+            if not isinstance(binding, dict):
+                continue
+
+            character_id = str(binding.get("character_id") or "").strip()
+            manifest_item = self._manifest_character_by_id(outputs, character_id)
+            if manifest_item is None:
+                continue
+
+            display_name = str(manifest_item.get("display_name") or "").strip()
+            species = str(manifest_item.get("species") or "").strip()
+            role_type = str(manifest_item.get("role_type") or "").strip()
+
+            name = display_name or species
+            if not name:
+                continue
+
+            if name not in required_names:
+                required_names.append(name)
+
+            if role_type == "primary":
+                if name not in primary_names:
+                    primary_names.append(name)
+            else:
+                if name not in secondary_names:
+                    secondary_names.append(name)
+
+        if len(required_names) < 2:
+            return ""
+
+        required_text = " and ".join(required_names)
+        primary_text = " and ".join(primary_names) if primary_names else required_names[0]
+        secondary_text = " and ".join(secondary_names)
+
+        parts = [
+            f"required scene characters: {required_text}",
+            f"hard requirement: include all of {required_text} together in the same image",
+            f"hard requirement: {required_text} must all be clearly visible at the same time in one coherent composition",
+            "every listed scene character must be a real on-screen character in the frame, not omitted, not hidden, not cropped out, and not reduced to a tiny background decoration",
+            "do not render only one character when multiple required scene characters are listed",
+            "do not omit any listed scene character",
+            "do not merge multiple characters into one body",
+            "do not replace one character with another character",
+            f"{primary_text} remains the main protagonist and visual focus",
+        ]
+
+        if secondary_text:
+            parts.append(
+                f"{secondary_text} are required supporting characters and are not optional background hints"
+            )
+
+        parts.append(
+            "if any required scene character is missing, the image is invalid and should be regenerated"
+        )
+
+        return "; ".join(parts)
+
     def _scene_character_prompt_block(
         self,
         outputs: Dict[str, Any],
@@ -1103,6 +1280,7 @@ class WorkflowRunner:
             return ""
 
         parts: List[str] = []
+        required_names: List[str] = []
 
         for binding in scene_characters:
             if not isinstance(binding, dict):
@@ -1120,6 +1298,10 @@ class WorkflowRunner:
             signature_traits = manifest_item.get("signature_traits") or []
             forbidden_traits = manifest_item.get("forbidden_traits") or []
 
+            name = display_name or species
+            if name and name not in required_names:
+                required_names.append(name)
+
             signature_text = ", ".join(
                 item.strip() for item in signature_traits if str(item).strip()
             )
@@ -1131,6 +1313,10 @@ class WorkflowRunner:
                 f"{role_type} character",
                 f"name: {display_name}" if display_name else "",
                 f"species: {species}" if species else "",
+                "identity lock: keep exactly the same character design in every scene",
+                "appearance lock: keep the same body shape, proportions, facial features, dominant colors, outfit or shell or ears or tail, and the same signature accessory or detail in every scene",
+                "consistency rule: do not redesign this character between scenes; only change pose, camera angle, expression, background, and current action",
+                "presence rule: when this character is required by the scene, it must appear as a real on-screen character in the frame",
                 f"must keep: {signature_text}" if signature_text else "",
                 f"must avoid: {forbidden_text}" if forbidden_text else "",
             ]
@@ -1141,7 +1327,18 @@ class WorkflowRunner:
         if not parts:
             return ""
 
-        return "character definitions: " + " | ".join(parts)
+        scene_cast_text = ""
+        if len(required_names) >= 2:
+            scene_cast_text = (
+                "scene cast lock: render all required scene characters together in the same frame: "
+                + ", ".join(required_names)
+            )
+
+        blocks = []
+        if scene_cast_text:
+            blocks.append(scene_cast_text)
+        blocks.append("character definitions: " + " | ".join(parts))
+        return " ; ".join(blocks)
 
     def _scene_character_negative_block(
         self,
@@ -1169,6 +1366,19 @@ class WorkflowRunner:
                 if value:
                     negatives.append(value)
 
+        generic_negatives = [
+            "missing required scene character",
+            "character omitted from scene",
+            "background-only supporting character",
+            "cropped-out supporting character",
+            "random color changes for the same character",
+            "random character redesign",
+            "trait transfer between characters",
+            "mixed body parts between characters",
+            "merged characters",
+        ]
+        negatives.extend(generic_negatives)
+
         deduped: List[str] = []
         seen = set()
         for item in negatives:
@@ -1179,7 +1389,7 @@ class WorkflowRunner:
         if not deduped:
             return ""
 
-        return "negative constraints: " + ", ".join(deduped)
+        return "subject negative constraints: " + ", ".join(deduped)
 
     def _get_session_data(self, session_id: Optional[str]) -> Optional[Dict[str, Any]]:
         if not session_id:
@@ -1239,6 +1449,10 @@ class WorkflowRunner:
             "enabled": False,
             "run_id": ctx.run_id,
             "provider": self._image_provider_name(),
+            "provider_capabilities": {
+                "supports_reference_image": False,
+                "reference_image_mode": "metadata_only",
+            },
             "status": "pending",
             "reason": "deferred_to_refresh",
             "detail": "image asset generation is deferred to /v1/image-review/refresh",
@@ -1753,117 +1967,9 @@ class WorkflowRunner:
         if not topic:
             return ""
 
-        known_characters = [
-            "小鹦鹉",
-            "小兔子",
-            "小乌龟",
-            "小猫",
-            "小狗",
-            "小熊猫",
-            "小熊",
-            "小狐狸",
-            "小鸟",
-            "小老鼠",
-            "小松鼠",
-            "小鹿",
-            "小猪",
-            "小羊",
-            "小鸭子",
-            "小企鹅",
-            "小海豚",
-            "小狮子",
-            "小老虎",
-        ]
-
-        action_prefixes = ("寻找", "找", "在", "去", "和", "与", "一起", "冒险", "的")
-
-        for character in known_characters:
-            if character not in topic:
-                continue
-
-            if topic.startswith(character):
-                tail = topic[len(character) :]
-                if not tail or tail.startswith(action_prefixes):
-                    return character
-
-                suffix = ""
-                for char in tail[:2]:
-                    if char in "，。！？、,.!? ":
-                        break
-                    suffix += char
-
-                if suffix and not suffix.startswith(action_prefixes):
-                    return f"{character}{suffix}"
-
-                return character
-
-            return character
-
-        # Open-ended fallback: do not require a fixed animal/species list.
-        # Examples:
-        # - 写一个关于小汽车找妈妈的故事 -> 小汽车
-        # - 写一个关于小鳄鱼找妈妈的故事 -> 小鳄鱼
-        # - 小机器人豆豆去冒险 -> 小机器人豆豆
-        candidate = topic
-        for prefix in ("写一个关于", "讲一个关于", "生成一个关于", "关于"):
-            if candidate.startswith(prefix):
-                candidate = candidate[len(prefix) :].strip()
-                break
-
-        for suffix in ("的故事", "故事", "绘本", "视频"):
-            if candidate.endswith(suffix):
-                candidate = candidate[: -len(suffix)].strip()
-
-        split_markers = (
-            "寻找",
-            "找",
-            "去",
-            "在",
-            "和",
-            "与",
-            "一起",
-            "冒险",
-            "学习",
-            "帮助",
-            "遇见",
-            "参加",
-            "发现",
-            "堆",
-            "做",
-            "搭",
-            "造",
-            "制作",
-            "滚",
-            "种",
-            "修",
-            "追",
-            "打",
-            "大战",
-            "对战",
-            "战胜",
-            "拯救",
-            "保护",
-            "救",
-            "打败",
-            "挑战",
-        )
-        for marker in split_markers:
-            pos = candidate.find(marker)
-            if pos > 0:
-                candidate = candidate[:pos].strip()
-                break
-
-        candidate = candidate.strip(" ，。！？、,.!?：:；;“”'《》")
-
-        for sep in ("和", "跟", "与", "及", "同"):
-            if sep in candidate:
-                first_part = candidate.split(sep, 1)[0].strip(" ，。！？、,.!?：:；;“”'《》")
-                if first_part and 1 < len(first_part) <= 12:
-                    candidate = first_part
-                    break
-
-        if candidate and 1 < len(candidate) <= 12:
-            return candidate
+        policy_subject = story_main_subject(topic)
+        if policy_subject and policy_subject != "主角":
+            return policy_subject
 
         try:
             inferred = infer_primary_character_manifest(topic)
@@ -1935,6 +2041,10 @@ class WorkflowRunner:
         ).strip()
         if secondary_value:
             return secondary_value
+
+        extracted_subjects = extract_story_subjects(ctx.input.topic)
+        if extracted_subjects.supporting_subjects:
+            return extracted_subjects.supporting_subjects[0]
 
         return ""
 

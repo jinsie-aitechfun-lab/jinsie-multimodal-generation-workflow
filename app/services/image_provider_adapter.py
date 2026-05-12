@@ -24,6 +24,10 @@ class PillowStorybookAdapter:
     def provider_name(self) -> str:
         return PROVIDER_PILLOW
 
+    @property
+    def supports_reference_image(self) -> bool:
+        return False
+
     def generate(self, task: ImageGenerationTask) -> bytes:
         scene = dict(task.prompt_metadata.get("scene") or {})
         scene_index = int(task.prompt_metadata.get("scene_index") or 1)
@@ -41,6 +45,10 @@ class ApiImageGeneratorAdapter:
     @property
     def provider_name(self) -> str:
         return PROVIDER_API
+
+    @property
+    def supports_reference_image(self) -> bool:
+        return False
 
     def generate(self, task: ImageGenerationTask) -> bytes:
         return self._generate_api_image_bytes(
@@ -102,6 +110,10 @@ class ApiImageGeneratorAdapter:
             "prompt": prompt,
             "image_size": image_size,
         }
+
+        # Reference images are intentionally not sent here yet.
+        # Current api_image_generator is treated as text-to-image only until
+        # a provider with explicit reference-image support is integrated.
 
         if negative_prompt:
             payload["negative_prompt"] = negative_prompt
