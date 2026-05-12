@@ -36,7 +36,10 @@ from app.services.image_prompt_policy import (
 )
 from app.services.runner_single_scene_image_support import RunnerSingleSceneImageSupport
 from app.services.topic_character_infer import infer_primary_character_manifest
-from app.services.story_subject_extractor import extract_story_subjects, story_main_subject
+from app.services.story_subject_extractor import (
+    extract_story_subjects,
+    story_main_subject,
+)
 from app.services.llm_output_sanitizer import parse_story_payload
 from app.services.story_retry_policy import (
     repair_retry_story_text,
@@ -91,9 +94,9 @@ class WorkflowRunner:
                 subtitles=outputs.get("subtitles"),
             )
 
-
     def _run_async(self, run_input: dict, callback: callable):
         from app.services.runner_async_wrapper import enqueue_run_task
+
         enqueue_run_task(run_input, callback)
 
     """
@@ -1212,7 +1215,6 @@ class WorkflowRunner:
                 return item
         return None
 
-
     def _scene_character_required_presence_block(
         self,
         outputs: Dict[str, Any],
@@ -1257,7 +1259,9 @@ class WorkflowRunner:
             return ""
 
         required_text = " and ".join(required_names)
-        primary_text = " and ".join(primary_names) if primary_names else required_names[0]
+        primary_text = (
+            " and ".join(primary_names) if primary_names else required_names[0]
+        )
         secondary_text = " and ".join(secondary_names)
 
         parts = [
@@ -1692,7 +1696,15 @@ class WorkflowRunner:
         return value in {"1", "true", "yes", "on"}
 
     def _api_image_fallback_to_pillow(self) -> bool:
-        value = os.getenv("KLING_IMAGE_FALLBACK_TO_PILLOW", "true").strip().lower()
+        """
+        Decide whether API image generation should fallback to Pillow.
+        Controlled by env KLING_IMAGE_FALLBACK_TO_PILLOW:
+        - "1", "true", "yes", "on" => allow fallback
+        - any other / default => disable fallback
+        """
+        import os
+
+        value = os.getenv("KLING_IMAGE_FALLBACK_TO_PILLOW", "false").strip().lower()
         return value in {"1", "true", "yes", "on"}
 
     def _image_api_key(self) -> str:
@@ -3828,11 +3840,13 @@ class WorkflowRunner:
                         topic,
                         story_plan,
                     )
-                    repaired_cleaned_text, repaired_invalid_reasons = validate_story_text(
-                        self,
-                        repaired_text,
-                        topic,
-                        story_plan,
+                    repaired_cleaned_text, repaired_invalid_reasons = (
+                        validate_story_text(
+                            self,
+                            repaired_text,
+                            topic,
+                            story_plan,
+                        )
                     )
 
                     if not repaired_invalid_reasons:
