@@ -163,6 +163,8 @@ def refresh_image_review(req: ImageReviewRefreshRequest):
             storyboard=req.storyboard,
             workflow_input=req.workflow_input,
             image_review=req.image_review,
+            character_manifest=req.character_manifest,
+            image_prompts=req.image_prompts,
             video_provider=req.video_provider,
         )
         print("[image-review] refresh completed", req.run_id)
@@ -202,6 +204,8 @@ def refresh_image_review_scene(req: ImageReviewRefreshSceneRequest):
             storyboard=req.storyboard,
             workflow_input=req.workflow_input,
             image_review=req.image_review,
+            character_manifest=req.character_manifest,
+            image_prompts=req.image_prompts,
             video_provider=req.video_provider,
         )
         print("[image-review] refresh-scene completed", req.run_id, req.scene_id)

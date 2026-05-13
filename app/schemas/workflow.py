@@ -255,6 +255,8 @@ class ImageReviewRefreshSceneRequest(BaseModel):
     storyboard: Dict[str, Any] = Field(default_factory=dict)
     workflow_input: Dict[str, Any] = Field(default_factory=dict)
     image_review: Dict[str, Any] = Field(default_factory=dict)
+    character_manifest: Dict[str, Any] = Field(default_factory=dict)
+    image_prompts: Dict[str, Any] = Field(default_factory=dict)
     video_provider: str = Field(default="mock")
 
 
