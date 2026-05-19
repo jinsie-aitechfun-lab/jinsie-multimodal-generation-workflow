@@ -82,6 +82,27 @@ def _extract_expected_colors(prompt: str, characters: List[Dict[str, Any]]) -> L
     return found
 
 
+def _extract_forbidden_colors(characters: List[Dict[str, Any]]) -> List[str]:
+    texts: List[str] = []
+    for item in characters or []:
+        if not isinstance(item, dict):
+            continue
+
+        value = item.get("forbidden_traits")
+        if isinstance(value, list):
+            texts.extend(str(x or "") for x in value)
+        else:
+            texts.append(str(value or ""))
+
+    haystack = " | ".join(texts).lower()
+    found: List[str] = []
+    for color_name, aliases in COLOR_KEYWORDS.items():
+        if any(alias.lower() in haystack for alias in aliases):
+            found.append(color_name)
+
+    return found
+
+
 def _candidate_path(candidate: Dict[str, Any]) -> Path:
     raw_path = (
         candidate.get("path")
@@ -96,49 +117,80 @@ def _candidate_path(candidate: Dict[str, Any]) -> Path:
     return path
 
 
-def _color_hits(img: Any, expected_colors: List[str]) -> Tuple[List[str], Dict[str, float]]:
+def _subject_region_pixels(img: Any) -> List[tuple[int, int, int]]:
     if Image is None:
-        return [], {}
+        return []
 
-    image = img.convert("RGB").resize((96, 96))
-    pixels = list(image.getdata())
+    image = img.convert("RGB")
+    width, height = image.size
+
+    # Focus on the likely subject area instead of the full background.
+    # This avoids counting sky / grass / warm lighting as the character's color.
+    left = int(width * 0.08)
+    right = int(width * 0.92)
+    top = int(height * 0.18)
+    bottom = int(height * 0.92)
+
+    if right > left and bottom > top:
+        image = image.crop((left, top, right, bottom))
+
+    image = image.resize((96, 96))
+    return list(image.getdata())
+
+
+def _color_rules() -> Dict[str, Any]:
+    return {
+        "white": lambda r, g, b: min(r, g, b) > 175 and max(abs(r-g), abs(g-b), abs(r-b)) < 55,
+        "red": lambda r, g, b: r > 145 and g < 135 and b < 135 and r > g * 1.15 and r > b * 1.15,
+        "green": lambda r, g, b: g > 120 and r < 175 and b < 175 and g > r * 1.08,
+        "blue": lambda r, g, b: b > 120 and r < 170 and g < 185 and b > r * 1.08,
+        "yellow": lambda r, g, b: r > 150 and g > 135 and b < 135,
+        "orange": lambda r, g, b: r > 165 and 65 < g < 185 and b < 135,
+        "pink": lambda r, g, b: r > 170 and g > 105 and b > 125,
+        "purple": lambda r, g, b: r > 105 and b > 120 and g < 145,
+        "brown": lambda r, g, b: r > 85 and 45 < g < 145 and b < 115,
+        "black": lambda r, g, b: max(r, g, b) < 75,
+        "gray": lambda r, g, b: 60 < r < 205 and abs(r-g) < 24 and abs(g-b) < 24,
+    }
+
+
+def _color_ratios(img: Any, colors: List[str]) -> Dict[str, float]:
+    if Image is None:
+        return {}
+
+    pixels = _subject_region_pixels(img)
     total = max(1, len(pixels))
+    rules = _color_rules()
 
-    def ratio(predicate) -> float:
+    ratios: Dict[str, float] = {}
+    for color_name in colors:
+        predicate = rules.get(color_name)
+        if predicate is None:
+            continue
+
         count = 0
         for r, g, b in pixels:
             if predicate(r, g, b):
                 count += 1
-        return count / total
 
-    rules = {
-        "white": lambda r, g, b: min(r, g, b) > 175 and max(abs(r-g), abs(g-b), abs(r-b)) < 55,
-        "red": lambda r, g, b: r > 150 and g < 120 and b < 120,
-        "green": lambda r, g, b: g > 120 and r < 170 and b < 170,
-        "blue": lambda r, g, b: b > 130 and r < 150 and g < 170,
-        "yellow": lambda r, g, b: r > 150 and g > 140 and b < 130,
-        "orange": lambda r, g, b: r > 170 and 70 < g < 180 and b < 130,
-        "pink": lambda r, g, b: r > 170 and g > 110 and b > 130,
-        "purple": lambda r, g, b: r > 110 and b > 120 and g < 140,
-        "brown": lambda r, g, b: r > 90 and 50 < g < 140 and b < 110,
-        "black": lambda r, g, b: max(r, g, b) < 70,
-        "gray": lambda r, g, b: 60 < r < 200 and abs(r-g) < 20 and abs(g-b) < 20,
-    }
+        ratios[color_name] = round(count / total, 4)
 
-    ratios: Dict[str, float] = {}
-    hits: List[str] = []
+    return ratios
 
-    for color_name in expected_colors:
-        predicate = rules.get(color_name)
-        if predicate is None:
-            continue
-        value = ratio(predicate)
-        ratios[color_name] = round(value, 4)
-        if value >= 0.02:
-            hits.append(color_name)
 
+def _color_hits(
+    img: Any,
+    expected_colors: List[str],
+    *,
+    threshold: float = 0.035,
+) -> Tuple[List[str], Dict[str, float]]:
+    ratios = _color_ratios(img, expected_colors)
+    hits = [
+        color_name
+        for color_name, ratio in ratios.items()
+        if ratio >= threshold
+    ]
     return hits, ratios
-
 
 def _score_candidate(
     candidate: Dict[str, Any],
@@ -150,6 +202,7 @@ def _score_candidate(
     reasons: List[str] = []
     score = 0.0
     expected_colors = _extract_expected_colors(prompt, characters)
+    forbidden_colors = _extract_forbidden_colors(characters)
 
     if not path.exists():
         return {
@@ -195,23 +248,52 @@ def _score_candidate(
 
     matched_colors: List[str] = []
     color_ratios: Dict[str, float] = {}
+    forbidden_matched_colors: List[str] = []
+    forbidden_color_ratios: Dict[str, float] = {}
 
     if image is not None and expected_colors:
-        matched_colors, color_ratios = _color_hits(image, expected_colors)
+        matched_colors, color_ratios = _color_hits(
+            image,
+            expected_colors,
+            threshold=0.035,
+        )
+
         if matched_colors:
-            color_score = min(len(matched_colors) * 8.0, 24.0)
+            expected_strength = sum(color_ratios.get(color, 0.0) for color in matched_colors)
+            color_score = min(expected_strength * 180.0, 30.0)
             score += color_score
             reasons.append("matched_colors:" + ",".join(matched_colors))
+            reasons.append(f"expected_color_strength:{expected_strength:.4f}")
         else:
+            score -= 18.0
             reasons.append("matched_colors:none")
+            reasons.append("expected_color_missing_penalty")
+
     elif not expected_colors:
-        score += 5.0
-        reasons.append("no_expected_colors_found_in_prompt")
+        score += 2.0
+        reasons.append("no_expected_colors_found_in_character_profile")
+
+    if image is not None and forbidden_colors:
+        forbidden_matched_colors, forbidden_color_ratios = _color_hits(
+            image,
+            forbidden_colors,
+            threshold=0.06,
+        )
+
+        if forbidden_matched_colors:
+            forbidden_strength = sum(
+                forbidden_color_ratios.get(color, 0.0)
+                for color in forbidden_matched_colors
+            )
+            penalty = min(forbidden_strength * 120.0, 24.0)
+            score -= penalty
+            reasons.append("forbidden_colors:" + ",".join(forbidden_matched_colors))
+            reasons.append(f"forbidden_color_penalty:{penalty:.1f}")
 
     file_name = str(candidate.get("file_name") or "")
     if "candidate_a" in file_name:
-        score += 0.5
-        reasons.append("stable_tiebreak_candidate_a")
+        score += 0.1
+        reasons.append("stable_tiebreak_candidate_a_light")
 
     passed = score >= MIN_PASS_SCORE
 
@@ -223,6 +305,9 @@ def _score_candidate(
         "expected_colors": expected_colors,
         "matched_colors": matched_colors,
         "color_ratios": color_ratios,
+        "forbidden_colors": forbidden_colors,
+        "forbidden_matched_colors": forbidden_matched_colors,
+        "forbidden_color_ratios": forbidden_color_ratios,
     }
 
 
