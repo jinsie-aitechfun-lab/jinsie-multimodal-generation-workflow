@@ -7,6 +7,7 @@ from app.services.image_provider_adapter import (
     PillowStorybookAdapter,
 )
 from app.services.image_provider_retry import is_rate_limit_error
+from app.services.image_candidate_selector import select_best_candidate
 from app.services.image_provider_types import (
     PROVIDER_API,
     PROVIDER_PILLOW,
@@ -143,7 +144,41 @@ class ImageProviderQueue:
                     anchor_reference_images=anchor_reference_images,
                 )
 
-                primary_ref = candidate_asset_refs[0]
+                selection = select_best_candidate(
+                    candidate_asset_refs=candidate_asset_refs,
+                    prompt=base_prompt,
+                    characters=asset_meta["characters"],
+                )
+                candidate_asset_refs = selection["candidate_asset_refs"]
+                selected_asset_ref = selection["selected_asset_ref"]
+
+                if selection.get("should_retry"):
+                    retry_candidate_asset_refs = self._generate_shot_candidates(
+                        provider=provider,
+                        ctx=ctx,
+                        run_dir=run_dir,
+                        index=index,
+                        shot=shot,
+                        shot_id=shot_id,
+                        scene_id=scene_id,
+                        scene_title=scene_title,
+                        base_prompt=base_prompt,
+                        prompt_item=prompt_item,
+                        parent_scene=parent_scene,
+                        shot_type=shot_type,
+                        transition=transition,
+                        anchor_reference_images=anchor_reference_images,
+                    )
+                    retry_selection = select_best_candidate(
+                        candidate_asset_refs=retry_candidate_asset_refs,
+                        prompt=base_prompt,
+                        characters=asset_meta["characters"],
+                    )
+                    if retry_selection.get("best_score", -1.0) >= selection.get("best_score", -1.0):
+                        selection = retry_selection
+                        candidate_asset_refs = retry_selection["candidate_asset_refs"]
+                        selected_asset_ref = retry_selection["selected_asset_ref"]
+
                 assets.append(
                     {
                         "shot_id": shot_id,
@@ -152,22 +187,25 @@ class ImageProviderQueue:
                         "characters": asset_meta["characters"],
                         "character_ids": asset_meta["character_ids"],
                         "prompt": base_prompt,
-                        "selected_asset_ref": dict(primary_ref),
-                        "file_name": primary_ref["file_name"],
-                        "relative_path": primary_ref["relative_path"],
-                        "public_url": primary_ref["public_url"],
-                        "mime_type": primary_ref["mime_type"],
-                        "duration_sec": primary_ref.get("duration_sec"),
-                        "duration_estimate_sec": primary_ref.get("duration_estimate_sec"),
+                        "selected_asset_ref": dict(selected_asset_ref),
+                        "file_name": selected_asset_ref["file_name"],
+                        "relative_path": selected_asset_ref["relative_path"],
+                        "public_url": selected_asset_ref["public_url"],
+                        "mime_type": selected_asset_ref["mime_type"],
+                        "duration_sec": selected_asset_ref.get("duration_sec"),
+                        "duration_estimate_sec": selected_asset_ref.get("duration_estimate_sec"),
                         "status": "generated",
-                        "reference_images": primary_ref.get("reference_images") or [],
-                        "reference_image_support": primary_ref.get("reference_image_support")
+                        "reference_images": selected_asset_ref.get("reference_images") or [],
+                        "reference_image_support": selected_asset_ref.get("reference_image_support")
                         or {
-                            "requested": bool(primary_ref.get("reference_images") or []),
+                            "requested": bool(selected_asset_ref.get("reference_images") or []),
                             "provider_supports_reference_image": False,
                             "mode": "metadata_only",
                         },
                         "candidate_asset_refs": candidate_asset_refs,
+                        "selection_source": selection.get("selection_source"),
+                        "selection_reason": selection.get("selection_reason"),
+                        "candidate_scores": selection.get("candidate_scores") or [],
                     }
                 )
         else:
@@ -199,7 +237,36 @@ class ImageProviderQueue:
                     anchor_reference_images=anchor_reference_images,
                 )
 
-                primary_ref = candidate_asset_refs[0]
+                selection = select_best_candidate(
+                    candidate_asset_refs=candidate_asset_refs,
+                    prompt=base_prompt,
+                    characters=asset_meta["characters"],
+                )
+                candidate_asset_refs = selection["candidate_asset_refs"]
+                selected_asset_ref = selection["selected_asset_ref"]
+
+                if selection.get("should_retry"):
+                    retry_candidate_asset_refs = self._generate_scene_candidates(
+                        provider=provider,
+                        ctx=ctx,
+                        run_dir=run_dir,
+                        index=index,
+                        scene=scene,
+                        scene_id=scene_id,
+                        base_prompt=base_prompt,
+                        prompt_item=prompt_item,
+                        anchor_reference_images=anchor_reference_images,
+                    )
+                    retry_selection = select_best_candidate(
+                        candidate_asset_refs=retry_candidate_asset_refs,
+                        prompt=base_prompt,
+                        characters=asset_meta["characters"],
+                    )
+                    if retry_selection.get("best_score", -1.0) >= selection.get("best_score", -1.0):
+                        selection = retry_selection
+                        candidate_asset_refs = retry_selection["candidate_asset_refs"]
+                        selected_asset_ref = retry_selection["selected_asset_ref"]
+
                 assets.append(
                     {
                         "scene_id": scene_id,
@@ -207,22 +274,25 @@ class ImageProviderQueue:
                         "characters": asset_meta["characters"],
                         "character_ids": asset_meta["character_ids"],
                         "prompt": base_prompt,
-                        "selected_asset_ref": dict(primary_ref),
-                        "file_name": primary_ref["file_name"],
-                        "relative_path": primary_ref["relative_path"],
-                        "public_url": primary_ref["public_url"],
-                        "mime_type": primary_ref["mime_type"],
-                        "duration_sec": primary_ref.get("duration_sec"),
-                        "duration_estimate_sec": primary_ref.get("duration_estimate_sec"),
+                        "selected_asset_ref": dict(selected_asset_ref),
+                        "file_name": selected_asset_ref["file_name"],
+                        "relative_path": selected_asset_ref["relative_path"],
+                        "public_url": selected_asset_ref["public_url"],
+                        "mime_type": selected_asset_ref["mime_type"],
+                        "duration_sec": selected_asset_ref.get("duration_sec"),
+                        "duration_estimate_sec": selected_asset_ref.get("duration_estimate_sec"),
                         "status": "generated",
-                        "reference_images": primary_ref.get("reference_images") or [],
-                        "reference_image_support": primary_ref.get("reference_image_support")
+                        "reference_images": selected_asset_ref.get("reference_images") or [],
+                        "reference_image_support": selected_asset_ref.get("reference_image_support")
                         or {
-                            "requested": bool(primary_ref.get("reference_images") or []),
+                            "requested": bool(selected_asset_ref.get("reference_images") or []),
                             "provider_supports_reference_image": False,
                             "mode": "metadata_only",
                         },
                         "candidate_asset_refs": candidate_asset_refs,
+                        "selection_source": selection.get("selection_source"),
+                        "selection_reason": selection.get("selection_reason"),
+                        "candidate_scores": selection.get("candidate_scores") or [],
                     }
                 )
 

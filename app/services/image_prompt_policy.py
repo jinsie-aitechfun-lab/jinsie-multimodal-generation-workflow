@@ -171,6 +171,61 @@ def build_scene_action_binding_block(
     return "; ".join(parts)
 
 
+def build_multi_character_visual_profiles_block(outputs: Dict[str, Any]) -> str:
+    payload = outputs.get("character_visual_profiles") or {}
+    profiles = payload.get("profiles") or []
+
+    if not isinstance(profiles, list) or len(profiles) < 2:
+        return ""
+
+    parts: List[str] = [
+        "multi-character identity lock",
+        "render all required scene characters together in the same frame",
+        "treat every character as a separate visual identity with exclusive ownership of its defining traits",
+        "never merge anatomies, never swap signature traits, and never transfer body parts, shells, ears, tails, fur patterns, skin patterns, or accessories between characters",
+        "a defining trait that belongs to one character must not appear on any other character in the same image",
+    ]
+
+    character_labels: List[str] = []
+
+    for index, profile in enumerate(profiles, start=1):
+        if not isinstance(profile, dict):
+            continue
+
+        name = _clean_text(profile.get("display_name")) or _clean_text(profile.get("subject")) or f"character_{index}"
+        role_type = _clean_text(profile.get("role_type"))
+        species = _clean_text(profile.get("species"))
+        identity = _clean_text(profile.get("visual_identity"))
+        must_keep = _join_list(profile.get("must_keep"))
+        must_avoid = _join_list(profile.get("must_avoid"))
+
+        character_labels.append(name)
+
+        character_parts = [
+            f"character {index}",
+            f"name: {name}",
+            f"role: {role_type}" if role_type else "",
+            f"species: {species}" if species else "",
+            f"fixed visual identity: {identity}" if identity else "",
+            f"this character owns only these defining traits: {must_keep}" if must_keep else "",
+            f"this character must never have these foreign traits: {must_avoid}" if must_avoid else "",
+        ]
+        character_text = "; ".join(part for part in character_parts if part)
+        if character_text:
+            parts.append(character_text)
+
+    if len(character_labels) >= 2:
+        parts.append(
+            "cross-character exclusion rule: keep every character visually distinct; do not let one character inherit another character's defining anatomy or signature details"
+        )
+
+    parts.append(
+        "consistency rule: keep the same character design for every character across all scenes; only change pose, expression, framing, background, and current scene action"
+    )
+
+    return "; ".join(parts)
+
+
 def build_image_prompt_policy_blocks(
     *,
     workflow_input: Any,
@@ -188,6 +243,7 @@ def build_image_prompt_policy_blocks(
     return {
         "profile": profile,
         "visual_profile_block": build_visual_profile_prompt_block(profile),
+        "character_visual_profiles_block": build_multi_character_visual_profiles_block(outputs),
         "character_separation_block": build_character_separation_block(outputs),
         "scene_action_block": build_scene_action_binding_block(
             visual_description=visual_description,
