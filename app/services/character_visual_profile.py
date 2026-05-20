@@ -233,10 +233,15 @@ def build_character_visual_profile(
             or _clean_text(manifest_primary.get("species"))
             or extract_conservative_subject(topic)
         )
-        visual_identity = (
-            _clean_text(manifest_primary.get("visual_traits"))
-            or _generic_visual_identity(subject)
-        )
+        manifest_traits = manifest_primary.get("signature_traits") or manifest_primary.get("visual_traits") or []
+        if isinstance(manifest_traits, list):
+            manifest_traits_text = ", ".join(
+                _clean_text(item) for item in manifest_traits if _clean_text(item)
+            )
+        else:
+            manifest_traits_text = _clean_text(manifest_traits)
+
+        visual_identity = manifest_traits_text or _generic_visual_identity(subject)
         profile_source = "manifest"
     else:
         subject = extract_conservative_subject(topic)
@@ -257,6 +262,9 @@ def build_character_visual_profile(
 
     if main_traits:
         must_keep.insert(0, main_traits)
+
+    if profile_source == "manifest" and "manifest_traits_text" in locals() and manifest_traits_text:
+        must_keep.insert(0, manifest_traits_text)
 
     must_keep.extend(risk_rules["must_keep"])
     must_avoid.extend(risk_rules["must_avoid"])

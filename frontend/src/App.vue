@@ -1056,6 +1056,14 @@ async function refreshImageReviewScene(sceneId: string) {
     storyboard,
     workflow_input: currentWorkflowPayload.value.input,
     image_review: imageReview && typeof imageReview === 'object' ? imageReview : {},
+    character_manifest:
+      outputs.character_manifest && typeof outputs.character_manifest === 'object'
+        ? outputs.character_manifest
+        : {},
+    image_prompts:
+      outputs.image_prompts && typeof outputs.image_prompts === 'object'
+        ? outputs.image_prompts
+        : {},
     video_provider:
       typeof currentWorkflowPayload.value.input?.video_provider === 'string'
         ? currentWorkflowPayload.value.input.video_provider

@@ -225,6 +225,10 @@ class ImageReviewRefreshRequest(BaseModel):
     storyboard: Dict[str, Any] = Field(default_factory=dict)
     workflow_input: Dict[str, Any] = Field(default_factory=dict)
     image_review: Dict[str, Any] = Field(default_factory=dict)
+    # 可选传入角色 manifest；老客户端可能不传，endpoint 用 getattr 兜底
+    character_manifest: Optional[Dict] = None
+    # 可选传入 image_prompts（多角色刷新闭环场景）；老客户端可能不传，endpoint 用 getattr 兜底
+    image_prompts: Optional[List[Dict]] = None
     video_provider: str = Field(default="mock")
 
 
@@ -255,6 +259,8 @@ class ImageReviewRefreshSceneRequest(BaseModel):
     storyboard: Dict[str, Any] = Field(default_factory=dict)
     workflow_input: Dict[str, Any] = Field(default_factory=dict)
     image_review: Dict[str, Any] = Field(default_factory=dict)
+    character_manifest: Dict[str, Any] = Field(default_factory=dict)
+    image_prompts: Dict[str, Any] = Field(default_factory=dict)
     video_provider: str = Field(default="mock")
 
 

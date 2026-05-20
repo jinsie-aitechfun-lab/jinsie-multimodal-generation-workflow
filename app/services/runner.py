@@ -26,14 +26,21 @@ from app.services.runner_image_selection_support import RunnerImageSelectionSupp
 from app.services.image_provider_queue import ImageProviderQueue
 from app.services.image_provider_adapter import ApiImageGeneratorAdapter
 from app.services.image_provider_types import ImageGenerationTask
-from app.services.character_visual_profile_llm import build_llm_character_visual_profile
+from app.services.image_candidate_selector import select_best_candidate
+from app.services.character_visual_profile_llm import (
+    build_llm_character_visual_profile,
+    build_llm_character_visual_profiles,
+)
 from app.services.image_prompt_policy import (
     build_image_prompt_policy_blocks,
     clean_image_prompt_text,
 )
 from app.services.runner_single_scene_image_support import RunnerSingleSceneImageSupport
 from app.services.topic_character_infer import infer_primary_character_manifest
-from app.services.story_subject_extractor import extract_story_subjects, story_main_subject
+from app.services.story_subject_extractor import (
+    extract_story_subjects,
+    story_main_subject,
+)
 from app.services.llm_output_sanitizer import parse_story_payload
 from app.services.story_retry_policy import (
     repair_retry_story_text,
@@ -88,10 +95,31 @@ class WorkflowRunner:
                 subtitles=outputs.get("subtitles"),
             )
 
-
     def _run_async(self, run_input: dict, callback: callable):
-        from app.services.runner_async_wrapper import enqueue_run_task
-        enqueue_run_task(run_input, callback)
+        import threading
+        import traceback
+        from app.schemas.workflow import WorkflowRunRequest
+
+        def _task():
+            try:
+                request = WorkflowRunRequest(**run_input)
+                result = self.run(request)
+                if hasattr(result, "model_dump"):
+                    payload = result.model_dump()
+                elif isinstance(result, dict):
+                    payload = result
+                else:
+                    payload = dict(result)
+                callback(payload)
+            except Exception as error:
+                print("[AsyncRunner] task failed:", error)
+                traceback.print_exc()
+
+        threading.Thread(
+            target=_task,
+            daemon=True,
+            name="RunnerAsyncWorker",
+        ).start()
 
     """
     Phase 1 upgrade:
@@ -748,6 +776,11 @@ class WorkflowRunner:
                 if inferred_primary is not None:
                     character_manifest = [inferred_primary]
 
+        character_manifest = self._enrich_character_manifest_traits_from_topic(
+            character_manifest,
+            req.input.topic,
+        )
+
         aggregated_outputs: Dict[str, Any] = {
             "character_candidates": {
                 "enabled": bool(req.input.structured_characters_enabled),
@@ -799,6 +832,21 @@ class WorkflowRunner:
             outputs=aggregated_outputs,
             workflow_input=req.input.model_dump(),
         )
+
+        # 落盘 outputs.json：不依赖外部异步回调，保证流程结束后磁盘一定有完整产物
+        try:
+            out_dir = PROJECT_ROOT / "assets" / "mock" / str(req.workflow_id)
+            out_dir.mkdir(parents=True, exist_ok=True)
+            with open(out_dir / "outputs.json", "w", encoding="utf-8") as f:
+                json.dump(
+                    aggregated_outputs,
+                    f,
+                    ensure_ascii=False,
+                    indent=2,
+                    default=str,
+                )
+        except Exception as error:
+            print(f"[WorkflowRunner] write outputs.json failed: {error}")
 
         session_memory_summary = self._build_session_memory_summary(
             req.session_id,
@@ -933,6 +981,171 @@ class WorkflowRunner:
 
         return manifest
 
+    def _extract_color_traits_from_topic(self, topic: str) -> List[str]:
+        normalized = str(topic or "").strip().lower()
+        if not normalized:
+            return []
+
+        color_aliases = [
+            ("red", ["红色", "红", "red"]),
+            ("blue", ["蓝色", "蓝", "blue"]),
+            ("green", ["绿色", "绿", "green"]),
+            ("yellow", ["黄色", "黄", "yellow"]),
+            ("orange", ["橙色", "橙", "orange"]),
+            ("pink", ["粉色", "粉", "pink"]),
+            ("purple", ["紫色", "紫", "purple"]),
+            ("white", ["白色", "白", "white"]),
+            ("black", ["黑色", "黑", "black"]),
+            ("gray", ["灰色", "灰", "grey", "gray"]),
+            ("brown", ["棕色", "棕", "咖啡色", "brown"]),
+        ]
+
+        traits: List[str] = []
+        for english_color, aliases in color_aliases:
+            if any(alias.lower() in normalized for alias in aliases):
+                for alias in aliases:
+                    if alias not in traits:
+                        traits.append(alias)
+                if english_color not in traits:
+                    traits.append(english_color)
+
+        return traits
+
+    def _enrich_character_manifest_traits_from_topic(
+        self,
+        character_manifest: List[Dict[str, Any]],
+        topic: str,
+    ) -> List[Dict[str, Any]]:
+        color_traits = self._extract_color_traits_from_topic(topic)
+        if not color_traits:
+            return character_manifest
+
+        enriched_manifest: List[Dict[str, Any]] = []
+        for item in character_manifest:
+            if not isinstance(item, dict):
+                continue
+
+            enriched_item = dict(item)
+            signature_traits = list(enriched_item.get("signature_traits") or [])
+
+            for trait in color_traits:
+                if trait and trait not in signature_traits:
+                    signature_traits.append(trait)
+
+            enriched_item["signature_traits"] = signature_traits
+            enriched_manifest.append(enriched_item)
+
+        return enriched_manifest
+
+    def _apply_visual_profiles_to_character_manifest(
+        self,
+        character_manifest: Dict[str, Any],
+        character_visual_profiles: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        characters = character_manifest.get("characters") or []
+        profiles = character_visual_profiles.get("profiles") or []
+
+        if not isinstance(characters, list) or not isinstance(profiles, list):
+            return character_manifest
+
+        if not characters or not profiles:
+            return character_manifest
+
+        def normalize(value: Any) -> str:
+            return str(value or "").strip()
+
+        def as_list(value: Any) -> List[str]:
+            if isinstance(value, list):
+                return [normalize(item) for item in value if normalize(item)]
+            if isinstance(value, str):
+                return [
+                    normalize(item)
+                    for item in value.replace("，", ",").replace("；", ",").split(",")
+                    if normalize(item)
+                ]
+            return []
+
+        def extend_unique(base: Any, extra: Any) -> List[str]:
+            result: List[str] = []
+            seen = set()
+
+            for value in as_list(base) + as_list(extra):
+                if value and value not in seen:
+                    result.append(value)
+                    seen.add(value)
+
+            return result
+
+        profile_by_id: Dict[str, Dict[str, Any]] = {}
+        profile_by_name: Dict[str, Dict[str, Any]] = {}
+
+        for profile in profiles:
+            if not isinstance(profile, dict):
+                continue
+
+            character_id = normalize(profile.get("character_id"))
+            display_name = normalize(profile.get("display_name"))
+            species = normalize(profile.get("species"))
+            subject = normalize(profile.get("subject"))
+
+            if character_id:
+                profile_by_id[character_id] = profile
+
+            for key in [display_name, species, subject]:
+                if key:
+                    profile_by_name[key] = profile
+
+        enriched_characters: List[Dict[str, Any]] = []
+
+        for item in characters:
+            if not isinstance(item, dict):
+                continue
+
+            character_id = normalize(item.get("character_id"))
+            display_name = normalize(item.get("display_name"))
+            species = normalize(item.get("species"))
+
+            profile = (
+                profile_by_id.get(character_id)
+                or profile_by_name.get(display_name)
+                or profile_by_name.get(species)
+            )
+
+            if not profile:
+                enriched_characters.append(dict(item))
+                continue
+
+            enriched_item = dict(item)
+
+            enriched_item["signature_traits"] = extend_unique(
+                enriched_item.get("signature_traits") or [],
+                profile.get("must_keep") or [],
+            )
+            enriched_item["forbidden_traits"] = extend_unique(
+                enriched_item.get("forbidden_traits") or [],
+                profile.get("must_avoid") or [],
+            )
+
+            for key in [
+                "visual_identity",
+                "profile_source",
+                "profile_generation_source",
+                "required_presence_rules",
+                "llm_profile_ready",
+                "llm_confidence",
+            ]:
+                value = profile.get(key)
+                if value not in (None, "", []):
+                    enriched_item[key] = value
+
+            enriched_characters.append(enriched_item)
+
+        return {
+            **character_manifest,
+            "count": len(enriched_characters),
+            "characters": enriched_characters,
+        }
+
     def _character_manifest_items(
         self, outputs: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
@@ -981,6 +1194,19 @@ class WorkflowRunner:
             outputs,
             subject_hint=character_anchor,
         )
+        character_visual_profiles: Dict[str, Any] = build_llm_character_visual_profiles(
+            self,
+            ctx,
+            outputs,
+        )
+
+        enriched_character_manifest = self._apply_visual_profiles_to_character_manifest(
+            outputs.get("character_manifest") or {},
+            character_visual_profiles,
+        )
+        if enriched_character_manifest:
+            outputs["character_manifest"] = enriched_character_manifest
+
         character_anchor_metadata: Dict[str, Any] = {
             "enabled": True,
             "mode": "text_profile_anchor",
@@ -1007,6 +1233,7 @@ class WorkflowRunner:
         profile_outputs: Dict[str, Any] = {
             **outputs,
             "character_visual_profile": character_visual_profile,
+            "character_visual_profiles": character_visual_profiles,
             "character_anchor": character_anchor_metadata,
         }
 
@@ -1063,6 +1290,7 @@ class WorkflowRunner:
                         global_style_anchor,
                         character_anchor,
                         policy_blocks.get("visual_profile_block"),
+                        policy_blocks.get("character_visual_profiles_block"),
                         character_block,
                         scene_required_presence_block,
                         policy_blocks.get("character_separation_block"),
@@ -1093,6 +1321,7 @@ class WorkflowRunner:
             return {
                 "provider": "image_prompt_builder",
                 "character_visual_profile": character_visual_profile,
+                "character_visual_profiles": character_visual_profiles,
                 "character_anchor": character_anchor_metadata,
                 "prompts": prompts,
             }
@@ -1137,6 +1366,7 @@ class WorkflowRunner:
                     global_style_anchor,
                     character_anchor,
                     policy_blocks.get("visual_profile_block"),
+                    policy_blocks.get("character_visual_profiles_block"),
                     character_block,
                     scene_required_presence_block,
                     policy_blocks.get("character_separation_block"),
@@ -1153,7 +1383,10 @@ class WorkflowRunner:
                 {
                     "scene_id": scene_id,
                     "scene_title": scene_title,
-                    "characters": scene.get("characters") or [],
+                    "characters": self._enriched_scene_characters_from_manifest(
+                        outputs,
+                        scene,
+                    ),
                     "prompt": prompt,
                     "character_anchor": character_anchor_metadata,
                     "reference_images": character_anchor_metadata.get(
@@ -1166,9 +1399,65 @@ class WorkflowRunner:
         return {
             "provider": "image_prompt_builder",
             "character_visual_profile": character_visual_profile,
+            "character_visual_profiles": character_visual_profiles,
             "character_anchor": character_anchor_metadata,
             "prompts": prompts,
         }
+
+    def _enriched_scene_characters_from_manifest(
+        self,
+        outputs: Dict[str, Any],
+        scene: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        scene_characters = scene.get("characters") or []
+        if not isinstance(scene_characters, list):
+            return []
+
+        manifest_items = self._character_manifest_items(outputs)
+        manifest_by_id: Dict[str, Dict[str, Any]] = {}
+        manifest_by_name: Dict[str, Dict[str, Any]] = {}
+
+        for item in manifest_items:
+            if not isinstance(item, dict):
+                continue
+
+            character_id = str(item.get("character_id") or "").strip()
+            display_name = str(item.get("display_name") or "").strip()
+            species = str(item.get("species") or "").strip()
+
+            if character_id:
+                manifest_by_id[character_id] = item
+            for key in [display_name, species]:
+                if key:
+                    manifest_by_name[key] = item
+
+        enriched: List[Dict[str, Any]] = []
+
+        for binding in scene_characters:
+            if not isinstance(binding, dict):
+                continue
+
+            character_id = str(binding.get("character_id") or "").strip()
+            display_name = str(binding.get("display_name") or "").strip()
+            species = str(binding.get("species") or "").strip()
+
+            manifest_item = (
+                manifest_by_id.get(character_id)
+                or manifest_by_name.get(display_name)
+                or manifest_by_name.get(species)
+            )
+
+            if manifest_item:
+                enriched.append(
+                    {
+                        **dict(binding),
+                        **dict(manifest_item),
+                    }
+                )
+            else:
+                enriched.append(dict(binding))
+
+        return enriched
 
     def _scene_character_bindings(
         self, outputs: Dict[str, Any]
@@ -1198,7 +1487,6 @@ class WorkflowRunner:
             if str(item.get("character_id") or "").strip() == target:
                 return item
         return None
-
 
     def _scene_character_required_presence_block(
         self,
@@ -1244,7 +1532,9 @@ class WorkflowRunner:
             return ""
 
         required_text = " and ".join(required_names)
-        primary_text = " and ".join(primary_names) if primary_names else required_names[0]
+        primary_text = (
+            " and ".join(primary_names) if primary_names else required_names[0]
+        )
         secondary_text = " and ".join(secondary_names)
 
         parts = [
@@ -1433,6 +1723,7 @@ class WorkflowRunner:
             "workflow_id": workflow_id,
             "session_id": session_id,
             "workflow_input": dict(workflow_input or {}),
+            "character_manifest": outputs.get("character_manifest") or {},
             "storyboard": outputs.get("storyboard") or {},
             "sentence_shots": outputs.get("sentence_shots") or {},
             "image_prompts": outputs.get("image_prompts") or {},
@@ -1679,7 +1970,15 @@ class WorkflowRunner:
         return value in {"1", "true", "yes", "on"}
 
     def _api_image_fallback_to_pillow(self) -> bool:
-        value = os.getenv("KLING_IMAGE_FALLBACK_TO_PILLOW", "true").strip().lower()
+        """
+        Decide whether API image generation should fallback to Pillow.
+        Controlled by env KLING_IMAGE_FALLBACK_TO_PILLOW:
+        - "1", "true", "yes", "on" => allow fallback
+        - any other / default => disable fallback
+        """
+        import os
+
+        value = os.getenv("KLING_IMAGE_FALLBACK_TO_PILLOW", "false").strip().lower()
         return value in {"1", "true", "yes", "on"}
 
     def _image_api_key(self) -> str:
@@ -1727,6 +2026,8 @@ class WorkflowRunner:
         reason: str,
         retry_after_sec: int = 60,
     ) -> Dict[str, Any]:
+        # pending 阶段没有真实候选，candidate_scores 统一返回空列表，避免下游按字段直接取值时崩溃
+        normalized_reason = str(reason or "").strip() or "rate_limited"
         return {
             "enabled": False,
             "run_id": ctx.run_id,
@@ -1734,10 +2035,11 @@ class WorkflowRunner:
             "status": "retrying",
             "retryable": True,
             "retry_after_sec": retry_after_sec,
-            "reason": "rate_limited",
+            "reason": normalized_reason,
             "detail": reason,
             "asset_count": 0,
             "assets": [],
+            "candidate_scores": [],
         }
 
     def _normalized_video_provider(self, provider: str) -> str:
@@ -2596,18 +2898,30 @@ class WorkflowRunner:
             if not isinstance(candidate_asset_refs, list) or not candidate_asset_refs:
                 candidate_asset_refs = [self._image_asset_ref_from_item(item, provider)]
 
-            selected_asset_ref = candidate_asset_refs[0]
+            selected_asset_ref = item.get("selected_asset_ref") or candidate_asset_refs[0]
+            selection_source = (
+                str(item.get("selection_source") or "").strip()
+                or "default_auto_selection"
+            )
+            selection_reason = (
+                str(item.get("selection_reason") or "").strip()
+                or "default_selected_from_image_assets"
+            )
+            candidate_scores = item.get("candidate_scores") or []
 
             selected_assets.append(
                 {
                     "scene_id": scene_id,
                     "scene_title": scene_title,
                     "review_status": "auto_selected",
-                    "selection_mode": "default_first_pass",
-                    "selection_source": "default_auto_selection",
-                    "selection_reason": "default_selected_from_image_assets",
+                    "selection_mode": (
+                        "auto_filter" if selection_source == "auto_filter" else "default_first_pass"
+                    ),
+                    "selection_source": selection_source,
+                    "selection_reason": selection_reason,
                     "selected_asset_ref": selected_asset_ref,
                     "candidate_asset_refs": candidate_asset_refs,
+                    "candidate_scores": candidate_scores,
                     "characters": item.get("characters") or [],
                     "character_ids": item.get("character_ids") or [],
                     "prompt": str(item.get("prompt") or "").strip(),
@@ -2673,17 +2987,31 @@ class WorkflowRunner:
         if not isinstance(candidate_asset_refs, list) or not candidate_asset_refs:
             candidate_asset_refs = [self._image_asset_ref_from_item(asset, provider)]
 
-        selected_asset_ref = candidate_asset_refs[0] if candidate_asset_refs else {}
+        selected_asset_ref = asset.get("selected_asset_ref") or (
+            candidate_asset_refs[0] if candidate_asset_refs else {}
+        )
+        selection_source = (
+            str(asset.get("selection_source") or "").strip()
+            or "default_auto_selection"
+        )
+        selection_reason = (
+            str(asset.get("selection_reason") or "").strip()
+            or "default_selected_from_image_assets"
+        )
+        candidate_scores = asset.get("candidate_scores") or []
 
         return {
             "scene_id": scene_id,
             "scene_title": scene_title,
             "review_status": "auto_selected",
-            "selection_mode": "default_first_pass",
-            "selection_source": "default_auto_selection",
-            "selection_reason": "default_selected_from_image_assets",
+            "selection_mode": (
+                "auto_filter" if selection_source == "auto_filter" else "default_first_pass"
+            ),
+            "selection_source": selection_source,
+            "selection_reason": selection_reason,
             "selected_asset_ref": selected_asset_ref,
             "candidate_asset_refs": candidate_asset_refs,
+            "candidate_scores": candidate_scores,
             "characters": asset.get("characters") or [],
             "character_ids": asset.get("character_ids") or [],
             "prompt": str(asset.get("prompt") or "").strip(),
@@ -2829,7 +3157,13 @@ class WorkflowRunner:
                 }
             )
 
-        primary_ref = candidate_asset_refs[0]
+        selection = select_best_candidate(
+            candidate_asset_refs=candidate_asset_refs,
+            prompt=base_prompt,
+            characters=asset_meta["characters"],
+        )
+        candidate_asset_refs = selection["candidate_asset_refs"]
+        selected_asset_ref = selection["selected_asset_ref"]
 
         return {
             "scene_id": scene_id,
@@ -2837,12 +3171,16 @@ class WorkflowRunner:
             "characters": asset_meta["characters"],
             "character_ids": asset_meta["character_ids"],
             "prompt": base_prompt,
-            "file_name": primary_ref["file_name"],
-            "relative_path": primary_ref["relative_path"],
-            "public_url": primary_ref["public_url"],
-            "mime_type": primary_ref["mime_type"],
+            "selected_asset_ref": dict(selected_asset_ref),
+            "file_name": selected_asset_ref["file_name"],
+            "relative_path": selected_asset_ref["relative_path"],
+            "public_url": selected_asset_ref["public_url"],
+            "mime_type": selected_asset_ref["mime_type"],
             "status": "generated",
             "candidate_asset_refs": candidate_asset_refs,
+            "selection_source": selection.get("selection_source"),
+            "selection_reason": selection.get("selection_reason"),
+            "candidate_scores": selection.get("candidate_scores") or [],
         }
 
     def _run_single_scene_image_asset(
@@ -3122,6 +3460,8 @@ class WorkflowRunner:
         storyboard: Dict[str, Any],
         workflow_input: Dict[str, Any],
         image_review: Dict[str, Any],
+        character_manifest: Optional[Dict[str, Any]] = None,
+        image_prompts: Optional[Dict[str, Any]] = None,
         video_provider: str = "mock",
     ) -> Dict[str, Any]:
         normalized_scene_id = str(scene_id or "").strip()
@@ -3165,10 +3505,24 @@ class WorkflowRunner:
             input=normalized_input,
         )
 
+        run_context = self._get_run_context(run_id) or {}
+        stored_character_manifest = (
+            dict(character_manifest or {})
+            or run_context.get("character_manifest")
+            or {}
+        )
+        stored_image_prompts = (
+            dict(image_prompts or {})
+            or run_context.get("image_prompts")
+            or {}
+        )
+
         outputs: Dict[str, Any] = {
             "storyboard": {
                 "scenes": storyboard_scenes,
             },
+            "character_manifest": stored_character_manifest,
+            "image_prompts": stored_image_prompts,
             "image_review": dict(image_review or {}),
         }
 
@@ -3815,11 +4169,13 @@ class WorkflowRunner:
                         topic,
                         story_plan,
                     )
-                    repaired_cleaned_text, repaired_invalid_reasons = validate_story_text(
-                        self,
-                        repaired_text,
-                        topic,
-                        story_plan,
+                    repaired_cleaned_text, repaired_invalid_reasons = (
+                        validate_story_text(
+                            self,
+                            repaired_text,
+                            topic,
+                            story_plan,
+                        )
                     )
 
                     if not repaired_invalid_reasons:
