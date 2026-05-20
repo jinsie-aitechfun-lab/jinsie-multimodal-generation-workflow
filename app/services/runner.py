@@ -96,9 +96,30 @@ class WorkflowRunner:
             )
 
     def _run_async(self, run_input: dict, callback: callable):
-        from app.services.runner_async_wrapper import enqueue_run_task
+        import threading
+        import traceback
+        from app.schemas.workflow import WorkflowRunRequest
 
-        enqueue_run_task(run_input, callback)
+        def _task():
+            try:
+                request = WorkflowRunRequest(**run_input)
+                result = self.run(request)
+                if hasattr(result, "model_dump"):
+                    payload = result.model_dump()
+                elif isinstance(result, dict):
+                    payload = result
+                else:
+                    payload = dict(result)
+                callback(payload)
+            except Exception as error:
+                print("[AsyncRunner] task failed:", error)
+                traceback.print_exc()
+
+        threading.Thread(
+            target=_task,
+            daemon=True,
+            name="RunnerAsyncWorker",
+        ).start()
 
     """
     Phase 1 upgrade:
@@ -811,6 +832,21 @@ class WorkflowRunner:
             outputs=aggregated_outputs,
             workflow_input=req.input.model_dump(),
         )
+
+        # 落盘 outputs.json：不依赖外部异步回调，保证流程结束后磁盘一定有完整产物
+        try:
+            out_dir = PROJECT_ROOT / "assets" / "mock" / str(req.workflow_id)
+            out_dir.mkdir(parents=True, exist_ok=True)
+            with open(out_dir / "outputs.json", "w", encoding="utf-8") as f:
+                json.dump(
+                    aggregated_outputs,
+                    f,
+                    ensure_ascii=False,
+                    indent=2,
+                    default=str,
+                )
+        except Exception as error:
+            print(f"[WorkflowRunner] write outputs.json failed: {error}")
 
         session_memory_summary = self._build_session_memory_summary(
             req.session_id,
@@ -1990,6 +2026,8 @@ class WorkflowRunner:
         reason: str,
         retry_after_sec: int = 60,
     ) -> Dict[str, Any]:
+        # pending 阶段没有真实候选，candidate_scores 统一返回空列表，避免下游按字段直接取值时崩溃
+        normalized_reason = str(reason or "").strip() or "rate_limited"
         return {
             "enabled": False,
             "run_id": ctx.run_id,
@@ -1997,10 +2035,11 @@ class WorkflowRunner:
             "status": "retrying",
             "retryable": True,
             "retry_after_sec": retry_after_sec,
-            "reason": "rate_limited",
+            "reason": normalized_reason,
             "detail": reason,
             "asset_count": 0,
             "assets": [],
+            "candidate_scores": [],
         }
 
     def _normalized_video_provider(self, provider: str) -> str:

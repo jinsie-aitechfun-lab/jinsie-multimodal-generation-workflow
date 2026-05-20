@@ -163,8 +163,8 @@ def refresh_image_review(req: ImageReviewRefreshRequest):
             storyboard=req.storyboard,
             workflow_input=req.workflow_input,
             image_review=req.image_review,
-            character_manifest=req.character_manifest,
-            image_prompts=req.image_prompts,
+            character_manifest=getattr(req, "character_manifest", None),
+            image_prompts=getattr(req, "image_prompts", None),
             video_provider=req.video_provider,
         )
         print("[image-review] refresh completed", req.run_id)
