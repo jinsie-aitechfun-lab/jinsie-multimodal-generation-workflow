@@ -23,6 +23,7 @@ from app.schemas.workflow import (
 )
 from app.services.runner_audio_render_support import RunnerAudioRenderSupport
 from app.services.runner_image_selection_support import RunnerImageSelectionSupport
+from app.services.runner_session import RunnerSessionStore
 from app.services.image_provider_queue import ImageProviderQueue
 from app.services.image_provider_adapter import ApiImageGeneratorAdapter
 from app.services.image_provider_types import ImageGenerationTask
@@ -169,8 +170,7 @@ class WorkflowRunner:
             "render_plan": self._run_render_plan,
             "final_video": self._audio_render_support.run_final_video,
         }
-        self._session_store: Dict[str, Dict[str, Any]] = {}
-        self._run_store: Dict[str, Dict[str, Any]] = {}
+        self._session = RunnerSessionStore()
 
     def _workflow_input_from_dict(
         self, workflow_input: Dict[str, Any]
@@ -728,7 +728,7 @@ class WorkflowRunner:
             input=req.input,
         )
 
-        previous_session_data = self._get_session_data(req.session_id)
+        previous_session_data = self._session.get_session_data(req.session_id)
 
         step_results: List[StepResult] = []
 
@@ -825,7 +825,7 @@ class WorkflowRunner:
                         self._build_pending_image_review()
                     )
 
-        self._save_run_context(
+        self._session.save_run_context(
             workflow_id=req.workflow_id,
             session_id=req.session_id,
             run_id=run_id,
@@ -848,12 +848,12 @@ class WorkflowRunner:
         except Exception as error:
             print(f"[WorkflowRunner] write outputs.json failed: {error}")
 
-        session_memory_summary = self._build_session_memory_summary(
+        session_memory_summary = self._session.build_session_memory_summary(
             req.session_id,
             previous_session_data,
             aggregated_outputs,
         )
-        self._save_session_data(req, aggregated_outputs)
+        self._session.save_session_data(req, aggregated_outputs)
         render_package = self._build_render_package(ctx, aggregated_outputs)
 
         return WorkflowRunResponse(
@@ -1681,57 +1681,6 @@ class WorkflowRunner:
 
         return "subject negative constraints: " + ", ".join(deduped)
 
-    def _get_session_data(self, session_id: Optional[str]) -> Optional[Dict[str, Any]]:
-        if not session_id:
-            return None
-        return self._session_store.get(session_id)
-
-    def _save_session_data(
-        self, req: WorkflowRunRequest, outputs: Dict[str, Any]
-    ) -> None:
-        if not req.session_id:
-            return
-
-        self._session_store[req.session_id] = {
-            "workflow_id": req.workflow_id,
-            "last_input": req.input.model_dump(),
-            "last_story": outputs.get("story") or {},
-            "last_storyboard": outputs.get("storyboard") or {},
-            "last_render_plan": outputs.get("render_plan") or {},
-        }
-
-    def _get_run_context(self, run_id: str) -> Optional[Dict[str, Any]]:
-        normalized_run_id = str(run_id or "").strip()
-        if not normalized_run_id:
-            return None
-        return self._run_store.get(normalized_run_id)
-
-    def _save_run_context(
-        self,
-        *,
-        workflow_id: str,
-        session_id: Optional[str],
-        run_id: str,
-        outputs: Dict[str, Any],
-        workflow_input: Dict[str, Any],
-    ) -> None:
-        normalized_run_id = str(run_id or "").strip()
-        if not normalized_run_id:
-            return
-
-        self._run_store[normalized_run_id] = {
-            "workflow_id": workflow_id,
-            "session_id": session_id,
-            "workflow_input": dict(workflow_input or {}),
-            "character_manifest": outputs.get("character_manifest") or {},
-            "storyboard": outputs.get("storyboard") or {},
-            "sentence_shots": outputs.get("sentence_shots") or {},
-            "image_prompts": outputs.get("image_prompts") or {},
-            "image_assets": outputs.get("image_assets") or {},
-            "image_review": outputs.get("image_review") or {},
-            "video_prompts": outputs.get("video_prompts") or {},
-        }
-
     def _build_deferred_image_assets_output(
         self,
         ctx: StepContext,
@@ -1762,40 +1711,6 @@ class WorkflowRunner:
             "reason": reason,
             "selected_assets": [],
         }
-
-    def _build_session_memory_summary(
-        self,
-        session_id: Optional[str],
-        previous_session_data: Optional[Dict[str, Any]],
-        outputs: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        if not session_id:
-            return {
-                "enabled": False,
-                "session_id": None,
-                "has_previous_session": False,
-            }
-
-        current_story = outputs.get("story") or {}
-        current_storyboard = outputs.get("storyboard") or {}
-
-        summary: Dict[str, Any] = {
-            "enabled": True,
-            "session_id": session_id,
-            "has_previous_session": previous_session_data is not None,
-            "current_story_title": current_story.get("title"),
-            "current_scene_count": current_storyboard.get("scene_count"),
-        }
-
-        if previous_session_data is not None:
-            last_input = previous_session_data.get("last_input") or {}
-            last_story = previous_session_data.get("last_story") or {}
-            last_storyboard = previous_session_data.get("last_storyboard") or {}
-            summary["previous_topic"] = last_input.get("topic")
-            summary["previous_story_title"] = last_story.get("title")
-            summary["previous_scene_count"] = last_storyboard.get("scene_count")
-
-        return summary
 
     def _scene_count(self, duration_sec: int) -> int:
         if duration_sec <= 60:
@@ -3505,7 +3420,7 @@ class WorkflowRunner:
             input=normalized_input,
         )
 
-        run_context = self._get_run_context(run_id) or {}
+        run_context = self._session.get_run_context(run_id) or {}
         stored_character_manifest = (
             dict(character_manifest or {})
             or run_context.get("character_manifest")
@@ -3598,7 +3513,7 @@ class WorkflowRunner:
         if not normalized_run_id:
             raise ValueError("run_id is required")
 
-        stored_context = self._get_run_context(normalized_run_id) or {}
+        stored_context = self._session.get_run_context(normalized_run_id) or {}
 
         resolved_workflow_id = (
             str(workflow_id or "").strip()
@@ -3680,7 +3595,7 @@ class WorkflowRunner:
         video_prompts = self._run_video_prompts(ctx, outputs)
         outputs["video_prompts"] = video_prompts
 
-        self._save_run_context(
+        self._session.save_run_context(
             workflow_id=resolved_workflow_id,
             session_id=resolved_session_id,
             run_id=normalized_run_id,
