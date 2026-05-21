@@ -27,6 +27,7 @@ from app.services.runner_image_review import RunnerImageReviewSupport
 from app.services.runner_image_selection_support import RunnerImageSelectionSupport
 from app.services.runner_render_plan import RunnerRenderPlanSupport
 from app.services.runner_session import RunnerSessionStore
+from app.services.runner_video_prompts import RunnerVideoPromptsSupport
 from app.services.image_provider_queue import ImageProviderQueue
 from app.services.image_provider_adapter import ApiImageGeneratorAdapter
 from app.services.image_provider_types import ImageGenerationTask
@@ -152,6 +153,7 @@ class WorkflowRunner:
         self._image_review = RunnerImageReviewSupport(self)
         self._render_plan = RunnerRenderPlanSupport(self)
         self._single_scene_image_support = RunnerSingleSceneImageSupport(self)
+        self._video_prompts = RunnerVideoPromptsSupport(self)
 
         self._handlers = {
             "story": self._run_story,
@@ -2368,12 +2370,6 @@ class WorkflowRunner:
             "storybook details"
         )
 
-    def _character_prompt_phrase(self, ctx: StepContext) -> str:
-        main_character = str(getattr(ctx.input, "main_character", "") or "").strip()
-        if main_character:
-            return main_character
-        return f"{ctx.input.character_style} protagonist"
-
     def _build_story_paragraphs(
         self,
         ctx: StepContext,
@@ -2894,112 +2890,6 @@ class WorkflowRunner:
             scene_index=scene_index,
         )
 
-    def _video_prompt_scene_metadata(
-        self,
-        scene: Dict[str, Any],
-        outputs: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        characters = scene.get("characters") or []
-        if not isinstance(characters, list):
-            characters = []
-
-        character_ids: List[str] = []
-        seen = set()
-        for item in characters:
-            if not isinstance(item, dict):
-                continue
-            character_id = str(item.get("character_id") or "").strip()
-            if character_id and character_id not in seen:
-                character_ids.append(character_id)
-                seen.add(character_id)
-
-        scene_id = str(scene.get("scene_id") or "").strip()
-        selection_item = self._image_review.selection_item_by_scene_id(outputs).get(scene_id) or {}
-        selected_asset_ref = selection_item.get("selected_asset_ref") or {}
-
-        return {
-            "characters": characters,
-            "character_ids": character_ids,
-            "selected_asset_ref": selected_asset_ref,
-            "image_asset_ref": selected_asset_ref,
-            "selection_source": str(
-                selection_item.get("selection_source") or "unknown"
-            ).strip(),
-            "selection_mode": str(
-                selection_item.get("selection_mode") or "unknown"
-            ).strip(),
-            "review_status": str(
-                selection_item.get("review_status") or "unreviewed"
-            ).strip(),
-        }
-
-    def _attach_video_prompt_contract(
-        self,
-        prompt_item: Dict[str, Any],
-        scene: Dict[str, Any],
-        outputs: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        meta = self._video_prompt_scene_metadata(scene, outputs)
-        enriched = dict(prompt_item)
-        enriched["characters"] = meta["characters"]
-        enriched["character_ids"] = meta["character_ids"]
-        enriched["selected_asset_ref"] = meta["selected_asset_ref"]
-        enriched["image_asset_ref"] = meta["image_asset_ref"]
-        enriched["selection_source"] = meta["selection_source"]
-        enriched["selection_mode"] = meta["selection_mode"]
-        enriched["review_status"] = meta["review_status"]
-        return enriched
-
-    def _build_video_prompt_base(
-        self,
-        ctx: StepContext,
-        scene: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        scene_id = str(scene.get("scene_id") or "").strip()
-        scene_title = str(scene.get("scene_title") or "").strip()
-        visual_description = str(scene.get("visual_description") or "").strip()
-        narration = str(scene.get("narration") or "").strip()
-        duration_sec = int(scene.get("duration_sec") or 0)
-        shot_type = str(scene.get("shot_type") or "medium").strip()
-        transition = str(scene.get("transition") or "fade").strip()
-
-        if not scene_title:
-            scene_title = scene_id or "scene"
-
-        if not visual_description:
-            main_character = self._main_character_display_label(ctx)
-            visual_description = f"{ctx.input.visual_style} 风格画面，主角 {main_character} 出现在当前场景中。"
-
-        if not narration:
-            narration = scene_title
-
-        return {
-            "scene_id": scene_id,
-            "scene_title": scene_title,
-            "visual_description": visual_description,
-            "narration": narration,
-            "duration_sec": duration_sec,
-            "shot_type": shot_type,
-            "transition": transition,
-        }
-
-    def _build_video_provider_prompts(
-        self,
-        ctx: StepContext,
-        scenes: List[Dict[str, Any]],
-        outputs: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        provider = self._normalized_video_provider(ctx.input.video_provider)
-
-        if provider == "mock":
-            return self._build_mock_video_prompts(ctx, scenes, outputs)
-        if provider == "kling":
-            return self._build_kling_video_prompts(ctx, scenes, outputs)
-        if provider == "jimeng":
-            return self._build_jimeng_video_prompts(ctx, scenes, outputs)
-
-        raise UnknownVideoProviderError(f"Unknown video provider: {provider}")
-
     def _apply_manual_image_selection(
         self,
         image_review: Dict[str, Any],
@@ -3132,7 +3022,7 @@ class WorkflowRunner:
             },
         }
 
-        video_prompts = self._build_video_provider_prompts(
+        video_prompts = self._video_prompts.build_video_provider_prompts(
             ctx=ctx,
             scenes=storyboard_scenes,
             outputs=outputs,
@@ -3392,110 +3282,6 @@ class WorkflowRunner:
             "image_assets": image_assets,
             "image_review": updated_image_review,
             "video_prompts": video_prompts,
-        }
-
-    def _build_mock_video_prompts(
-        self,
-        ctx: StepContext,
-        scenes: List[Dict[str, Any]],
-        outputs: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        prompts: List[Dict[str, Any]] = []
-        character_phrase = self._character_prompt_phrase(ctx)
-
-        for scene in scenes:
-            base = self._build_video_prompt_base(ctx, scene)
-            prompt = (
-                f"Create a short animated video shot in {ctx.input.visual_style} style, "
-                f"{ctx.input.tone} atmosphere, with {character_phrase}. "
-                f"Scene description: {base['visual_description']}. "
-                f"Narration context: {base['narration']}"
-            )
-
-            item = {
-                "scene_id": base["scene_id"],
-                "scene_title": base["scene_title"],
-                "provider": "mock",
-                "prompt": prompt,
-                "duration_sec": base["duration_sec"],
-                "shot_type": base["shot_type"],
-                "transition": base["transition"],
-            }
-            prompts.append(self._attach_video_prompt_contract(item, scene, outputs))
-
-        return {
-            "provider": "mock",
-            "mode": "placeholder",
-            "integration_status": "mock_only",
-            "prompts": prompts,
-        }
-
-    def _build_kling_video_prompts(
-        self,
-        ctx: StepContext,
-        scenes: List[Dict[str, Any]],
-        outputs: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        prompts: List[Dict[str, Any]] = []
-        character_phrase = self._character_prompt_phrase(ctx)
-
-        for scene in scenes:
-            base = self._build_video_prompt_base(ctx, scene)
-            item = {
-                "scene_id": base["scene_id"],
-                "scene_title": base["scene_title"],
-                "provider": "kling",
-                "prompt": (
-                    f"[KLING] style={ctx.input.visual_style}; tone={ctx.input.tone}; "
-                    f"character={character_phrase}; shot={base['shot_type']}; "
-                    f"scene={base['visual_description']}; narration={base['narration']}"
-                ),
-                "duration_sec": base["duration_sec"],
-                "shot_type": base["shot_type"],
-                "transition": base["transition"],
-                "api_ready": False,
-            }
-            prompts.append(self._attach_video_prompt_contract(item, scene, outputs))
-
-        return {
-            "provider": "kling",
-            "mode": "adapter_placeholder",
-            "integration_status": "pending_api_integration",
-            "prompts": prompts,
-        }
-
-    def _build_jimeng_video_prompts(
-        self,
-        ctx: StepContext,
-        scenes: List[Dict[str, Any]],
-        outputs: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        prompts: List[Dict[str, Any]] = []
-        character_phrase = self._character_prompt_phrase(ctx)
-
-        for scene in scenes:
-            base = self._build_video_prompt_base(ctx, scene)
-            item = {
-                "scene_id": base["scene_id"],
-                "scene_title": base["scene_title"],
-                "provider": "jimeng",
-                "prompt": (
-                    f"[JIMENG] visual={ctx.input.visual_style}; atmosphere={ctx.input.tone}; "
-                    f"role={character_phrase}; transition={base['transition']}; "
-                    f"scene={base['visual_description']}; narration={base['narration']}"
-                ),
-                "duration_sec": base["duration_sec"],
-                "shot_type": base["shot_type"],
-                "transition": base["transition"],
-                "api_ready": False,
-            }
-            prompts.append(self._attach_video_prompt_contract(item, scene, outputs))
-
-        return {
-            "provider": "jimeng",
-            "mode": "adapter_placeholder",
-            "integration_status": "pending_api_integration",
-            "prompts": prompts,
         }
 
     def _run_story(self, ctx: StepContext, outputs: Dict[str, Any]) -> Dict[str, Any]:
@@ -4736,7 +4522,7 @@ class WorkflowRunner:
 
         storyboard = outputs.get("storyboard") or {}
         scenes = storyboard.get("scenes") or []
-        return self._build_video_provider_prompts(ctx, scenes, outputs)
+        return self._video_prompts.build_video_provider_prompts(ctx, scenes, outputs)
 
     def _run_render_plan(
         self, ctx: StepContext, outputs: Dict[str, Any]
