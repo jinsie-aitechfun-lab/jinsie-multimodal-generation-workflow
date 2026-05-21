@@ -27,7 +27,8 @@ type ImageReviewSelectedAsset = {
 type ReviewPlaceholderItem = {
   scene_id: string
   scene_title: string
-  state: 'waiting' | 'refreshing' | 'done'
+  state: 'waiting' | 'refreshing' | 'done' | 'failed'
+  error_message?: string
 }
 
 type ReviewWaitingState =
@@ -49,7 +50,8 @@ type ReviewRenderEntry =
       kind: 'placeholder'
       sceneId: string
       sceneTitle: string
-      state: 'waiting' | 'refreshing' | 'done'
+      state: 'waiting' | 'refreshing' | 'done' | 'failed'
+      errorMessage?: string
     }
 
 const props = defineProps<{
@@ -143,32 +145,41 @@ function onRefreshReview() {
   emit('refresh-review')
 }
 
-function placeholderStatusText(state: 'waiting' | 'refreshing' | 'done'): string {
+function placeholderStatusText(state: 'waiting' | 'refreshing' | 'done' | 'failed'): string {
   if (state === 'refreshing') {
     return '正在生成'
   }
   if (state === 'done') {
     return '已完成'
   }
+  if (state === 'failed') {
+    return '生成失败'
+  }
   return '等待生成'
 }
 
-function selectedStatusCopy(state: 'waiting' | 'refreshing' | 'done'): string {
+function selectedStatusCopy(state: 'waiting' | 'refreshing' | 'done' | 'failed'): string {
   if (state === 'refreshing') {
     return '正在生成当前预览图'
   }
   if (state === 'done') {
     return '当前预览图已生成'
   }
+  if (state === 'failed') {
+    return '当前预览图生成失败'
+  }
   return '等待生成当前预览图'
 }
 
-function candidateStatusCopy(state: 'waiting' | 'refreshing' | 'done', index: 'A' | 'B'): string {
+function candidateStatusCopy(state: 'waiting' | 'refreshing' | 'done' | 'failed', index: 'A' | 'B'): string {
   if (state === 'refreshing') {
     return `正在生成候选图 ${index}`
   }
   if (state === 'done') {
     return `候选图 ${index} 已生成`
+  }
+  if (state === 'failed') {
+    return `候选图 ${index} 生成失败`
   }
   return `等待生成候选图 ${index}`
 }
@@ -209,6 +220,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
         sceneId,
         sceneTitle,
         state: placeholder.state,
+        errorMessage: placeholder.error_message,
       })
     }
   }
@@ -294,6 +306,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
         :class="{
           'review-scene-card-placeholder': entry.kind === 'placeholder',
           'review-scene-card-refreshing': entry.kind === 'placeholder' && entry.state === 'refreshing',
+          'review-scene-card-failed': entry.kind === 'placeholder' && entry.state === 'failed',
         }"
       >
         <div class="review-scene-head">
@@ -560,10 +573,18 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                     :class="
                       entry.state === 'refreshing'
                         ? 'preview-state-tag-refreshing'
+                        : entry.state === 'failed'
+                          ? 'preview-state-tag-failed'
                         : 'preview-state-tag-waiting'
                     "
                   >
-                    {{ entry.state === 'refreshing' ? '生成中' : '等待中' }}
+                    {{
+                      entry.state === 'refreshing'
+                        ? '生成中'
+                        : entry.state === 'failed'
+                          ? '失败'
+                          : '等待中'
+                    }}
                   </span>
                 </div>
 
@@ -573,6 +594,13 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 
                 <div class="placeholder-status-copy">
                   {{ selectedStatusCopy(entry.state) }}
+                </div>
+
+                <div
+                  v-if="entry.state === 'failed' && entry.errorMessage"
+                  class="placeholder-error-copy"
+                >
+                  {{ entry.errorMessage }}
                 </div>
               </div>
             </div>
@@ -619,10 +647,18 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                         :class="
                           entry.state === 'refreshing'
                             ? 'preview-state-tag-refreshing'
+                            : entry.state === 'failed'
+                              ? 'preview-state-tag-failed'
                             : 'preview-state-tag-waiting'
                         "
                       >
-                        {{ entry.state === 'refreshing' ? '生成中' : '等待中' }}
+                        {{
+                          entry.state === 'refreshing'
+                            ? '生成中'
+                            : entry.state === 'failed'
+                              ? '失败'
+                              : '等待中'
+                        }}
                       </span>
                     </div>
 
@@ -667,10 +703,18 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                         :class="
                           entry.state === 'refreshing'
                             ? 'preview-state-tag-refreshing'
+                            : entry.state === 'failed'
+                              ? 'preview-state-tag-failed'
                             : 'preview-state-tag-waiting'
                         "
                       >
-                        {{ entry.state === 'refreshing' ? '生成中' : '等待中' }}
+                        {{
+                          entry.state === 'refreshing'
+                            ? '生成中'
+                            : entry.state === 'failed'
+                              ? '失败'
+                              : '等待中'
+                        }}
                       </span>
                     </div>
 
@@ -771,6 +815,11 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 
 .review-scene-card-refreshing {
   border-color: #cbd5e1;
+}
+
+.review-scene-card-failed {
+  border-color: #fecaca;
+  background: #fffafa;
 }
 
 .review-scene-head {
@@ -888,6 +937,11 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   color: #2563eb;
 }
 
+.preview-state-tag-failed {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
 .selected-open-link {
   width: fit-content;
   font-size: 12px;
@@ -905,6 +959,13 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   font-size: 12px;
   font-weight: 600;
   line-height: 1.5;
+}
+
+.placeholder-error-copy {
+  color: #b91c1c;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .candidate-header {
