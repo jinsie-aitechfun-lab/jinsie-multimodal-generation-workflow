@@ -114,3 +114,61 @@ python scripts/acceptance.py
 
 - Step 4 目标是零行为变化地抽取 video prompt 组装逻辑。
 - 修改 acceptance 脚本属于测试契约更新，和 runner 代码抽取可以分开审查。
+
+---
+
+## TEST-002: `acceptance_character_visual_profiles_multi.py` 断言旧 prompt 文案块
+
+**发现日期**：2026-05-21（Step 5 character manifest 重构验收时）
+
+**触发条件**：
+
+直接运行脚本需要显式设置项目导入路径：
+
+```bash
+PYTHONPATH=. python scripts/acceptance_character_visual_profiles_multi.py
+```
+
+**当前现象**：
+
+脚本能生成 2 个角色视觉 profile，payload 数量也正确，但失败在首个图片 prompt 的字面文案断言：
+
+```text
+profile_count = 2
+payload_count = 2
+has_multi_profile_block = False
+SUMMARY = FAIL
+- first prompt missing multi-character visual profiles block
+```
+
+同一轮验证中，以下相关脚本通过：
+
+```bash
+PYTHONPATH=. python scripts/acceptance_image_prompt_multi_character.py
+PYTHONPATH=. python scripts/acceptance_scene_character_presence.py
+```
+
+**原因定位**：
+
+`scripts/acceptance_character_visual_profiles_multi.py` 仍断言首个 prompt 包含固定英文短语：
+
+```text
+multi-character visual profiles
+```
+
+但当前 prompt 中已经包含多角色身份锁、角色定义、must_keep / must_avoid 等约束信息，只是没有保留这个旧字面标题。该失败更像测试脚本对 prompt 文案标签的期望漂移，而不是 Step 5 抽取造成的功能缺失。
+
+**建议修复**：
+
+把该脚本从“固定标题字符串断言”改成更稳定的结构/语义断言，例如：
+
+- `image_prompts.character_visual_profiles.count == 2`
+- 首个 prompt 包含每个角色名
+- 首个 prompt 包含多角色身份隔离关键词，如 `multi-character identity lock`
+- 首个 prompt 包含每个角色的 `must_keep` / `must_avoid` 核心 traits
+
+**为什么不在 Step 5 重构期间修**：
+
+- Step 5 目标是零行为变化地抽取 character manifest 组装逻辑。
+- 修改验收脚本断言属于测试维护，最好和重构主体拆开提交。
+- 如果该脚本不阻塞 CI，可等 runner 重构稳定后统一清理；如果阻塞 CI，应单独开一个 test-only commit 修复。
