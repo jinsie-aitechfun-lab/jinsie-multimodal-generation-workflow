@@ -172,7 +172,8 @@ type FinalVideoRenderResponse = {
 type ReviewPlaceholderItem = {
   scene_id: string
   scene_title: string
-  state: 'waiting' | 'refreshing' | 'done'
+  state: 'waiting' | 'refreshing' | 'done' | 'failed'
+  error_message?: string
 }
 
 const userHasInteractedWithImages = ref(false)
@@ -761,9 +762,19 @@ function syncReviewPlaceholders(data: WorkflowRunResponse) {
   reviewPlaceholders.value = buildReviewPlaceholdersFromStoryboard(data)
 }
 
-function markPlaceholderState(sceneId: string, state: 'waiting' | 'refreshing' | 'done') {
+function markPlaceholderState(
+  sceneId: string,
+  state: 'waiting' | 'refreshing' | 'done' | 'failed',
+  errorMessage = '',
+) {
   reviewPlaceholders.value = reviewPlaceholders.value.map((item) =>
-    item.scene_id === sceneId ? { ...item, state } : item,
+    item.scene_id === sceneId
+      ? {
+          ...item,
+          state,
+          error_message: errorMessage || undefined,
+        }
+      : item,
   )
 }
 async function fetchSamplesSummary() {
@@ -1079,7 +1090,20 @@ async function refreshImageReviewScene(sceneId: string) {
   })
 
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`)
+    let detail = ''
+    try {
+      const errorBody = await response.json()
+      detail =
+        typeof errorBody?.detail === 'string'
+          ? errorBody.detail
+          : JSON.stringify(errorBody)
+    } catch {
+      detail = await response.text().catch(() => '')
+    }
+
+    throw new Error(
+      `${sceneId} 候选图生成失败：HTTP ${response.status}${detail ? ` · ${detail}` : ''}`,
+    )
   }
 
   const data: ImageReviewRefreshSceneResponse = await response.json()
@@ -1146,16 +1170,27 @@ async function refreshImageReview() {
   refreshingImageReview.value = true
   errorMessage.value = ''
 
+  const failures: string[] = []
+
   try {
     for (const sceneId of sceneRefreshQueue.value) {
-      await refreshImageReviewScene(sceneId)
+      try {
+        await refreshImageReviewScene(sceneId)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '候选图分场景刷新失败'
+        failures.push(message)
+        markPlaceholderState(sceneId, 'failed', message)
+      }
     }
-  } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : '候选图分场景刷新失败'
   } finally {
     sceneRefreshingId.value = ''
     sceneRefreshQueue.value = []
     refreshingImageReview.value = false
+  }
+
+  if (failures.length > 0) {
+    errorMessage.value = `部分候选图生成失败：${failures.join('；')}`
+    return
   }
 
   if (workflowForm.value.renderMode === 'auto' && currentWorkflowResponse.value) {
