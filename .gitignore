@@ -75,5 +75,9 @@ docs-private/
 .DS_Store
 Thumbs.db
 desktop.ini
-scripts/*.py
 .cursorignore
+
+# =========================
+# Archived / sidelined scripts (kept locally for reference, not tracked)
+# =========================
+scripts/_archive/
