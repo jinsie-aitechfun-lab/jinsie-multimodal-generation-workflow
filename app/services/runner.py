@@ -22,6 +22,7 @@ from app.schemas.workflow import (
     WorkflowRunResponse,
 )
 from app.services.runner_audio_render_support import RunnerAudioRenderSupport
+from app.services.runner_image_review import RunnerImageReviewSupport
 from app.services.runner_image_selection_support import RunnerImageSelectionSupport
 from app.services.runner_session import RunnerSessionStore
 from app.services.image_provider_queue import ImageProviderQueue
@@ -154,6 +155,7 @@ class WorkflowRunner:
     def __init__(self) -> None:
         self._audio_render_support = RunnerAudioRenderSupport(self)
         self._image_selection_support = RunnerImageSelectionSupport(self)
+        self._image_review = RunnerImageReviewSupport(self)
         self._single_scene_image_support = RunnerSingleSceneImageSupport(self)
 
         self._handlers = {
@@ -802,7 +804,7 @@ class WorkflowRunner:
                 raise UnknownStepError(f"Unknown step: {name}")
 
             if name == "image_assets":
-                output = self._build_deferred_image_assets_output(ctx)
+                output = self._image_review.build_deferred_image_assets_output(ctx)
             else:
                 output = handler(ctx, aggregated_outputs)
 
@@ -812,7 +814,7 @@ class WorkflowRunner:
             aggregated_outputs[name] = output
 
             if name == "image_assets":
-                aggregated_outputs["image_review"] = self._build_pending_image_review(
+                aggregated_outputs["image_review"] = self._image_review.build_pending_image_review(
                     reason="waiting_for_manual_refresh"
                 )
             elif name == "video_prompts":
@@ -822,7 +824,7 @@ class WorkflowRunner:
                     and "image_review" not in aggregated_outputs
                 ):
                     aggregated_outputs["image_review"] = (
-                        self._build_pending_image_review()
+                        self._image_review.build_pending_image_review()
                     )
 
         self._session.save_run_context(
@@ -1680,37 +1682,6 @@ class WorkflowRunner:
             return ""
 
         return "subject negative constraints: " + ", ".join(deduped)
-
-    def _build_deferred_image_assets_output(
-        self,
-        ctx: StepContext,
-    ) -> Dict[str, Any]:
-        return {
-            "enabled": False,
-            "run_id": ctx.run_id,
-            "provider": self._image_provider_name(),
-            "provider_capabilities": {
-                "supports_reference_image": False,
-                "reference_image_mode": "metadata_only",
-            },
-            "status": "pending",
-            "reason": "deferred_to_refresh",
-            "detail": "image asset generation is deferred to /v1/image-review/refresh",
-            "asset_count": 0,
-            "assets": [],
-        }
-
-    def _build_pending_image_review(
-        self,
-        *,
-        reason: str = "waiting_for_image_assets",
-    ) -> Dict[str, Any]:
-        return {
-            "enabled": False,
-            "status": "pending",
-            "reason": reason,
-            "selected_assets": [],
-        }
 
     def _scene_count(self, duration_sec: int) -> int:
         if duration_sec <= 60:
@@ -2790,190 +2761,6 @@ class WorkflowRunner:
         if not target_path.exists():
             shutil.copyfile(source_path, target_path)
 
-    def _build_image_review_from_assets(
-        self,
-        outputs: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        image_assets_output = outputs.get("image_assets") or {}
-        assets = image_assets_output.get("assets") or []
-        provider = str(image_assets_output.get("provider") or "").strip()
-
-        selected_assets: List[Dict[str, Any]] = []
-
-        for item in assets:
-            if not isinstance(item, dict):
-                continue
-
-            scene_id = str(item.get("scene_id") or "").strip()
-            if not scene_id:
-                continue
-
-            scene_title = str(item.get("scene_title") or "").strip()
-            candidate_asset_refs = item.get("candidate_asset_refs") or []
-            if not isinstance(candidate_asset_refs, list) or not candidate_asset_refs:
-                candidate_asset_refs = [self._image_asset_ref_from_item(item, provider)]
-
-            selected_asset_ref = item.get("selected_asset_ref") or candidate_asset_refs[0]
-            selection_source = (
-                str(item.get("selection_source") or "").strip()
-                or "default_auto_selection"
-            )
-            selection_reason = (
-                str(item.get("selection_reason") or "").strip()
-                or "default_selected_from_image_assets"
-            )
-            candidate_scores = item.get("candidate_scores") or []
-
-            selected_assets.append(
-                {
-                    "scene_id": scene_id,
-                    "scene_title": scene_title,
-                    "review_status": "auto_selected",
-                    "selection_mode": (
-                        "auto_filter" if selection_source == "auto_filter" else "default_first_pass"
-                    ),
-                    "selection_source": selection_source,
-                    "selection_reason": selection_reason,
-                    "selected_asset_ref": selected_asset_ref,
-                    "candidate_asset_refs": candidate_asset_refs,
-                    "candidate_scores": candidate_scores,
-                    "characters": item.get("characters") or [],
-                    "character_ids": item.get("character_ids") or [],
-                    "prompt": str(item.get("prompt") or "").strip(),
-                }
-            )
-
-        return {
-            "enabled": True,
-            "mode": "selection_contract",
-            "provider": provider,
-            "asset_count": len(assets),
-            "selected_count": len(selected_assets),
-            "selected_assets": selected_assets,
-        }
-
-    def _selection_item_by_scene_id(
-        self, outputs: Dict[str, Any]
-    ) -> Dict[str, Dict[str, Any]]:
-        image_review = outputs.get("image_review") or {}
-        selected_assets = image_review.get("selected_assets") or []
-
-        mapping: Dict[str, Dict[str, Any]] = {}
-        for item in selected_assets:
-            if not isinstance(item, dict):
-                continue
-
-            scene_id = str(item.get("scene_id") or "").strip()
-            if scene_id:
-                mapping[scene_id] = item
-
-        return mapping
-
-    def _selected_asset_ref_by_scene_id(
-        self, outputs: Dict[str, Any]
-    ) -> Dict[str, Dict[str, Any]]:
-        selection_items = self._selection_item_by_scene_id(outputs)
-
-        mapping: Dict[str, Dict[str, Any]] = {}
-        for scene_id, item in selection_items.items():
-            selected_asset_ref = item.get("selected_asset_ref") or {}
-            if isinstance(selected_asset_ref, dict) and selected_asset_ref:
-                mapping[scene_id] = selected_asset_ref
-
-        return mapping
-
-    def _build_default_image_review(
-        self,
-        image_assets_output: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        return self._build_image_review_from_assets(
-            {"image_assets": image_assets_output}
-        )
-
-    def _build_image_review_item_from_asset(
-        self,
-        asset: Dict[str, Any],
-        provider: str,
-    ) -> Dict[str, Any]:
-        scene_id = str(asset.get("scene_id") or "").strip()
-        scene_title = str(asset.get("scene_title") or "").strip()
-
-        candidate_asset_refs = asset.get("candidate_asset_refs") or []
-        if not isinstance(candidate_asset_refs, list) or not candidate_asset_refs:
-            candidate_asset_refs = [self._image_asset_ref_from_item(asset, provider)]
-
-        selected_asset_ref = asset.get("selected_asset_ref") or (
-            candidate_asset_refs[0] if candidate_asset_refs else {}
-        )
-        selection_source = (
-            str(asset.get("selection_source") or "").strip()
-            or "default_auto_selection"
-        )
-        selection_reason = (
-            str(asset.get("selection_reason") or "").strip()
-            or "default_selected_from_image_assets"
-        )
-        candidate_scores = asset.get("candidate_scores") or []
-
-        return {
-            "scene_id": scene_id,
-            "scene_title": scene_title,
-            "review_status": "auto_selected",
-            "selection_mode": (
-                "auto_filter" if selection_source == "auto_filter" else "default_first_pass"
-            ),
-            "selection_source": selection_source,
-            "selection_reason": selection_reason,
-            "selected_asset_ref": selected_asset_ref,
-            "candidate_asset_refs": candidate_asset_refs,
-            "candidate_scores": candidate_scores,
-            "characters": asset.get("characters") or [],
-            "character_ids": asset.get("character_ids") or [],
-            "prompt": str(asset.get("prompt") or "").strip(),
-        }
-
-    def _upsert_image_review_item(
-        self,
-        image_review: Dict[str, Any],
-        scene_review_item: Dict[str, Any],
-        provider: str,
-    ) -> Dict[str, Any]:
-        updated_review = dict(image_review or {})
-        selected_assets = updated_review.get("selected_assets") or []
-
-        if not isinstance(selected_assets, list):
-            selected_assets = []
-
-        target_scene_id = str(scene_review_item.get("scene_id") or "").strip()
-        if not target_scene_id:
-            raise ValueError("scene_review_item.scene_id is required")
-
-        updated_items: List[Dict[str, Any]] = []
-        replaced = False
-
-        for item in selected_assets:
-            if not isinstance(item, dict):
-                continue
-
-            item_scene_id = str(item.get("scene_id") or "").strip()
-            if item_scene_id == target_scene_id:
-                updated_items.append(dict(scene_review_item))
-                replaced = True
-            else:
-                updated_items.append(dict(item))
-
-        if not replaced:
-            updated_items.append(dict(scene_review_item))
-
-        updated_review["enabled"] = True
-        updated_review["mode"] = "selection_contract"
-        updated_review["provider"] = provider
-        updated_review["selected_assets"] = updated_items
-        updated_review["selected_count"] = len(updated_items)
-        updated_review["asset_count"] = len(updated_items)
-
-        return updated_review
-
     def _scene_index_by_id(
         self,
         scenes: List[Dict[str, Any]],
@@ -3132,7 +2919,7 @@ class WorkflowRunner:
                 seen.add(character_id)
 
         scene_id = str(scene.get("scene_id") or "").strip()
-        selection_item = self._selection_item_by_scene_id(outputs).get(scene_id) or {}
+        selection_item = self._image_review.selection_item_by_scene_id(outputs).get(scene_id) or {}
         selected_asset_ref = selection_item.get("selected_asset_ref") or {}
 
         return {
@@ -3461,11 +3248,11 @@ class WorkflowRunner:
             first_asset = assets[0] if isinstance(assets, list) and assets else {}
             if not isinstance(first_asset, dict) or not first_asset:
                 raise RuntimeError("single scene image asset is missing")
-            scene_review_item = self._build_image_review_item_from_asset(
+            scene_review_item = self._image_review.build_image_review_item_from_asset(
                 first_asset,
                 provider=provider,
             )
-            updated_image_review = self._upsert_image_review_item(
+            updated_image_review = self._image_review.upsert_image_review_item(
                 image_review=image_review,
                 scene_review_item=scene_review_item,
                 provider=provider,
@@ -3585,11 +3372,11 @@ class WorkflowRunner:
 
         image_assets_status = str(image_assets.get("status") or "").strip().lower()
         if image_assets_status in {"pending", "retrying"}:
-            updated_image_review = self._build_pending_image_review(
+            updated_image_review = self._image_review.build_pending_image_review(
                 reason="waiting_for_image_assets"
             )
         else:
-            updated_image_review = self._build_default_image_review(image_assets)
+            updated_image_review = self._image_review.build_default_image_review(image_assets)
 
         outputs["image_review"] = updated_image_review
         video_prompts = self._run_video_prompts(ctx, outputs)
