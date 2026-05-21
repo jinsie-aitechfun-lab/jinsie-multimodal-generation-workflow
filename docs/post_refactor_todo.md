@@ -61,3 +61,56 @@ if len(candidate) > 4:
 - 修这个 bug 会改变 story 生成的输出，属于行为变更
 - 修复方案还需要讨论（A/B/C 选哪个）
 - 等重构稳定后单独开 PR 更利于代码审查
+
+---
+
+## TEST-001: `scripts/acceptance.py` 仍按同步 workflow 响应断言
+
+**发现日期**：2026-05-21（Step 4 video prompts 重构验收时）
+
+**触发条件**：
+
+运行：
+
+```bash
+make api
+python scripts/acceptance.py
+```
+
+**当前现象**：
+
+脚本前几个 samples API 检查通过，但在 `/v1/workflow/run` 后失败：
+
+```text
+[FAIL] session_id mismatch: None
+```
+
+**原因定位**：
+
+当前 `app/main.py` 的 `/v1/workflow/run` 是异步接口，立即返回：
+
+```json
+{"workflow_id": "...", "status": "processing"}
+```
+
+但 `scripts/acceptance.py` 仍按旧的同步 `WorkflowRunResponse` 契约断言，期望响应里直接包含：
+
+- `session_id`
+- `run_id`
+- `status == "COMPLETED"`
+- `steps`
+- `outputs`
+- `render_package`
+
+**建议修复**：
+
+把 `scripts/acceptance.py` 改成异步验收流程：
+
+1. POST `/v1/workflow/run` 后只断言 `status == "processing"` 和 `workflow_id`。
+2. 轮询 `assets/mock/<workflow_id>/outputs.json`。
+3. 从落盘 outputs 中断言 step outputs、session memory、render package 等契约。
+
+**为什么不在 Step 4 重构期间修**：
+
+- Step 4 目标是零行为变化地抽取 video prompt 组装逻辑。
+- 修改 acceptance 脚本属于测试契约更新，和 runner 代码抽取可以分开审查。
