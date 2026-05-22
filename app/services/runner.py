@@ -31,6 +31,7 @@ from app.services.runner_scene_characters import RunnerSceneCharactersSupport
 from app.services.runner_session import RunnerSessionStore
 from app.services.runner_story_support import RunnerStorySupport
 from app.services.runner_story_text import RunnerStoryTextSupport
+from app.services.runner_storyboard import RunnerStoryboardSupport
 from app.services.runner_video_prompts import RunnerVideoPromptsSupport
 from app.services.image_provider_queue import ImageProviderQueue
 from app.services.image_provider_adapter import ApiImageGeneratorAdapter
@@ -155,6 +156,7 @@ class WorkflowRunner:
         self._single_scene_image_support = RunnerSingleSceneImageSupport(self)
         self._story_support = RunnerStorySupport(self)
         self._story_text = RunnerStoryTextSupport(self)
+        self._storyboard = RunnerStoryboardSupport(self)
         self._video_prompts = RunnerVideoPromptsSupport(self)
 
         self._handlers = {
@@ -2489,204 +2491,24 @@ class WorkflowRunner:
     def _run_storyboard(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
-        story_plan = self._duration_story_plan(ctx.input.duration_sec)
-        scene_count = story_plan["scene_count"]
-        blueprints = self._scene_blueprints(ctx, scene_count, outputs)
-        story_out = outputs.get("story") or {}
-        story_text = str(story_out.get("text") or "").strip()
-
-        if story_text:
-            paragraphs = self._split_story_for_scenes(story_text, scene_count)
-        else:
-            paragraphs = self._split_story_for_scenes(
-                " ".join(self._build_story_paragraphs(ctx, outputs)),
-                scene_count,
-            )
-        total_duration_sec = ctx.input.duration_sec
-        per_scene_duration = max(1, total_duration_sec // max(scene_count, 1))
-
-        character_bindings = self._scene_characters.scene_character_bindings(outputs)
-
-        scenes: List[Dict[str, Any]] = []
-        for index, blueprint in enumerate(blueprints, start=1):
-            narration = paragraphs[index - 1] if index <= len(paragraphs) else ""
-
-            scenes.append(
-                {
-                    "scene_id": f"scene_{index:02d}",
-                    "scene_title": blueprint["scene_title"],
-                    "visual_description": blueprint["visual_description"],
-                    "narration": narration,
-                    "duration_sec": per_scene_duration,
-                    "shot_type": blueprint["shot_type"],
-                    "transition": blueprint["transition"],
-                    "characters": character_bindings,
-                }
-            )
-
-        return {
-            "scene_count": scene_count,
-            "total_duration_sec": total_duration_sec,
-            "scenes": scenes,
-        }
+        return self._storyboard.run_storyboard(ctx, outputs)
 
     def _split_story_for_scenes(self, text: str, scene_count: int) -> List[str]:
-        normalized = " ".join(str(text or "").split()).strip()
-        if scene_count <= 0:
-            return []
-        if not normalized:
-            return []
-
-        sentences = self._split_story_sentences(normalized)
-        if len(sentences) >= scene_count:
-            chunks: List[str] = []
-            for index in range(scene_count):
-                start = int(index * len(sentences) / scene_count)
-                end = int((index + 1) * len(sentences) / scene_count)
-                if end <= start:
-                    end = start + 1
-                chunk = "".join(sentences[start:end]).strip()
-                if chunk:
-                    chunks.append(chunk)
-            deduped = self._dedupe_adjacent_text(chunks)
-            if len(deduped) == scene_count:
-                return deduped
-
-        return self._split_text_by_char_balance(normalized, scene_count)
+        return self._storyboard.split_story_for_scenes(text, scene_count)
 
     def _split_text_by_char_balance(self, text: str, scene_count: int) -> List[str]:
-        normalized = " ".join(str(text or "").split()).strip()
-        if scene_count <= 0 or not normalized:
-            return []
-
-        chunks: List[str] = []
-        cursor = 0
-        punctuation = "。！？；!?;"
-        text_len = len(normalized)
-
-        for index in range(scene_count):
-            remaining_slots = scene_count - index
-            remaining_chars = text_len - cursor
-            if remaining_chars <= 0:
-                break
-
-            target_end = cursor + max(1, remaining_chars // remaining_slots)
-            if index == scene_count - 1:
-                end = text_len
-            else:
-                window_start = max(cursor + 1, target_end - 10)
-                window_end = min(text_len, target_end + 12)
-                end = 0
-                for pos in range(target_end, window_end):
-                    if normalized[pos - 1] in punctuation:
-                        end = pos
-                        break
-                if not end:
-                    for pos in range(target_end, window_start, -1):
-                        if normalized[pos - 1] in punctuation:
-                            end = pos
-                            break
-                if not end:
-                    end = min(text_len, target_end)
-
-            chunk = normalized[cursor:end].strip()
-            if chunk:
-                chunks.append(chunk)
-            cursor = end
-
-        return self._dedupe_adjacent_text(chunks)
+        return self._storyboard.split_text_by_char_balance(text, scene_count)
 
     def _dedupe_adjacent_text(self, items: List[str]) -> List[str]:
-        deduped: List[str] = []
-        for item in items:
-            text = " ".join(str(item or "").split()).strip()
-            if not text:
-                continue
-            if deduped and text == deduped[-1]:
-                continue
-            deduped.append(text)
-        return deduped
+        return self._storyboard.dedupe_adjacent_text(items)
 
     def _run_sentence_shots(
         self, ctx: StepContext, outputs: Dict[str, Any]
     ) -> Dict[str, Any]:
-        storyboard = outputs.get("storyboard") or {}
-        scenes = storyboard.get("scenes") or []
-
-        items: List[Dict[str, Any]] = []
-        shot_index = 1
-
-        for scene in scenes:
-            scene_id = str(scene.get("scene_id") or "").strip()
-            scene_title = str(scene.get("scene_title") or "").strip()
-            visual_description = str(scene.get("visual_description") or "").strip()
-            narration = str(scene.get("narration") or "").strip()
-            shot_type = str(scene.get("shot_type") or "medium").strip()
-            transition = str(scene.get("transition") or "fade").strip()
-
-            sentence_list = self._split_story_sentences(narration)
-            if not sentence_list and narration:
-                sentence_list = [narration]
-
-            for sentence in sentence_list:
-                shot_id = f"shot_{shot_index:02d}"
-                items.append(
-                    {
-                        "shot_id": shot_id,
-                        "scene_id": scene_id,
-                        "scene_title": scene_title,
-                        "visual_description": visual_description,
-                        "shot_type": shot_type,
-                        "transition": transition,
-                        "text": sentence,
-                        "subtitle_text": sentence,
-                        "audio_text": sentence,
-                    }
-                )
-                shot_index += 1
-
-        return {
-            "enabled": True,
-            "shot_count": len(items),
-            "items": items,
-        }
+        return self._storyboard.run_sentence_shots(ctx, outputs)
 
     def _split_story_sentences(self, text: str) -> List[str]:
-        normalized = str(text or "").replace("\n", " ").strip()
-        if not normalized:
-            return []
-
-        sentences: List[str] = []
-        current: List[str] = []
-        hard_break_chars = {"。", "！", "？", "；", "!", "?", ";"}
-
-        for ch in normalized:
-            current.append(ch)
-            if ch in hard_break_chars:
-                sentence = "".join(current).strip()
-                if sentence:
-                    sentences.append(sentence)
-                current = []
-
-        tail = "".join(current).strip()
-        if tail:
-            sentences.append(tail)
-
-        merged: List[str] = []
-        for sentence in sentences:
-            compact = " ".join(sentence.split()).strip()
-            if not compact:
-                continue
-
-            if merged and len(compact) < 8:
-                merged[-1] = f"{merged[-1]}{compact}"
-            else:
-                merged.append(compact)
-
-        if not merged and normalized:
-            merged = [normalized]
-
-        return merged
+        return self._storyboard.split_story_sentences(text)
 
     def _build_scene_ppm(
         self, ctx: StepContext, scene: Dict[str, Any], index: int
