@@ -398,3 +398,86 @@ from app.services.runner import StepContext, WorkflowRunner
 
 - 这是历史验证脚本维护问题，不是 scene render fallback 抽取引入。
 - 为了保持本次 refactor commit 只包含 runner 拆分，不混入旧脚本修复。
+
+---
+
+## BUG-003: `/v1/image-review/refresh` endpoint 传参和 runner 方法签名不一致
+
+**发现日期**：2026-05-22（Step 19 image review refresh-scene 重构时）
+
+**触发条件**：
+
+调用 `app/main.py` 中的 `/v1/image-review/refresh` endpoint。
+
+**当前现象**：
+
+`app/main.py` 调用：
+
+```python
+_runner.refresh_image_review(
+    workflow_id=req.workflow_id,
+    session_id=req.session_id,
+    run_id=req.run_id,
+    storyboard=req.storyboard,
+    workflow_input=req.workflow_input,
+    image_review=req.image_review,
+    character_manifest=getattr(req, "character_manifest", None),
+    image_prompts=getattr(req, "image_prompts", None),
+    video_provider=req.video_provider,
+)
+```
+
+但当前 `WorkflowRunner.refresh_image_review(...)` 方法签名里没有：
+
+```python
+character_manifest
+image_prompts
+```
+
+这会导致 endpoint 在运行时抛：
+
+```text
+TypeError: WorkflowRunner.refresh_image_review() got an unexpected keyword argument 'character_manifest'
+```
+
+**原因定位**：
+
+`ImageReviewRefreshRequest` schema 已经增加了 `character_manifest` / `image_prompts` 字段，`refresh-scene` 路径也使用这两个字段做多角色刷新闭环；但整批 `/v1/image-review/refresh` 的 runner 方法签名和内部 outputs 合并逻辑还没同步。
+
+另外 schema 中：
+
+```python
+image_prompts: Optional[List[Dict]] = None
+```
+
+而其他路径通常按：
+
+```python
+{"prompts": [...]}
+```
+
+使用 image prompts，修复时也需要确认前后端实际传输结构，避免只修签名不修数据形状。
+
+**建议修复**：
+
+- 给 `WorkflowRunner.refresh_image_review(...)` 增加可选参数：
+
+```python
+character_manifest: Optional[Dict[str, Any]] = None
+image_prompts: Optional[Dict[str, Any]] = None
+```
+
+- 在 refresh outputs 构建时，优先使用显式传入值，其次使用 session stored context：
+
+```python
+stored_character_manifest = dict(character_manifest or {}) or stored_context.get("character_manifest") or {}
+stored_image_prompts = dict(image_prompts or {}) or stored_context.get("image_prompts") or {}
+```
+
+- 如果前端传的是 list 形态 image prompts，需要在 API 层或 runner 层统一归一化为 `{"prompts": [...]}`。
+- 补一个接口或进程内验证，覆盖 `/v1/image-review/refresh` 带 `character_manifest` / `image_prompts` 的情况。
+
+**为什么不在 Step 19 重构期间修**：
+
+- Step 19 只做 `refresh_image_review_scene` 的等价搬移。
+- 这个问题属于现有 API 调用契约不一致，修复会改变 `/v1/image-review/refresh` 行为，适合单独提交。
