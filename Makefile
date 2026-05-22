@@ -13,6 +13,7 @@ check:
 		app/services/runner_render_plan.py \
 		app/services/runner_scene_blueprints.py \
 		app/services/runner_scene_characters.py \
+		app/services/runner_scene_render_fallback.py \
 		app/services/runner_session.py \
 		app/services/runner_story_support.py \
 		app/services/runner_story_text.py \
