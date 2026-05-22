@@ -6,6 +6,7 @@ check:
 		app/services/runner.py \
 		app/services/runner_audio_render_support.py \
 		app/services/runner_character_manifest.py \
+		app/services/runner_image_prompts_support.py \
 		app/services/runner_image_review.py \
 		app/services/runner_render_plan.py \
 		app/services/runner_scene_blueprints.py \
