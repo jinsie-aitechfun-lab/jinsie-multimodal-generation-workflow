@@ -16,6 +16,7 @@ check:
 		app/services/runner_scene_render_fallback.py \
 		app/services/runner_scene_render_storybook.py \
 		app/services/runner_session.py \
+		app/services/runner_single_scene_image_support.py \
 		app/services/runner_story_support.py \
 		app/services/runner_story_text.py \
 		app/services/runner_storyboard.py \
