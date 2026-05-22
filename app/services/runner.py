@@ -40,9 +40,6 @@ from app.services.runner_storyboard import RunnerStoryboardSupport
 from app.services.runner_video_prompts import RunnerVideoPromptsSupport
 from app.services.runner_voice_support import RunnerVoiceSupport
 from app.services.image_provider_queue import ImageProviderQueue
-from app.services.image_provider_adapter import ApiImageGeneratorAdapter
-from app.services.image_provider_types import ImageGenerationTask
-from app.services.image_candidate_selector import select_best_candidate
 from app.services.runner_single_scene_image_support import RunnerSingleSceneImageSupport
 from app.services.topic_character_infer import infer_primary_character_manifest
 from app.services.story_subject_extractor import extract_story_subjects
@@ -1181,111 +1178,12 @@ class WorkflowRunner:
         scene: Dict[str, Any],
         scene_index: int,
     ) -> Dict[str, Any]:
-        storyboard = outputs.get("storyboard") or {}
-        scenes = storyboard.get("scenes") or []
-        prompt_by_scene_id, _ = self._image_prompt_item_maps(outputs)
-
-        run_dir = self._ensure_image_run_dir(ctx.run_id)
-        scene_id = str(scene.get("scene_id") or f"scene_{scene_index:02d}")
-        prompt_item = prompt_by_scene_id.get(scene_id) or {}
-        base_prompt = str(prompt_item.get("prompt") or "").strip()
-
-        if not base_prompt:
-            visual_description = str(scene.get("visual_description") or "").strip()
-            narration = str(scene.get("narration") or "").strip()
-            base_prompt = (
-                visual_description or narration or f"storybook scene {scene_id}"
-            )
-
-        asset_meta = self._image_asset_metadata(
+        return self._single_scene_image_support.run_single_scene_api_image_asset(
+            ctx=ctx,
+            outputs=outputs,
             scene=scene,
-            prompt_item=prompt_item,
-            fallback_scene_title=str(scene.get("scene_title") or "").strip(),
+            scene_index=scene_index,
         )
-
-        candidate_asset_refs: List[Dict[str, Any]] = []
-        adapter = ApiImageGeneratorAdapter(self)
-
-        for candidate_index, candidate_suffix in enumerate(
-            ["candidate_a", "candidate_b"]
-        ):
-            candidate_scene = self._scene_candidate_variant(
-                scene=scene,
-                candidate_index=candidate_index,
-            )
-
-            candidate_prompt = base_prompt
-            if candidate_index == 1:
-                candidate_prompt = (
-                    f"{base_prompt}, alternate composition, different framing, "
-                    "slightly changed pose emphasis, secondary visual arrangement"
-                )
-
-            file_name = f"{scene_id}__{candidate_suffix}.png"
-            output_path = run_dir / file_name
-
-            task = ImageGenerationTask(
-                run_id=ctx.run_id,
-                item_id=scene_id,
-                scene_id=scene_id,
-                prompt=candidate_prompt,
-                candidate_suffix=candidate_suffix,
-                output_path=output_path,
-                relative_path=f"assets/mock/image/{ctx.run_id}/{file_name}",
-                public_url=f"/assets/mock/image/{ctx.run_id}/{file_name}",
-                prompt_metadata={
-                    "ctx": ctx,
-                    "scene": candidate_scene,
-                    "scene_index": scene_index + candidate_index,
-                },
-            )
-
-            image_bytes = adapter.generate(task)
-            if not isinstance(image_bytes, (bytes, bytearray)):
-                raise RuntimeError(
-                    f"api image provider returned invalid bytes for scene {scene_id} ({candidate_suffix})"
-                )
-
-            output_path = Path(output_path)
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_bytes(bytes(image_bytes))
-
-            candidate_asset_refs.append(
-                {
-                    "scene_id": scene_id,
-                    "file_name": file_name,
-                    "relative_path": task.relative_path,
-                    "public_url": task.public_url,
-                    "mime_type": "image/png",
-                    "provider": "api_image_generator",
-                }
-            )
-
-        selection = select_best_candidate(
-            candidate_asset_refs=candidate_asset_refs,
-            prompt=base_prompt,
-            characters=asset_meta["characters"],
-        )
-        candidate_asset_refs = selection["candidate_asset_refs"]
-        selected_asset_ref = selection["selected_asset_ref"]
-
-        return {
-            "scene_id": scene_id,
-            "scene_title": asset_meta["scene_title"],
-            "characters": asset_meta["characters"],
-            "character_ids": asset_meta["character_ids"],
-            "prompt": base_prompt,
-            "selected_asset_ref": dict(selected_asset_ref),
-            "file_name": selected_asset_ref["file_name"],
-            "relative_path": selected_asset_ref["relative_path"],
-            "public_url": selected_asset_ref["public_url"],
-            "mime_type": selected_asset_ref["mime_type"],
-            "status": "generated",
-            "candidate_asset_refs": candidate_asset_refs,
-            "selection_source": selection.get("selection_source"),
-            "selection_reason": selection.get("selection_reason"),
-            "candidate_scores": selection.get("candidate_scores") or [],
-        }
 
     def _run_single_scene_image_asset(
         self,
