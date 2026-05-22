@@ -179,6 +179,8 @@ multi-character visual profiles
 
 **发现日期**：2026-05-21（Step 6 前端真实生图可见验证时）
 
+**状态**：部分修复（2026-05-22）。已完成第一段：新增 `GET /v1/workflow/status/{workflow_id}`，后端在异步 workflow 开始、完成、失败时写入 `status.json`；前端先轮询状态接口，只有 `completed` 后才请求一次 `outputs.json`，避免 Network 面板刷出大量 404。已补 `scripts/verify_perf001_workflow_status_contract.py` 覆盖 `processing / completed / failed` 状态契约。
+
 **触发条件**：
 
 使用真实 `api_image_generator` 生成多 scene 候选图，尤其是 60 秒或 120 秒 workflow 触发 6 到 12 个 scene 逐个刷新时。
