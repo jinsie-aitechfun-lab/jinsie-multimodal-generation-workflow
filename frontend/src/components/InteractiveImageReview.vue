@@ -66,6 +66,8 @@ const props = defineProps<{
   showWaitingCard?: boolean
   refreshing?: boolean
   canRefresh?: boolean
+  progressText?: string
+  progressPercent?: number
 }>()
 
 const emit = defineEmits<{
@@ -250,6 +252,16 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
     class="result-panel"
   >
     <h2 class="section-title">Interactive Image Review</h2>
+
+    <div v-if="progressText" class="review-progress">
+      <div class="review-progress-copy">{{ progressText }}</div>
+      <div class="review-progress-track" aria-hidden="true">
+        <div
+          class="review-progress-fill"
+          :style="{ width: `${Math.max(0, Math.min(100, progressPercent || 0))}%` }"
+        ></div>
+      </div>
+    </div>
 
     <article v-if="showWaitingCard && renderEntries.length === 0" class="review-waiting-card">
       <div class="waiting-preview-frame">
@@ -747,6 +759,36 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   line-height: 1.4;
   color: #111827;
   text-align: center;
+}
+
+.review-progress {
+  margin: 0 0 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.review-progress-copy {
+  color: #334155;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.review-progress-track {
+  width: 100%;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+
+.review-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: #2563eb;
+  transition: width 180ms ease;
 }
 
 .summary-status {
