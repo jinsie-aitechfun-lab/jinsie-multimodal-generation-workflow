@@ -83,7 +83,12 @@ class WorkflowRunner:
                 subtitles=outputs.get("subtitles"),
             )
 
-    def _run_async(self, run_input: dict, callback: callable):
+    def _run_async(
+        self,
+        run_input: dict,
+        callback: callable,
+        error_callback: Optional[callable] = None,
+    ):
         import threading
         import traceback
         from app.schemas.workflow import WorkflowRunRequest
@@ -102,6 +107,8 @@ class WorkflowRunner:
             except Exception as error:
                 print("[AsyncRunner] task failed:", error)
                 traceback.print_exc()
+                if error_callback is not None:
+                    error_callback(error)
 
         threading.Thread(
             target=_task,

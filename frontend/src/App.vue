@@ -31,6 +31,12 @@ type WorkflowRunPayload = {
   steps: Array<{ name: StepName }>
 }
 
+type WorkflowStatusResponse = {
+  workflow_id?: string
+  status?: string
+  message?: string
+}
+
 type ImageAssetRef = {
   scene_id?: string
   file_name?: string
@@ -1254,19 +1260,42 @@ async function waitForAsyncWorkflowOutputs(
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     await new Promise((resolve) => window.setTimeout(resolve, intervalMs))
 
-    const response = await fetch(
-      `${apiBaseUrl}/assets/mock/${encodeURIComponent(normalizedWorkflowId)}/outputs.json?ts=${Date.now()}`,
+    const statusResponse = await fetch(
+      `${apiBaseUrl}/v1/workflow/status/${encodeURIComponent(normalizedWorkflowId)}?ts=${Date.now()}`,
     )
 
-    if (response.status === 404) {
+    if (statusResponse.status === 404) {
       continue
     }
 
-    if (!response.ok) {
-      throw new Error(`Workflow outputs HTTP ${response.status}`)
+    if (!statusResponse.ok) {
+      throw new Error(`Workflow status HTTP ${statusResponse.status}`)
     }
 
-    return (await response.json()) as WorkflowRunResponse
+    const statusData = (await statusResponse.json()) as WorkflowStatusResponse
+    const status = String(statusData.status || '').trim().toLowerCase()
+
+    if (status === 'processing') {
+      continue
+    }
+
+    if (status === 'failed') {
+      throw new Error(statusData.message || 'Workflow failed')
+    }
+
+    if (status !== 'completed') {
+      throw new Error(`Unknown workflow status: ${statusData.status || 'empty'}`)
+    }
+
+    const outputsResponse = await fetch(
+      `${apiBaseUrl}/assets/mock/${encodeURIComponent(normalizedWorkflowId)}/outputs.json?ts=${Date.now()}`,
+    )
+
+    if (!outputsResponse.ok) {
+      throw new Error(`Workflow outputs HTTP ${outputsResponse.status}`)
+    }
+
+    return (await outputsResponse.json()) as WorkflowRunResponse
   }
 
   return null
