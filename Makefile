@@ -5,6 +5,7 @@ check:
 	python -m py_compile \
 		app/services/runner.py \
 		app/services/runner_audio_render_support.py \
+		app/services/runner_character_labels.py \
 		app/services/runner_character_manifest.py \
 		app/services/runner_image_asset_refs.py \
 		app/services/runner_image_prompts_support.py \

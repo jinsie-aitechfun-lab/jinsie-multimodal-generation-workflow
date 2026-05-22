@@ -21,6 +21,7 @@ from app.schemas.workflow import (
     WorkflowRunResponse,
 )
 from app.services.runner_audio_render_support import RunnerAudioRenderSupport
+from app.services.runner_character_labels import RunnerCharacterLabelsSupport
 from app.services.runner_character_manifest import RunnerCharacterManifestSupport
 from app.services.runner_errors import UnknownStepError, UnknownVideoProviderError
 from app.services.runner_image_asset_refs import RunnerImageAssetRefsSupport
@@ -41,10 +42,7 @@ from app.services.image_provider_types import ImageGenerationTask
 from app.services.image_candidate_selector import select_best_candidate
 from app.services.runner_single_scene_image_support import RunnerSingleSceneImageSupport
 from app.services.topic_character_infer import infer_primary_character_manifest
-from app.services.story_subject_extractor import (
-    extract_story_subjects,
-    story_main_subject,
-)
+from app.services.story_subject_extractor import extract_story_subjects
 from app.services.llm_output_sanitizer import parse_story_payload
 
 
@@ -142,6 +140,7 @@ class WorkflowRunner:
 
     def __init__(self) -> None:
         self._audio_render_support = RunnerAudioRenderSupport(self)
+        self._character_labels = RunnerCharacterLabelsSupport(self)
         self._character_manifest_support = RunnerCharacterManifestSupport(self)
         self._image_asset_refs = RunnerImageAssetRefsSupport(self)
         self._image_prompts = RunnerImagePromptsSupport(self)
@@ -1186,268 +1185,47 @@ class WorkflowRunner:
         return line
 
     def _clean_story_topic(self, topic: str) -> str:
-        candidate = " ".join(str(topic or "").split()).strip()
-        if not candidate:
-            return ""
-
-        for prefix in (
-            "请帮我写一个关于",
-            "帮我写一个关于",
-            "写一个关于",
-            "讲一个关于",
-            "生成一个关于",
-            "关于",
-        ):
-            if candidate.startswith(prefix):
-                candidate = candidate[len(prefix) :].strip()
-                break
-
-        for suffix in (
-            "的故事",
-            "故事",
-            "绘本",
-            "视频",
-            "动画",
-            "短片",
-        ):
-            if candidate.endswith(suffix):
-                candidate = candidate[: -len(suffix)].strip()
-                break
-
-        return candidate.strip(" \\t\\n\\r，。！？、,.!?：:；;“”\\\"'《》")
+        return self._character_labels.clean_story_topic(topic)
 
     def _topic_primary_character_display_label(self, ctx: StepContext) -> str:
-        topic = self._clean_story_topic(ctx.input.topic)
-        if not topic:
-            return ""
-
-        policy_subject = story_main_subject(topic)
-        if policy_subject and policy_subject != "主角":
-            return policy_subject
-
-        try:
-            inferred = infer_primary_character_manifest(topic)
-        except Exception:
-            inferred = None
-
-        if isinstance(inferred, dict):
-            display = str(inferred.get("display_name") or "").strip()
-            species = str(inferred.get("species") or "").strip()
-            if display and display != topic:
-                return display
-            if species and species != topic:
-                return species
-
-        return ""
+        return self._character_labels.topic_primary_character_display_label(ctx)
 
     def _main_character_display_label(
         self,
         ctx: StepContext,
         outputs: Optional[Dict[str, Any]] = None,
     ) -> str:
-        # 1️⃣ manifest 优先
-        if outputs:
-            manifest_item = (
-                self._character_manifest_support.manifest_character_by_role(
-                    outputs, "primary"
-                )
-            )
-            if manifest_item is not None:
-                display_value = str(manifest_item.get("display_name") or "").strip()
-                if display_value:
-                    return display_value
-
-        # 2️⃣ 手填
-        display_value = str(
-            getattr(ctx.input, "main_character_display", "") or ""
-        ).strip()
-        if display_value:
-            return display_value
-
-        main_value = str(getattr(ctx.input, "main_character", "") or "").strip()
-        if main_value:
-            return main_value
-
-        # 3️⃣ 从 topic 中提取主角，避免把完整主题当成角色名
-        topic_character = self._topic_primary_character_display_label(ctx)
-        if topic_character:
-            return topic_character
-
-        # 4️⃣ 最终 fallback
-        return self._character_style_label(ctx.input.character_style)
+        return self._character_labels.main_character_display_label(ctx, outputs)
 
     def _secondary_character_display_label(
         self,
         ctx: StepContext,
         outputs: Optional[Dict[str, Any]] = None,
     ) -> str:
-        if outputs:
-            manifest_item = (
-                self._character_manifest_support.manifest_character_by_role(
-                    outputs, "secondary"
-                )
-            )
-            if manifest_item is not None:
-                display_value = str(manifest_item.get("display_name") or "").strip()
-                if display_value:
-                    return display_value
-
-        display_value = str(
-            getattr(ctx.input, "secondary_character_display", "") or ""
-        ).strip()
-        if display_value:
-            return display_value
-
-        secondary_value = str(
-            getattr(ctx.input, "secondary_character", "") or ""
-        ).strip()
-        if secondary_value:
-            return secondary_value
-
-        extracted_subjects = extract_story_subjects(ctx.input.topic)
-        if extracted_subjects.supporting_subjects:
-            return extracted_subjects.supporting_subjects[0]
-
-        return ""
+        return self._character_labels.secondary_character_display_label(ctx, outputs)
 
     def _has_secondary_character(
         self,
         ctx: StepContext,
         outputs: Optional[Dict[str, Any]] = None,
     ) -> bool:
-        return bool(self._secondary_character_display_label(ctx, outputs))
+        return self._character_labels.has_secondary_character(ctx, outputs)
 
     def _main_character_label(self, ctx: StepContext) -> str:
-        value = str(getattr(ctx.input, "main_character", "") or "").strip()
-        if value:
-            return value
-        return self._character_style_label(ctx.input.character_style)
+        return self._character_labels.main_character_label(ctx)
 
     def _main_character_subject(self, ctx: StepContext) -> str:
-        value = str(getattr(ctx.input, "main_character", "") or "").strip()
-        if value:
-            return value
-        return f"{ctx.input.character_style} protagonist"
+        return self._character_labels.main_character_subject(ctx)
 
     def _visual_subject_constraints(self, subject: str) -> str:
-        value = str(subject or "").strip()
-        if not value:
-            return ""
-
-        if "蝌蚪" in value:
-            return (
-                "tadpole, round head, long tail, swimming in water, "
-                "no frog legs, no adult frog body, not a frog"
-            )
-
-        return ""
+        return self._character_labels.visual_subject_constraints(subject)
 
     def _character_consistency_anchor(
         self,
         ctx: StepContext,
         outputs: Optional[Dict[str, Any]] = None,
     ) -> str:
-        explicit_anchor = str(
-            getattr(ctx.input, "character_consistency_anchor", "") or ""
-        ).strip()
-        if explicit_anchor:
-            return explicit_anchor
-
-        # ✅ 1) 优先走 character_manifest（primary 角色锚点）
-        primary = None
-        if outputs:
-            primary = self._character_manifest_support.manifest_character_by_role(
-                outputs, "primary"
-            )
-
-        if isinstance(primary, dict):
-            display = str(primary.get("display_name") or "").strip()
-            species = str(primary.get("species") or "").strip()
-            traits = str(primary.get("visual_traits") or "").strip()
-            forbid = str(primary.get("forbidden_traits") or "").strip()
-
-            parts = []
-            if display and species:
-                parts.append(f"{display} ({species})")
-            elif species:
-                parts.append(species)
-            elif display:
-                parts.append(display)
-
-            if traits:
-                parts.append(traits)
-
-            if forbid:
-                parts.append(f"avoid: {forbid}")
-
-            parts.extend(
-                [
-                    "same character across all scenes",
-                    "consistent facial features",
-                    "consistent body shape",
-                    "consistent outfit and visual identity",
-                    "cute expressive face",
-                    "storybook details",
-                ]
-            )
-            return ", ".join([p for p in parts if p])
-
-        # ✅ 2) 其次走 ctx.input.main_character，但跳过泛化默认值
-        main_character = str(getattr(ctx.input, "main_character", "") or "").strip()
-        generic_subjects = {
-            "",
-            "animal protagonist",
-            "protagonist",
-            "character",
-        }
-        if main_character and main_character.lower() not in generic_subjects:
-            visual_constraints = self._visual_subject_constraints(main_character)
-            parts = [
-                f"main subject: {main_character}",
-                visual_constraints,
-                "same main subject across all scenes",
-                "consistent visual identity",
-                "consistent body shape",
-                "cute expressive face",
-                "storybook details",
-            ]
-            return ", ".join([part for part in parts if part])
-
-        # ✅ 3) 开放式 topic 主角兜底：小汽车 / 小蝌蚪 / 小鼹鼠 / 小机器人 / 小云朵
-        derived_subject = self._main_character_display_label(ctx, outputs)
-        if derived_subject and derived_subject.lower() not in generic_subjects:
-            visual_constraints = self._visual_subject_constraints(derived_subject)
-            parts = [
-                f"main subject: {derived_subject}",
-                visual_constraints,
-                "same main subject across all scenes",
-                "consistent visual identity",
-                "consistent body shape",
-                "cute expressive face",
-                "storybook details",
-            ]
-            return ", ".join([part for part in parts if part])
-
-        # ✅ 4) 最终兜底才使用 character_style，避免默认 animal 覆盖真实主角
-        return (
-            f"main subject: {ctx.input.character_style} protagonist, "
-            "same main subject across all scenes, "
-            "consistent visual identity, "
-            "consistent body shape, "
-            "cute expressive face, "
-            "storybook details"
-        )
-
-        # ✅ 3) 最后兜底（旧逻辑保留）
-        return (
-            f"{ctx.input.character_style} protagonist, "
-            "same character across all scenes, "
-            "consistent facial features, "
-            "consistent body shape, "
-            "consistent outfit and visual identity, "
-            "cute expressive face, "
-            "storybook details"
-        )
+        return self._character_labels.character_consistency_anchor(ctx, outputs)
 
     def _build_story_paragraphs(
         self,
