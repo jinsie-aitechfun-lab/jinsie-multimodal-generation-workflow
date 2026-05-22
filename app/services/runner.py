@@ -1269,6 +1269,8 @@ class WorkflowRunner:
         storyboard: Dict[str, Any],
         workflow_input: Dict[str, Any],
         image_review: Dict[str, Any],
+        character_manifest: Optional[Dict[str, Any]] = None,
+        image_prompts: Optional[Any] = None,
         video_provider: str = "mock",
     ) -> Dict[str, Any]:
         normalized_run_id = str(run_id or "").strip()
@@ -1334,9 +1336,23 @@ class WorkflowRunner:
         if stored_sentence_shots:
             outputs["sentence_shots"] = stored_sentence_shots
 
+        explicit_character_manifest = (
+            dict(character_manifest)
+            if isinstance(character_manifest, dict) and character_manifest
+            else {}
+        )
+        stored_character_manifest = stored_context.get("character_manifest") or {}
+        resolved_character_manifest = (
+            explicit_character_manifest or stored_character_manifest
+        )
+        if resolved_character_manifest:
+            outputs["character_manifest"] = resolved_character_manifest
+
+        explicit_image_prompts = self._normalize_image_prompts_payload(image_prompts)
         stored_image_prompts = stored_context.get("image_prompts") or {}
-        if stored_image_prompts:
-            outputs["image_prompts"] = stored_image_prompts
+        resolved_image_prompts = explicit_image_prompts or stored_image_prompts
+        if resolved_image_prompts:
+            outputs["image_prompts"] = resolved_image_prompts
 
         previous_image_review = image_review or stored_context.get("image_review") or {}
         if previous_image_review:
@@ -1373,6 +1389,14 @@ class WorkflowRunner:
             "image_review": updated_image_review,
             "video_prompts": video_prompts,
         }
+
+    @staticmethod
+    def _normalize_image_prompts_payload(image_prompts: Any) -> Dict[str, Any]:
+        if isinstance(image_prompts, dict):
+            return dict(image_prompts)
+        if isinstance(image_prompts, list):
+            return {"prompts": list(image_prompts)}
+        return {}
 
     def _run_story(self, ctx: StepContext, outputs: Dict[str, Any]) -> Dict[str, Any]:
         return self._story_support.run_story(ctx, outputs)
