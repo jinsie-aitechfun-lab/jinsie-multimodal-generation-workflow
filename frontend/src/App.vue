@@ -69,6 +69,13 @@ type ImageReviewSelectResponse = {
   storyboard?: Record<string, unknown>
 }
 
+type ApiErrorDetail = {
+  code?: string
+  scene_id?: string
+  provider?: string
+  message?: string
+}
+
 type ReviewWaitingState =
   | 'idle'
   | 'deferred_pending'
@@ -777,6 +784,26 @@ function markPlaceholderState(
       : item,
   )
 }
+
+function formatApiErrorDetail(sceneId: string, status: number, errorBody: unknown): string {
+  const body = errorBody as Record<string, unknown> | null
+  const detailValue = body && typeof body === 'object' ? body.detail : undefined
+
+  if (typeof detailValue === 'string') {
+    return `${sceneId} 候选图生成失败：HTTP ${status} · ${detailValue}`
+  }
+
+  if (detailValue && typeof detailValue === 'object') {
+    const detail = detailValue as ApiErrorDetail
+    const code = detail.code ? ` · ${detail.code}` : ''
+    const provider = detail.provider ? ` · provider=${detail.provider}` : ''
+    const message = detail.message ? ` · ${detail.message}` : ''
+    const detailSceneId = detail.scene_id || sceneId
+    return `${detailSceneId} 候选图生成失败：HTTP ${status}${code}${provider}${message}`
+  }
+
+  return `${sceneId} 候选图生成失败：HTTP ${status} · ${JSON.stringify(errorBody)}`
+}
 async function fetchSamplesSummary() {
   const response = await fetch(`${apiBaseUrl}/v1/samples/summary`)
   if (!response.ok) {
@@ -1081,29 +1108,33 @@ async function refreshImageReviewScene(sceneId: string) {
         : workflowForm.value.videoProvider,
   }
 
-  const response = await fetch(`${apiBaseUrl}/v1/image-review/refresh-scene`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  })
+  let response: Response
+  try {
+    response = await fetch(`${apiBaseUrl}/v1/image-review/refresh-scene`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'unknown network error'
+    throw new Error(`${sceneId} 候选图生成失败：无法连接后端或请求被中断 · ${message}`)
+  }
 
   if (!response.ok) {
-    let detail = ''
+    let message = ''
     try {
       const errorBody = await response.json()
-      detail =
-        typeof errorBody?.detail === 'string'
-          ? errorBody.detail
-          : JSON.stringify(errorBody)
+      message = formatApiErrorDetail(sceneId, response.status, errorBody)
     } catch {
-      detail = await response.text().catch(() => '')
+      const detail = await response.text().catch(() => '')
+      message = `${sceneId} 候选图生成失败：HTTP ${response.status}${
+        detail ? ` · ${detail}` : ''
+      }`
     }
 
-    throw new Error(
-      `${sceneId} 候选图生成失败：HTTP ${response.status}${detail ? ` · ${detail}` : ''}`,
-    )
+    throw new Error(message)
   }
 
   const data: ImageReviewRefreshSceneResponse = await response.json()
