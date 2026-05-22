@@ -252,11 +252,13 @@ image api key is missing
 
 **发现日期**：2026-05-21（Step 6 前端真实生图可见验证时）
 
+**状态**：已修复（2026-05-22）。修复内容：`/v1/image-review/refresh-scene` 运行时异常会返回 `502` 和结构化 `detail`（`code` / `scene_id` / `provider` / `message`）；前端会优先展示结构化错误，网络中断时也会显示更明确的后端连接失败文案；已补 `scripts/verify_bug002_refresh_scene_error_detail.py` 覆盖接口错误契约。
+
 **触发条件**：
 
 `/v1/image-review/refresh-scene` 内部真实生图失败并抛出未捕获异常，例如缺少 API key、外部接口异常、超时等。
 
-**当前现象**：
+**修复前现象**：
 
 后端日志里有明确异常，例如：
 
@@ -272,7 +274,7 @@ Failed to fetch
 
 这会让用户不知道是鉴权、网络、限流还是服务端异常。
 
-**建议修复**：
+**已采用修复**：
 
 - 在 `app/main.py` 的 `refresh_image_review_scene` 接口层捕获可预期异常，返回结构化 JSON 错误，例如：
 

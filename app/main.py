@@ -50,6 +50,20 @@ def health():
     return {"status": "ok"}
 
 
+def _refresh_scene_error_detail(req: ImageReviewRefreshSceneRequest, error: Exception):
+    try:
+        provider = _runner._image_provider_name()
+    except Exception:
+        provider = "unknown"
+
+    return {
+        "code": "IMAGE_GENERATION_FAILED",
+        "scene_id": req.scene_id,
+        "provider": provider,
+        "message": str(error) or error.__class__.__name__,
+    }
+
+
 @app.get("/v1/samples/summary")
 def get_samples_summary():
     return _runner.get_samples_summary()
@@ -228,7 +242,10 @@ def refresh_image_review_scene(req: ImageReviewRefreshSceneRequest):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         print("[image-review] refresh-scene runtime error", repr(e))
-        raise
+        raise HTTPException(
+            status_code=502,
+            detail=_refresh_scene_error_detail(req, e),
+        ) from e
 
 
 from fastapi import Body
