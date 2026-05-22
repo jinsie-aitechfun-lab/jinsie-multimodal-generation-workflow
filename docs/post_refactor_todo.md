@@ -294,3 +294,107 @@ Failed to fetch
 
 - 这是 API 错误契约变更，可能影响前端和验收脚本。
 - 适合和真实生图长任务体验一起做独立修复。
+
+---
+
+## TEST-003: `acceptance_image_provider.py` 依赖后端服务运行，缺少本地前置检查
+
+**发现日期**：2026-05-22（Step 14 scene render fallback 重构验收时）
+
+**触发条件**：
+
+直接运行：
+
+```bash
+python scripts/acceptance_image_provider.py --mode pillow
+```
+
+**当前现象**：
+
+如果本地 `make api` 没有在 `127.0.0.1:8004` 启动，脚本会直接请求 `/v1/workflow/run` 并失败：
+
+```text
+ConnectionRefusedError: [Errno 61] Connection refused
+```
+
+如果在沙箱环境里直接运行，还可能先遇到本机网络访问限制：
+
+```text
+PermissionError: [Errno 1] Operation not permitted
+```
+
+**原因定位**：
+
+`scripts/acceptance_image_provider.py` 是接口级验收脚本，默认假设后端服务已经启动，但脚本没有在发请求前做 health check / readiness check，也没有给出“请先启动 make api”的友好提示。
+
+**建议修复**：
+
+- 在脚本开头请求一个轻量健康检查接口，或至少探测 `base_url` 是否可连接。
+- 如果服务未启动，输出明确提示，例如：
+
+```text
+Backend is not running at http://127.0.0.1:8004.
+Please run: make api
+```
+
+- 如无健康检查接口，可考虑补一个 `GET /health` 或 `GET /v1/health`。
+- 在文档或脚本 help 中说明接口级 acceptance 的前置条件。
+
+**为什么不在 Step 14 重构期间修**：
+
+- Step 14 目标是零行为变化地抽取 scene render fallback。
+- 修改 acceptance 脚本的运行契约属于测试体验改进，适合单独提交。
+- 本轮已用进程内脚本验证了 `_build_scene_png` 正常路径和 `_build_scene_ppm` fallback 路径。
+
+---
+
+## TEST-004: `validate_candidates_fast.py` 引用不存在的 `StepContext`
+
+**发现日期**：2026-05-22（Step 14 scene render fallback 重构验收时）
+
+**触发条件**：
+
+直接运行会先遇到项目导入路径问题：
+
+```bash
+python scripts/validate_candidates_fast.py
+```
+
+补上 `PYTHONPATH` 后继续运行：
+
+```bash
+PYTHONPATH=. python scripts/validate_candidates_fast.py
+```
+
+**当前现象**：
+
+脚本失败：
+
+```text
+ImportError: cannot import name 'StepContext' from 'app.schemas.workflow'
+```
+
+**原因定位**：
+
+`StepContext` 当前定义在 `app/services/runner.py`，不在 `app/schemas/workflow.py`。脚本里的导入已经和当前代码结构不一致：
+
+```python
+from app.schemas.workflow import WorkflowInput, StepContext
+```
+
+**建议修复**：
+
+- 把脚本导入改为当前结构，例如：
+
+```python
+from app.schemas.workflow import WorkflowInput
+from app.services.runner import StepContext, WorkflowRunner
+```
+
+- 同时在脚本开头统一补项目根目录到 `sys.path`，避免必须手动设置 `PYTHONPATH=.`
+- 修复后用它补充验证 mock image candidates 是否仍能稳定生成。
+
+**为什么不在 Step 14 重构期间修**：
+
+- 这是历史验证脚本维护问题，不是 scene render fallback 抽取引入。
+- 为了保持本次 refactor commit 只包含 runner 拆分，不混入旧脚本修复。
