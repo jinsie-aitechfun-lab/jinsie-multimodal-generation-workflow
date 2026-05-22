@@ -491,6 +491,44 @@ const reviewWaitingState = computed<ReviewWaitingState>(() => {
   return 'idle'
 })
 
+const reviewRefreshProgress = computed(() => {
+  if (!refreshingImageReview.value) {
+    return {
+      text: '',
+      percent: 0,
+    }
+  }
+
+  const queue = sceneRefreshQueue.value
+  const total = queue.length
+  if (total === 0) {
+    return {
+      text: '候选图生成中',
+      percent: 0,
+    }
+  }
+
+  const currentIndex = Math.max(queue.indexOf(sceneRefreshingId.value), 0)
+  const currentSceneId = sceneRefreshingId.value || queue[currentIndex] || ''
+  const currentPlaceholder = reviewPlaceholders.value.find(
+    (item) => item.scene_id === currentSceneId,
+  )
+  const currentSceneTitle = currentPlaceholder?.scene_title || currentSceneId
+  const completedCount = reviewPlaceholders.value.filter(
+    (item) => queue.includes(item.scene_id) && ['done', 'failed'].includes(item.state),
+  ).length
+
+  return {
+    text: `候选图生成中：${currentIndex + 1}/${total}${
+      currentSceneTitle ? ` · ${currentSceneTitle}` : ''
+    }`,
+    percent: Math.max(
+      5,
+      Math.min(100, Math.round((completedCount / total) * 100)),
+    ),
+  }
+})
+
 function assetRefPath(assetRef?: ImageAssetRef): string {
   if (!assetRef) {
     return ''
@@ -1690,6 +1728,8 @@ async function runWorkflow() {
               :api-base-url="apiBaseUrl"
               :loading="loading || refreshingImageReview"
               :selecting-scene-id="selectingSceneId || sceneRefreshingId"
+              :progress-text="reviewRefreshProgress.text"
+              :progress-percent="reviewRefreshProgress.percent"
               @select-asset="({ sceneId, assetRef }) => selectImageAsset(sceneId, assetRef)"
             />
             <WorkflowResultsPanel
