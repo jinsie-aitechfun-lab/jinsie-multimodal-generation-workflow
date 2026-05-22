@@ -19,7 +19,8 @@ check:
 		app/services/runner_story_support.py \
 		app/services/runner_story_text.py \
 		app/services/runner_storyboard.py \
-		app/services/runner_video_prompts.py
+		app/services/runner_video_prompts.py \
+		app/services/runner_voice_support.py
 
 story-provider:
 	@echo "STORY_PROVIDER=$$STORY_PROVIDER"
