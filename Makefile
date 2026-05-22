@@ -8,6 +8,7 @@ check:
 		app/services/runner_character_manifest.py \
 		app/services/runner_image_review.py \
 		app/services/runner_render_plan.py \
+		app/services/runner_scene_blueprints.py \
 		app/services/runner_scene_characters.py \
 		app/services/runner_session.py \
 		app/services/runner_story_support.py \
