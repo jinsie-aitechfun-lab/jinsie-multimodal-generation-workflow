@@ -3,11 +3,15 @@
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 from uuid import uuid4
 
-from app.services.runner import WorkflowRunner
-from app.schemas.workflow import WorkflowInput, StepContext
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from app.schemas.workflow import WorkflowInput
+from app.services.runner import StepContext, WorkflowRunner
 
 # ---------- 配置 ----------
 duration_sec = 60

@@ -352,6 +352,8 @@ Please run: make api
 
 **发现日期**：2026-05-22（Step 14 scene render fallback 重构验收时）
 
+**状态**：已修复（2026-05-22）。修复内容：`scripts/validate_candidates_fast.py` 已在脚本内补项目根目录到 `sys.path`，并改为从 `app.services.runner` 导入 `StepContext`；已用 `python scripts/validate_candidates_fast.py` 验证单角色和多角色 candidate JSON 可生成。
+
 **触发条件**：
 
 直接运行会先遇到项目导入路径问题：
@@ -366,7 +368,7 @@ python scripts/validate_candidates_fast.py
 PYTHONPATH=. python scripts/validate_candidates_fast.py
 ```
 
-**当前现象**：
+**修复前现象**：
 
 脚本失败：
 
@@ -382,7 +384,7 @@ ImportError: cannot import name 'StepContext' from 'app.schemas.workflow'
 from app.schemas.workflow import WorkflowInput, StepContext
 ```
 
-**建议修复**：
+**已采用修复**：
 
 - 把脚本导入改为当前结构，例如：
 
