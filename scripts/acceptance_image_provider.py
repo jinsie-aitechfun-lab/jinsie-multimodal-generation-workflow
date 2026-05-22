@@ -18,6 +18,34 @@ def _ok(msg: str) -> None:
     print(f"[OK] {msg}")
 
 
+def _check_backend_ready(base_url: str, timeout: int = 5) -> None:
+    try:
+        response = requests.get(f"{base_url}/health", timeout=timeout)
+    except requests.RequestException as exc:
+        _fail(
+            f"Backend is not running at {base_url}.\n"
+            f"Please run: make api\n"
+            f"Original error: {exc}"
+        )
+
+    if response.status_code != 200:
+        _fail(
+            f"Backend health check failed at {base_url}/health "
+            f"http_status={response.status_code}, body={response.text}\n"
+            f"Please run: make api"
+        )
+
+    try:
+        body = response.json()
+    except ValueError as exc:
+        _fail(f"Backend health response is not JSON: {exc}")
+
+    if body.get("status") != "ok":
+        _fail(f"Backend health response is not ok: {body}")
+
+    _ok("/health")
+
+
 def _post_json(base_url: str, path: str, payload: Dict[str, Any], timeout: int = 20) -> Dict[str, Any]:
     response = requests.post(
         f"{base_url}{path}",
@@ -197,6 +225,7 @@ def main() -> None:
     args = parser.parse_args()
 
     base_url = args.base_url.rstrip("/")
+    _check_backend_ready(base_url)
 
     if args.mode == "pillow":
         response = _run_then_refresh(base_url, "image-provider-pillow")
