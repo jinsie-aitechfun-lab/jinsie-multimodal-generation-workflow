@@ -77,7 +77,7 @@ make api
 python scripts/acceptance.py
 ```
 
-**当前现象**：
+**修复前现象**：
 
 脚本前几个 samples API 检查通过，但在 `/v1/workflow/run` 后失败：
 
@@ -405,6 +405,8 @@ from app.services.runner import StepContext, WorkflowRunner
 
 **发现日期**：2026-05-22（Step 19 image review refresh-scene 重构时）
 
+**状态**：已修复（2026-05-22）。修复内容：`WorkflowRunner.refresh_image_review(...)` 已接收 `character_manifest` / `image_prompts`，并把 list 形态的 `image_prompts` 归一化为内部使用的 `{"prompts": [...]}`；已补 `scripts/verify_bug003_image_review_refresh_contract.py` 覆盖显式 payload 和 stored context fallback。
+
 **触发条件**：
 
 调用 `app/main.py` 中的 `/v1/image-review/refresh` endpoint。
@@ -427,7 +429,7 @@ _runner.refresh_image_review(
 )
 ```
 
-但当前 `WorkflowRunner.refresh_image_review(...)` 方法签名里没有：
+但修复前 `WorkflowRunner.refresh_image_review(...)` 方法签名里没有：
 
 ```python
 character_manifest
@@ -458,20 +460,20 @@ image_prompts: Optional[List[Dict]] = None
 
 使用 image prompts，修复时也需要确认前后端实际传输结构，避免只修签名不修数据形状。
 
-**建议修复**：
+**已采用修复**：
 
 - 给 `WorkflowRunner.refresh_image_review(...)` 增加可选参数：
 
 ```python
 character_manifest: Optional[Dict[str, Any]] = None
-image_prompts: Optional[Dict[str, Any]] = None
+image_prompts: Optional[Any] = None
 ```
 
 - 在 refresh outputs 构建时，优先使用显式传入值，其次使用 session stored context：
 
 ```python
-stored_character_manifest = dict(character_manifest or {}) or stored_context.get("character_manifest") or {}
-stored_image_prompts = dict(image_prompts or {}) or stored_context.get("image_prompts") or {}
+resolved_character_manifest = explicit_character_manifest or stored_character_manifest
+resolved_image_prompts = explicit_image_prompts or stored_image_prompts
 ```
 
 - 如果前端传的是 list 形态 image prompts，需要在 API 层或 runner 层统一归一化为 `{"prompts": [...]}`。
