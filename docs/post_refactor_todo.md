@@ -301,6 +301,8 @@ Failed to fetch
 
 **发现日期**：2026-05-22（Step 14 scene render fallback 重构验收时）
 
+**状态**：已修复（2026-05-22）。修复内容：`scripts/acceptance_image_provider.py` 已在发起 workflow 请求前检查 `GET /health`；后端未启动、健康检查非 200、响应非 JSON 或 `status != ok` 时，会给出明确失败提示和 `Please run: make api` 前置条件。
+
 **触发条件**：
 
 直接运行：
@@ -309,7 +311,7 @@ Failed to fetch
 python scripts/acceptance_image_provider.py --mode pillow
 ```
 
-**当前现象**：
+**修复前现象**：
 
 如果本地 `make api` 没有在 `127.0.0.1:8004` 启动，脚本会直接请求 `/v1/workflow/run` 并失败：
 
@@ -327,7 +329,7 @@ PermissionError: [Errno 1] Operation not permitted
 
 `scripts/acceptance_image_provider.py` 是接口级验收脚本，默认假设后端服务已经启动，但脚本没有在发请求前做 health check / readiness check，也没有给出“请先启动 make api”的友好提示。
 
-**建议修复**：
+**已采用修复**：
 
 - 在脚本开头请求一个轻量健康检查接口，或至少探测 `base_url` 是否可连接。
 - 如果服务未启动，输出明确提示，例如：
