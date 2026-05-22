@@ -38,6 +38,7 @@ from app.services.runner_story_support import RunnerStorySupport
 from app.services.runner_story_text import RunnerStoryTextSupport
 from app.services.runner_storyboard import RunnerStoryboardSupport
 from app.services.runner_video_prompts import RunnerVideoPromptsSupport
+from app.services.runner_voice_support import RunnerVoiceSupport
 from app.services.image_provider_queue import ImageProviderQueue
 from app.services.image_provider_adapter import ApiImageGeneratorAdapter
 from app.services.image_provider_types import ImageGenerationTask
@@ -158,6 +159,7 @@ class WorkflowRunner:
         self._story_text = RunnerStoryTextSupport(self)
         self._storyboard = RunnerStoryboardSupport(self)
         self._video_prompts = RunnerVideoPromptsSupport(self)
+        self._voice_support = RunnerVoiceSupport(self)
 
         self._handlers = {
             "story": self._run_story,
@@ -1004,138 +1006,25 @@ class WorkflowRunner:
         return value
 
     def _normalized_voice_mode(self, voice_mode: str) -> str:
-        value = voice_mode.strip().lower()
-        if value in {"single", "multi", "character"}:
-            return value
-        return "single"
+        return self._voice_support.normalized_voice_mode(voice_mode)
 
     def _speaker_profiles(self, ctx: StepContext) -> Dict[str, str]:
-        profiles = dict(ctx.input.speaker_profiles or {})
-        return {
-            "narrator": profiles.get("narrator", ctx.input.voice_style),
-            "mother": profiles.get("mother", "warm_female"),
-            "child": profiles.get("child", "gentle_child"),
-        }
+        return self._voice_support.speaker_profiles(ctx)
 
     def _character_speaker_profiles(self, ctx: StepContext) -> Dict[str, str]:
-        profiles = dict(getattr(ctx.input, "character_speaker_profiles", {}) or {})
-        return {
-            "narrator": profiles.get("narrator", ctx.input.voice_style),
-            "main_character": profiles.get("main_character", "gentle_child"),
-            "secondary_character": profiles.get("secondary_character", "warm_male"),
-        }
+        return self._voice_support.character_speaker_profiles(ctx)
 
     def _character_speaker_name(self, ctx: StepContext) -> str:
-        main_character = str(getattr(ctx.input, "main_character", "") or "").strip()
-        if main_character:
-            normalized = main_character.lower().replace(" ", "_")
-            return normalized
-        return "main_character"
+        return self._voice_support.character_speaker_name(ctx)
 
     def _secondary_character_speaker_name(self, ctx: StepContext) -> str:
-        secondary_character = str(
-            getattr(ctx.input, "secondary_character", "") or ""
-        ).strip()
-        if secondary_character:
-            normalized = secondary_character.lower().replace(" ", "_")
-            return normalized
-        return "secondary_character"
+        return self._voice_support.secondary_character_speaker_name(ctx)
 
     def _detect_character_speaker(self, ctx: StepContext, text: str) -> str:
-        normalized = str(text or "").strip()
-        if not normalized:
-            return "narrator"
-
-        main_display = str(
-            getattr(ctx.input, "main_character_display", "") or ""
-        ).strip()
-        main_character = str(getattr(ctx.input, "main_character", "") or "").strip()
-
-        secondary_display = str(
-            getattr(ctx.input, "secondary_character_display", "") or ""
-        ).strip()
-        secondary_character = str(
-            getattr(ctx.input, "secondary_character", "") or ""
-        ).strip()
-
-        narrator_markers = [
-            "在一个",
-            "这是一个",
-            "整体上",
-            "这个故事",
-            "画面里",
-            "适合小朋友观看",
-            "适合用",
-            "展开了一段",
-        ]
-        if any(marker in normalized for marker in narrator_markers):
-            return "narrator"
-
-        if "故事的主角" in normalized:
-            return "main_character"
-
-        has_main_display = bool(main_display and main_display in normalized)
-        has_main_character = bool(
-            main_character and main_character.lower() in normalized.lower()
-        )
-        has_secondary_display = bool(
-            secondary_display and secondary_display in normalized
-        )
-        has_secondary_character = bool(
-            secondary_character and secondary_character.lower() in normalized.lower()
-        )
-
-        has_main = has_main_display or has_main_character
-        has_secondary = has_secondary_display or has_secondary_character
-
-        if has_main and has_secondary:
-            return "narrator"
-
-        if has_secondary:
-            return "secondary_character"
-
-        if has_main:
-            return "main_character"
-
-        trigger_words = [
-            "说",
-            "问",
-            "回答",
-            "喊",
-            "叫",
-            "小声说",
-            "大声说",
-            "轻声说",
-            "嘀咕",
-        ]
-        if any(word in normalized for word in trigger_words):
-            return "main_character"
-
-        return "narrator"
+        return self._voice_support.detect_character_speaker(ctx, text)
 
     def _resolve_character_speaker(self, ctx: StepContext, text: str) -> Dict[str, str]:
-        character_profiles = self._character_speaker_profiles(ctx)
-        main_character_speaker = self._character_speaker_name(ctx)
-        secondary_character_speaker = self._secondary_character_speaker_name(ctx)
-
-        detected_role = self._detect_character_speaker(ctx, text)
-
-        if detected_role == "main_character":
-            return {
-                "speaker": main_character_speaker,
-                "voice_style": character_profiles["main_character"],
-            }
-
-        if detected_role == "secondary_character":
-            return {
-                "speaker": secondary_character_speaker,
-                "voice_style": character_profiles["secondary_character"],
-            }
-
-        return {
-            "speaker": "narrator",
-            "voice_style": character_profiles["narrator"],
-        }
+        return self._voice_support.resolve_character_speaker(ctx, text)
 
     def _resolved_image_asset_ref(self, asset: Dict[str, Any]) -> Dict[str, Any]:
         selected_asset_ref = asset.get("selected_asset_ref") or {}
@@ -1173,20 +1062,14 @@ class WorkflowRunner:
         speaker: str,
         voice_style: str,
     ) -> Dict[str, Any]:
-        line: Dict[str, Any] = {
-            "line_id": line_id,
-            "speaker": speaker,
-            "voice_style": voice_style,
-            "text": text,
-        }
-
-        if scene_id is not None:
-            line["scene_id"] = scene_id
-
-        if shot_id is not None:
-            line["shot_id"] = shot_id
-
-        return line
+        return self._voice_support.build_dialogue_line(
+            line_id=line_id,
+            text=text,
+            scene_id=scene_id,
+            shot_id=shot_id,
+            speaker=speaker,
+            voice_style=voice_style,
+        )
 
     def _clean_story_topic(self, topic: str) -> str:
         return self._character_labels.clean_story_topic(topic)
