@@ -1,3 +1,4 @@
+import json
 import time
 from pathlib import Path
 
@@ -64,6 +65,39 @@ def _refresh_scene_error_detail(req: ImageReviewRefreshSceneRequest, error: Exce
     }
 
 
+def _workflow_dir(workflow_id: str) -> Path:
+    return ASSETS_DIR / "mock" / str(workflow_id)
+
+
+def _workflow_status_path(workflow_id: str) -> Path:
+    return _workflow_dir(workflow_id) / "status.json"
+
+
+def _workflow_outputs_path(workflow_id: str) -> Path:
+    return _workflow_dir(workflow_id) / "outputs.json"
+
+
+def _write_workflow_status(
+    workflow_id: str,
+    status: str,
+    *,
+    detail: dict | None = None,
+) -> dict:
+    payload = {
+        "workflow_id": workflow_id,
+        "status": status,
+        "updated_at": int(time.time()),
+    }
+    if detail:
+        payload.update(detail)
+
+    out_dir = _workflow_dir(workflow_id)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    with open(_workflow_status_path(workflow_id), "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    return payload
+
+
 @app.get("/v1/samples/summary")
 def get_samples_summary():
     return _runner.get_samples_summary()
@@ -85,24 +119,66 @@ def get_real_kling_sample(sample_id: str):
 @app.post("/v1/workflow/run")
 def run_workflow(req: dict = Body(...)):
     workflow_id = req.get("workflow_id") or f"wf_{int(time.time()*1000)}"
+    requested_steps = req.get("steps") or []
+    first_step = requested_steps[0] if requested_steps else {}
+    first_step_name = (
+        first_step.get("name") if isinstance(first_step, dict) else None
+    )
+    _write_workflow_status(
+        workflow_id,
+        "processing",
+        detail={
+            "current_step": first_step_name or "",
+            "current_step_index": 1 if first_step_name else 0,
+            "completed_steps": 0,
+            "total_steps": len(requested_steps),
+            "progress_percent": 0,
+        },
+    )
 
     def on_complete(outputs: dict):
-        import os, json
-
-        out_dir = os.path.join("assets/mock", workflow_id)
-        os.makedirs(out_dir, exist_ok=True)
-        out_path = os.path.join(out_dir, "outputs.json")
-        with open(out_path, "w", encoding="utf-8") as f:
+        out_dir = _workflow_dir(workflow_id)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        with open(_workflow_outputs_path(workflow_id), "w", encoding="utf-8") as f:
             json.dump(outputs, f, ensure_ascii=False, indent=2)
+        _write_workflow_status(workflow_id, "completed")
         print(f"[AsyncRunner] workflow {workflow_id} completed.")
 
-    from app.services.runner import WorkflowRunner
+    def on_error(error: Exception):
+        _write_workflow_status(
+            workflow_id,
+            "failed",
+            detail={"message": str(error) or error.__class__.__name__},
+        )
+
+    def on_progress(progress: dict):
+        _write_workflow_status(workflow_id, "processing", detail=progress)
 
     _runner._run_async(
-        req.dict() if hasattr(req, "dict") else dict(req), callback=on_complete
+        req.dict() if hasattr(req, "dict") else dict(req),
+        callback=on_complete,
+        error_callback=on_error,
+        progress_callback=on_progress,
     )
 
     return {"workflow_id": workflow_id, "status": "processing"}
+
+
+@app.get("/v1/workflow/status/{workflow_id}")
+def get_workflow_status(workflow_id: str):
+    status_path = _workflow_status_path(workflow_id)
+    if status_path.exists():
+        with open(status_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    if _workflow_outputs_path(workflow_id).exists():
+        return {
+            "workflow_id": workflow_id,
+            "status": "completed",
+            "updated_at": int(_workflow_outputs_path(workflow_id).stat().st_mtime),
+        }
+
+    raise HTTPException(status_code=404, detail=f"workflow not found: {workflow_id}")
 
 
 @app.post("/v1/image-review/select", response_model=ImageReviewSelectResponse)

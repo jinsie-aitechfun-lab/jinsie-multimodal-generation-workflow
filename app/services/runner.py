@@ -83,7 +83,13 @@ class WorkflowRunner:
                 subtitles=outputs.get("subtitles"),
             )
 
-    def _run_async(self, run_input: dict, callback: callable):
+    def _run_async(
+        self,
+        run_input: dict,
+        callback: callable,
+        error_callback: Optional[callable] = None,
+        progress_callback: Optional[callable] = None,
+    ):
         import threading
         import traceback
         from app.schemas.workflow import WorkflowRunRequest
@@ -91,7 +97,7 @@ class WorkflowRunner:
         def _task():
             try:
                 request = WorkflowRunRequest(**run_input)
-                result = self.run(request)
+                result = self.run(request, progress_callback=progress_callback)
                 if hasattr(result, "model_dump"):
                     payload = result.model_dump()
                 elif isinstance(result, dict):
@@ -102,6 +108,8 @@ class WorkflowRunner:
             except Exception as error:
                 print("[AsyncRunner] task failed:", error)
                 traceback.print_exc()
+                if error_callback is not None:
+                    error_callback(error)
 
         threading.Thread(
             target=_task,
@@ -723,7 +731,11 @@ class WorkflowRunner:
 
         raise RuntimeError(str(last_error) if last_error else "TTS request failed")
 
-    def run(self, req: WorkflowRunRequest) -> WorkflowRunResponse:
+    def run(
+        self,
+        req: WorkflowRunRequest,
+        progress_callback: Optional[callable] = None,
+    ) -> WorkflowRunResponse:
         run_id = f"run_{uuid4().hex[:12]}"
         ctx = StepContext(
             workflow_id=req.workflow_id,
@@ -801,11 +813,45 @@ class WorkflowRunner:
             },
         }
 
-        for step in req.steps:
+        total_steps = len(req.steps)
+
+        def emit_progress(
+            *,
+            current_step: str,
+            current_step_index: int,
+            completed_steps: int,
+        ) -> None:
+            if progress_callback is None:
+                return
+
+            try:
+                progress_callback(
+                    {
+                        "current_step": current_step,
+                        "current_step_index": current_step_index,
+                        "completed_steps": completed_steps,
+                        "total_steps": total_steps,
+                        "progress_percent": (
+                            round((completed_steps / total_steps) * 100)
+                            if total_steps
+                            else 0
+                        ),
+                    }
+                )
+            except Exception as error:
+                print(f"[WorkflowRunner] progress callback failed: {error}")
+
+        for step_index, step in enumerate(req.steps, start=1):
             name = step.name.strip()
             handler = self._handlers.get(name)
             if handler is None:
                 raise UnknownStepError(f"Unknown step: {name}")
+
+            emit_progress(
+                current_step=name,
+                current_step_index=step_index,
+                completed_steps=step_index - 1,
+            )
 
             if name == "image_assets":
                 output = self._image_review.build_deferred_image_assets_output(ctx)

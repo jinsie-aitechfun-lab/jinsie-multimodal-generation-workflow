@@ -66,6 +66,9 @@ const props = defineProps<{
   showWaitingCard?: boolean
   refreshing?: boolean
   canRefresh?: boolean
+  progressText?: string
+  progressPercent?: number
+  canCancel?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -77,6 +80,7 @@ const emit = defineEmits<{
     }
   ): void
   (e: 'refresh-review'): void
+  (e: 'cancel-refresh'): void
 }>()
 
 function toAssetHref(path?: string): string {
@@ -143,6 +147,10 @@ function onSelect(sceneId: string, assetRef: ImageAssetRef) {
 
 function onRefreshReview() {
   emit('refresh-review')
+}
+
+function onCancelRefresh() {
+  emit('cancel-refresh')
 }
 
 function placeholderStatusText(state: 'waiting' | 'refreshing' | 'done' | 'failed'): string {
@@ -251,6 +259,26 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   >
     <h2 class="section-title">Interactive Image Review</h2>
 
+    <div v-if="progressText" class="review-progress">
+      <div class="review-progress-head">
+        <div class="review-progress-copy">{{ progressText }}</div>
+        <button
+          v-if="canCancel"
+          type="button"
+          class="cancel-refresh-button"
+          @click="onCancelRefresh"
+        >
+          停止生成
+        </button>
+      </div>
+      <div class="review-progress-track" aria-hidden="true">
+        <div
+          class="review-progress-fill"
+          :style="{ width: `${Math.max(0, Math.min(100, progressPercent || 0))}%` }"
+        ></div>
+      </div>
+    </div>
+
     <article v-if="showWaitingCard && renderEntries.length === 0" class="review-waiting-card">
       <div class="waiting-preview-frame">
         <div class="placeholder-card shimmer-active">
@@ -293,6 +321,14 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                   ? '立即重试'
                   : '立即刷新结果'
             }}
+          </button>
+          <button
+            v-if="canCancel"
+            type="button"
+            class="cancel-refresh-button"
+            @click="onCancelRefresh"
+          >
+            停止生成
           </button>
         </div>
       </div>
@@ -747,6 +783,45 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   line-height: 1.4;
   color: #111827;
   text-align: center;
+}
+
+.review-progress {
+  margin: 0 0 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.review-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.review-progress-copy {
+  flex: 1;
+  min-width: 0;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: left;
+}
+
+.review-progress-track {
+  width: 100%;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+
+.review-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: #2563eb;
+  transition: width 180ms ease;
 }
 
 .summary-status {
@@ -1298,6 +1373,29 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 .refresh-button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.cancel-refresh-button {
+  appearance: none;
+  flex-shrink: 0;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #334155;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.cancel-refresh-button:hover {
+  border-color: #ef4444;
+  color: #b91c1c;
+  transform: translateY(-1px);
 }
 
 @keyframes reviewShimmer {

@@ -179,6 +179,8 @@ multi-character visual profiles
 
 **发现日期**：2026-05-21（Step 6 前端真实生图可见验证时）
 
+**状态**：部分修复（2026-05-25）。已完成第一段：新增 `GET /v1/workflow/status/{workflow_id}`，后端在异步 workflow 开始、完成、失败时写入 `status.json`；前端先轮询状态接口，只有 `completed` 后才请求一次 `outputs.json`，避免 Network 面板刷出大量 404。已补 `scripts/verify_perf001_workflow_status_contract.py` 覆盖 `processing / completed / failed` 状态契约。第二段已给 image review 分场景刷新增加当前 scene 进度文案和进度条。第三段已增加前端“停止生成”按钮，可中断当前 refresh-scene 请求并停止剩余 scene 刷新。第四段已修正 workflow 主流程等待态：未拿到 storyboard 前不再显示 0% 假进度，也不再提示用户先执行 Run。第五段已增加主 workflow 已等待时长提示，并把状态轮询窗口从约 3 分钟延长到约 30 分钟，避免真实慢接口运行中页面过早回到空状态。第六段已增加后端 step 级进度状态，前端可显示当前步骤和已完成步骤数，避免长任务阶段只能看到泛泛的“运行中”。
+
 **触发条件**：
 
 使用真实 `api_image_generator` 生成多 scene 候选图，尤其是 60 秒或 120 秒 workflow 触发 6 到 12 个 scene 逐个刷新时。
