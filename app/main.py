@@ -119,7 +119,22 @@ def get_real_kling_sample(sample_id: str):
 @app.post("/v1/workflow/run")
 def run_workflow(req: dict = Body(...)):
     workflow_id = req.get("workflow_id") or f"wf_{int(time.time()*1000)}"
-    _write_workflow_status(workflow_id, "processing")
+    requested_steps = req.get("steps") or []
+    first_step = requested_steps[0] if requested_steps else {}
+    first_step_name = (
+        first_step.get("name") if isinstance(first_step, dict) else None
+    )
+    _write_workflow_status(
+        workflow_id,
+        "processing",
+        detail={
+            "current_step": first_step_name or "",
+            "current_step_index": 1 if first_step_name else 0,
+            "completed_steps": 0,
+            "total_steps": len(requested_steps),
+            "progress_percent": 0,
+        },
+    )
 
     def on_complete(outputs: dict):
         out_dir = _workflow_dir(workflow_id)
@@ -136,10 +151,14 @@ def run_workflow(req: dict = Body(...)):
             detail={"message": str(error) or error.__class__.__name__},
         )
 
+    def on_progress(progress: dict):
+        _write_workflow_status(workflow_id, "processing", detail=progress)
+
     _runner._run_async(
         req.dict() if hasattr(req, "dict") else dict(req),
         callback=on_complete,
         error_callback=on_error,
+        progress_callback=on_progress,
     )
 
     return {"workflow_id": workflow_id, "status": "processing"}

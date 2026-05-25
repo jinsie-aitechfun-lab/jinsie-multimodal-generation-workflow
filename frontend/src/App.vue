@@ -35,6 +35,11 @@ type WorkflowStatusResponse = {
   workflow_id?: string
   status?: string
   message?: string
+  current_step?: string
+  current_step_index?: number
+  completed_steps?: number
+  total_steps?: number
+  progress_percent?: number
 }
 
 type ImageAssetRef = {
@@ -251,9 +256,21 @@ const DEFAULT_STEPS: StepName[] = [
   'final_video',
 ]
 
+function workflowStepLabel(stepName: string): string {
+  return (
+    STEP_OPTIONS.find((item) => item.value === stepName)?.label ||
+    stepName
+      .split('_')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ')
+  )
+}
+
 const loading = ref(false)
 const finalVideoRenderInFlight = ref(false)
 const errorMessage = ref('')
+const workflowRunElapsedSec = ref(0)
+const workflowStatusData = ref<WorkflowStatusResponse | null>(null)
 const resultText = ref('')
 
 const storyText = ref('')
@@ -462,9 +479,60 @@ const hasDebugContent = computed(() => {
   )
 })
 
+const workflowIsProcessing = computed(() => {
+  const response = currentWorkflowResponse.value
+  const status = String(response?.status || '').trim().toLowerCase()
+  return Boolean(loading.value || (status === 'processing' && !response?.outputs))
+})
+
+function formatElapsedTime(totalSec: number): string {
+  const normalizedSec = Math.max(0, Math.floor(totalSec))
+  const minutes = Math.floor(normalizedSec / 60)
+  const seconds = normalizedSec % 60
+  if (minutes <= 0) {
+    return `${seconds} 秒`
+  }
+  return `${minutes} 分 ${seconds} 秒`
+}
+
+const workflowRunStatusMessage = computed(() => {
+  if (!workflowIsProcessing.value) {
+    return ''
+  }
+
+  const elapsed = formatElapsedTime(workflowRunElapsedSec.value)
+  const statusData = workflowStatusData.value
+  const currentStep = String(statusData?.current_step || '').trim()
+  const currentStepLabel = currentStep ? workflowStepLabel(currentStep) : ''
+  const completedSteps =
+    typeof statusData?.completed_steps === 'number' ? statusData.completed_steps : null
+  const totalSteps =
+    typeof statusData?.total_steps === 'number' ? statusData.total_steps : null
+  const stepCopy =
+    currentStepLabel && totalSteps
+      ? `当前步骤：${currentStepLabel}（${completedSteps ?? 0}/${totalSteps}）。`
+      : currentStepLabel
+        ? `当前步骤：${currentStepLabel}。`
+        : ''
+
+  if (workflowRunElapsedSec.value < 60) {
+    return `Workflow 运行中，已等待 ${elapsed}。${stepCopy}`
+  }
+
+  return `Workflow 仍在运行，已等待 ${elapsed}。${stepCopy}真实接口较慢时可能需要几分钟，请保持页面打开。`
+})
+
+const workflowStatusProgress = computed(() => {
+  const progress = workflowStatusData.value?.progress_percent
+  if (typeof progress !== 'number' || !Number.isFinite(progress)) {
+    return null
+  }
+  return Math.max(0, Math.min(100, Math.round(progress)))
+})
+
 const reviewEmptyStateText = computed(() => {
-  if (loading.value) {
-    return 'Workflow 正在运行，故事和分镜生成完成后会自动在 Review 页展示选图和结果。'
+  if (workflowIsProcessing.value) {
+    return `${workflowRunStatusMessage.value} 故事和分镜生成完成后会自动在 Review 页展示选图和结果。`
   }
   return '请先在 Run 页签执行一次 workflow，然后回到 Review 查看选图和结果。'
 })
@@ -1333,7 +1401,7 @@ function scheduleImageReviewAutoRefreshIfNeeded() {
 
 async function waitForAsyncWorkflowOutputs(
   workflowId: string,
-  maxAttempts = 120,
+  maxAttempts = 1200,
   intervalMs = 1500,
 ): Promise<WorkflowRunResponse | null> {
   const normalizedWorkflowId = String(workflowId || '').trim()
@@ -1341,8 +1409,12 @@ async function waitForAsyncWorkflowOutputs(
     return null
   }
 
+  const startedAt = Date.now()
+
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    workflowRunElapsedSec.value = Math.floor((Date.now() - startedAt) / 1000)
     await new Promise((resolve) => window.setTimeout(resolve, intervalMs))
+    workflowRunElapsedSec.value = Math.floor((Date.now() - startedAt) / 1000)
 
     const statusResponse = await fetch(
       `${apiBaseUrl}/v1/workflow/status/${encodeURIComponent(normalizedWorkflowId)}?ts=${Date.now()}`,
@@ -1357,6 +1429,7 @@ async function waitForAsyncWorkflowOutputs(
     }
 
     const statusData = (await statusResponse.json()) as WorkflowStatusResponse
+    workflowStatusData.value = statusData
     const status = String(statusData.status || '').trim().toLowerCase()
 
     if (status === 'processing') {
@@ -1382,7 +1455,9 @@ async function waitForAsyncWorkflowOutputs(
     return (await outputsResponse.json()) as WorkflowRunResponse
   }
 
-  return null
+  throw new Error(
+    `Workflow 仍在处理中，前端已等待 ${formatElapsedTime(workflowRunElapsedSec.value)}。请稍后刷新状态或检查后端日志。`,
+  )
 }
 
 async function runWorkflow() {
@@ -1607,6 +1682,16 @@ async function runWorkflow() {
 
   // ✅ 点击 Run 立刻给 UI 反馈（跨 tab 都能感知）
   loading.value = true
+  workflowRunElapsedSec.value = 0
+  workflowStatusData.value = {
+    workflow_id: workflowId,
+    status: 'processing',
+    current_step: stepsSet.values().next().value || '',
+    current_step_index: 1,
+    completed_steps: 0,
+    total_steps: stepsSet.size,
+    progress_percent: 0,
+  }
   errorMessage.value = ''
   finalVideoText.value = ''
   finalVideoUrl.value = ''
@@ -1726,7 +1811,7 @@ async function runWorkflow() {
         />
       </section>
       <section v-if="activeTab === 'review'">
-        <template v-if="hasReviewContent || loading || refreshingImageReview || finalVideoRenderInFlight">
+        <template v-if="hasReviewContent || workflowIsProcessing || refreshingImageReview || finalVideoRenderInFlight">
           <section class="result-panel final-video-hero">
             <div class="render-mode-switch">
               <span class="label">Render Mode:</span>
@@ -1737,7 +1822,9 @@ async function runWorkflow() {
               :final-video-text="finalVideoText"
               :workflow-response="currentWorkflowResponse"
               :render-in-flight="finalVideoRenderInFlight"
-              :loading="loading || refreshingImageReview || finalVideoRenderInFlight"
+              :loading="workflowIsProcessing || refreshingImageReview || finalVideoRenderInFlight"
+              :workflow-status-message="workflowRunStatusMessage"
+              :workflow-status-progress="workflowStatusProgress"
               @render="renderFinalVideoIfReady(currentWorkflowResponse || {})"
               :show-render-button="workflowForm.renderMode === 'auto'"
             />
