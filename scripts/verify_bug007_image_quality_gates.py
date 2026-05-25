@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import tempfile
+import os
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -21,6 +22,8 @@ def _write_candidate(path: Path, color: tuple[int, int, int]) -> None:
 
 
 def main() -> int:
+    os.environ["IMAGE_REVIEW_VISION_ENABLED"] = "false"
+
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)
         first = tmp_dir / "scene_01__candidate_a.png"

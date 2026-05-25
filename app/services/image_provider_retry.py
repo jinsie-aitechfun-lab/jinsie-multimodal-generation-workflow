@@ -40,6 +40,11 @@ def should_retry(error: Exception, config: RetryConfig) -> bool:
             "http error 502",
             "http error 503",
             "http error 504",
+            "http 500",
+            "http 502",
+            "http 503",
+            "http 504",
+            "request failed: unknown error",
         ]
         if any(marker in message for marker in network_markers):
             return True
