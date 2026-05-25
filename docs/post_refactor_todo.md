@@ -677,11 +677,22 @@ resolved_image_prompts = explicit_image_prompts or stored_image_prompts
 - 移除 selector 对 `candidate_a` 的轻微加分，避免同分或接近同分时主动偏向第一张。
 - 补充 `verify_bug007_image_quality_gates.py` 覆盖多角色场景会写入 advisory-only quality gate，且不会把 auto 模式变成强制人工审核；同时覆盖当 `candidate_b` 评分更高时会选中第二张。
 
+**已采用修复（可选视觉评分层）**：
+
+- 新增 `image_visual_verifier.py`，支持 OpenAI-compatible vision chat completions，对候选图返回视觉分数、缺失角色、禁用特征、角色串扰等结构化结果。
+- `select_best_candidate` 支持可注入的 `visual_verifier`，也支持通过 `IMAGE_REVIEW_VISION_ENABLED=true`、`IMAGE_REVIEW_VISION_MODEL` / `OPENAI_VISION_MODEL` / `VISION_MODEL` 启用真实视觉模型。
+- 视觉 verifier 启用时，visual score 会强影响候选排序；缺少必需角色、出现 forbidden traits、角色 anatomy leakage 会强扣分。
+- 未启用视觉模型时，继续使用现有 metadata / 颜色 / 对比度筛选，不影响本地测试和 auto 模式。
+- 补充 `verify_bug007_visual_scoring_contract.py`，证明视觉评分能把更符合要求的第二张候选图选出来，并保留失败候选的视觉失败原因。
+- `candidate_asset_refs` 保留原始 A/B 顺序返回，避免前端把已选中项排到第一张后误导用户以为 selector 永远默认选第一张。
+
 **仍需后续跟进**：
 
 - 当前 selector 确实在运行，会写入 `selection_source=auto_filter`、`candidate_scores` 和 `selection_reason`，但它仍不是视觉语义筛选器。
-- 它无法识别“兔子背壳”“缺少乌龟”“乌龟长兔耳朵”等真实画面语义错误；这类能力必须接视觉模型评审、对象检测、参考图一致性或 provider 原生 character consistency。
-- 如果候选图在颜色/对比度等基础分数上差别不明显，selector 仍可能看起来像默认选择第一张；这不是合格的产品级图片筛选。
+- 视觉模型未配置时，它无法识别“兔子背壳”“缺少乌龟”“乌龟长兔耳朵”等真实画面语义错误。
+- 后续真实前端验证需要打开视觉模型配置，确认真实 provider 的视觉评分质量、成本、速度和失败重试策略。
+- 如果需要更稳的产品效果，还需要把低视觉评分候选自动重试，而不仅是排序降权。
+- 2026-05-25 真实前端复测显示：候选图已不再永远选择原始第一张，A/B 标签和展示顺序也已更清晰；但自动选图质量仍不稳定，存在“选中的候选图不是最符合故事画面/角色一致性”的情况。后续需要继续调视觉评审 prompt、评分阈值、失败重试策略，必要时把低分候选图直接自动重生，而不是只在现有候选里排序。
 
 **优先级**：P1。建议在 BUG-004 / BUG-005 后修，否则筛选器缺少可靠评分目标。
 
@@ -741,3 +752,33 @@ resolved_image_prompts = explicit_image_prompts or stored_image_prompts
 - 补充 Step 8 验证覆盖 `有6秒` 清理和质量检测。
 
 **优先级**：P0。已修，后续真实 workflow 复测确认。
+
+---
+
+## BUG-010: 图片 provider HTTP 500/502 没有稳定进入重试
+
+**发现日期**：2026-05-25（真实前端验证候选图生成失败时）
+
+**触发条件**：
+
+真实 `api_image_generator` 调用 SiliconFlow 生成候选图时，外部服务返回 `HTTP 500` / `HTTP 502`，错误体包含 `Request failed: Unknown error`。
+
+**当前现象**：
+
+前端看到 `/v1/image-review/refresh-scene` 返回 `502`，候选图生成失败；Network 面板里能看到部分场景成功、部分场景失败。用户只能在 Review 里重试失败场景或稍后再试。
+
+**原因定位**：
+
+重试机制一直存在：生成请求和图片下载都有 `run_with_retry`，真实 API 生成请求最多 6 次指数退避重试。但 provider adapter 抛出的错误文案是 `SiliconFlow image generation failed with HTTP 500: ...`，旧的重试规则只匹配 `http error 500` / `http error 502`，没有匹配 `http 500` / `http 502`，导致部分外部服务临时错误可能没有按预期进入重试。
+
+**已采用修复**：
+
+- `should_retry` 增加对 `http 500` / `http 502` / `http 503` / `http 504` 和 `Request failed: Unknown error` 的识别。
+- 补充 `verify_bug010_image_provider_retry_contract.py`，覆盖 SiliconFlow `HTTP 500`、接口层 `HTTP 502`、下载 `HTTP 504` 应被重试，`HTTP 400` 不应被当作临时错误重试。
+
+**仍需后续跟进**：
+
+- 如果外部 provider 连续 6 次仍返回 500/502，当前设计会把该 scene 标记失败，前端提示用户在 Review 中重试失败场景。
+- 后续可以增加“失败场景稍后自动补偿重试 / 分批 retry queue”，但要控制成本、等待时间和用户可见状态，不能无限重试。
+
+**优先级**：P0。真实接口不稳定时直接影响候选图完成率。

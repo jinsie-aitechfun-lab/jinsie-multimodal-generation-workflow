@@ -202,6 +202,30 @@ function candidateStatusCopy(state: 'waiting' | 'refreshing' | 'done' | 'failed'
   return `等待生成候选图 ${index}`
 }
 
+function candidateLabel(candidate: ImageAssetRef, fallbackIndex: number): string {
+  const fallbackLabel = String.fromCharCode('A'.charCodeAt(0) + fallbackIndex)
+  const source = [
+    candidate.file_name,
+    candidate.relative_path,
+    candidate.public_url,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+
+  const match = source.match(/candidate[_-]([a-z0-9]+)/)
+  if (!match) {
+    return fallbackLabel
+  }
+
+  const suffix = match[1]
+  if (suffix.length === 1 && /[a-z]/.test(suffix)) {
+    return suffix.toUpperCase()
+  }
+
+  return suffix
+}
+
 const renderEntries = computed<ReviewRenderEntry[]>(() => {
   const itemMap = new Map<string, ImageReviewSelectedAsset>()
 
@@ -485,7 +509,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 
                   <div class="preview-info-panel">
                     <div class="preview-info-head">
-                      <span class="preview-title">候选图 {{ index === 0 ? 'A' : 'B' }}</span>
+                      <span class="preview-title">候选图 {{ candidateLabel(candidate, index) }}</span>
                       <span
                         class="preview-state-tag"
                         :class="

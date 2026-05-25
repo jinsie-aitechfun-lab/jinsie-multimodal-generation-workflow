@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
+from app.services.image_visual_verifier import build_env_visual_verifier
 
 try:
     from PIL import Image, ImageStat
@@ -25,6 +27,7 @@ COLOR_KEYWORDS = {
 }
 
 MIN_PASS_SCORE = 45.0
+VisualVerifier = Callable[..., Dict[str, Any]]
 
 
 def _normalize_text(value: Any) -> str:
@@ -50,7 +53,11 @@ def _required_character_labels(characters: List[Dict[str, Any]]) -> List[str]:
     return labels
 
 
-def _quality_gates(characters: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _quality_gates(
+    characters: List[Dict[str, Any]],
+    *,
+    visual_verifier_available: bool = False,
+) -> Dict[str, Any]:
     labels = _required_character_labels(characters)
     multi_character_scene = len(labels) >= 2
     risk_reasons: List[str] = []
@@ -59,16 +66,17 @@ def _quality_gates(characters: List[Dict[str, Any]]) -> Dict[str, Any]:
         risk_reasons.extend(
             [
                 "multi_character_scene",
-                "metadata_only_candidate_filter",
-                "visual_verifier_not_available",
+                "visual_verifier_available"
+                if visual_verifier_available
+                else "visual_verifier_not_available",
             ]
         )
 
     return {
         "required_character_labels": labels,
         "multi_character_scene": multi_character_scene,
-        "visual_verifier_available": False,
-        "advisory_only": True,
+        "visual_verifier_available": visual_verifier_available,
+        "advisory_only": not visual_verifier_available,
         "risk_reasons": risk_reasons,
     }
 
@@ -240,6 +248,7 @@ def _score_candidate(
     prompt: str,
     characters: List[Dict[str, Any]],
     quality_gates: Dict[str, Any],
+    visual_verifier: Optional[VisualVerifier] = None,
 ) -> Dict[str, Any]:
     path = _candidate_path(candidate)
     reasons: List[str] = []
@@ -337,6 +346,42 @@ def _score_candidate(
     if quality_gates.get("multi_character_scene"):
         reasons.append("metadata_quality_gate_multi_character_scene")
 
+    visual_review: Dict[str, Any] = {}
+    if image is not None and visual_verifier is not None:
+        try:
+            visual_review = visual_verifier(
+                image_path=path,
+                prompt=prompt,
+                characters=characters,
+            )
+            visual_score = float(visual_review.get("score") or 0.0)
+            visual_score = max(0.0, min(100.0, visual_score))
+            visual_delta = (visual_score - 50.0) * 0.9
+            score += visual_delta
+            reasons.append(f"visual_score:{visual_score:.1f}")
+            reasons.append(f"visual_delta:{visual_delta:.1f}")
+
+            missing = visual_review.get("missing_required_characters") or []
+            forbidden = visual_review.get("forbidden_trait_issues") or []
+            anatomy = visual_review.get("anatomy_leakage_issues") or []
+            if missing:
+                score -= 35.0
+                reasons.append("visual_missing_required_characters")
+            if forbidden:
+                score -= 30.0
+                reasons.append("visual_forbidden_trait_issues")
+            if anatomy:
+                score -= 30.0
+                reasons.append("visual_anatomy_leakage_issues")
+            if visual_review.get("passed") is False:
+                reasons.append("visual_review_failed")
+        except Exception as error:  # pragma: no cover - network/provider dependent
+            visual_review = {
+                "enabled": True,
+                "error": type(error).__name__,
+            }
+            reasons.append(f"visual_review_error:{type(error).__name__}")
+
     passed = score >= MIN_PASS_SCORE
 
     return {
@@ -351,6 +396,7 @@ def _score_candidate(
         "forbidden_matched_colors": forbidden_matched_colors,
         "forbidden_color_ratios": forbidden_color_ratios,
         "quality_gates": quality_gates,
+        "visual_review": visual_review,
     }
 
 
@@ -359,9 +405,19 @@ def select_best_candidate(
     candidate_asset_refs: List[Dict[str, Any]],
     prompt: str,
     characters: List[Dict[str, Any]],
+    visual_verifier: Optional[VisualVerifier] = None,
 ) -> Dict[str, Any]:
     scored: List[Dict[str, Any]] = []
-    quality_gates = _quality_gates(characters)
+    original_order_refs: List[Dict[str, Any]] = []
+    if visual_verifier is None:
+        env_verifier = build_env_visual_verifier()
+        if env_verifier is not None:
+            visual_verifier = env_verifier.evaluate
+
+    quality_gates = _quality_gates(
+        characters,
+        visual_verifier_available=visual_verifier is not None,
+    )
 
     for candidate in candidate_asset_refs or []:
         if not isinstance(candidate, dict):
@@ -371,12 +427,16 @@ def select_best_candidate(
             prompt=prompt,
             characters=characters,
             quality_gates=quality_gates,
+            visual_verifier=visual_verifier,
         )
         enriched_ref = dict(candidate)
         enriched_ref["auto_filter_score"] = score_item["score"]
         enriched_ref["auto_filter_passed"] = score_item["passed"]
         enriched_ref["auto_filter_reasons"] = score_item["reasons"]
+        if score_item.get("visual_review"):
+            enriched_ref["visual_review"] = score_item["visual_review"]
         score_item["asset_ref"] = enriched_ref
+        original_order_refs.append(enriched_ref)
         scored.append(score_item)
 
     if not scored:
@@ -414,10 +474,11 @@ def select_best_candidate(
                 "matched_colors": item.get("matched_colors") or [],
                 "color_ratios": item.get("color_ratios") or {},
                 "quality_gates": item.get("quality_gates") or {},
+                "visual_review": item.get("visual_review") or {},
             }
             for item in scored
         ],
-        "candidate_asset_refs": [dict(item.get("asset_ref") or {}) for item in scored],
+        "candidate_asset_refs": [dict(item) for item in original_order_refs],
         "best_score": best_score,
         "should_retry": best_score < MIN_PASS_SCORE,
         "quality_gates": quality_gates,

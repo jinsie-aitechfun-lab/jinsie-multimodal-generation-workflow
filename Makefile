@@ -7,9 +7,12 @@ check:
 		app/services/runner_audio_render_support.py \
 		app/services/runner_character_labels.py \
 		app/services/runner_character_manifest.py \
+		app/services/image_candidate_selector.py \
+		app/services/image_provider_retry.py \
 		app/services/runner_image_asset_refs.py \
 		app/services/runner_image_prompts_support.py \
 		app/services/runner_image_review.py \
+		app/services/image_visual_verifier.py \
 		app/services/runner_render_plan.py \
 		app/services/runner_scene_blueprints.py \
 		app/services/runner_scene_characters.py \
