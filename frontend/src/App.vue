@@ -1133,6 +1133,7 @@ async function renderFinalVideoIfReady(baseResponse: WorkflowRunResponse) {
   if (finalVideoEnabled && finalVideoStatus === 'generated') return
   if (scenes.length === 0) return
   if (imageAssetList.length < scenes.length) return
+
   // 允许无声视频
   // 只有在 audio_segments 存在且明确 enabled=true 但没有生成时才阻止
   const audioEnabled = audioSegments?.enabled === true

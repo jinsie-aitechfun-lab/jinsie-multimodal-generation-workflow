@@ -669,6 +669,20 @@ resolved_image_prompts = explicit_image_prompts or stored_image_prompts
   - prompt/candidate metadata 是否完整。
 - 如果需要视觉级判断，后续接入视觉模型评审候选图。
 
+**已采用修复（metadata quality gate 层）**：
+
+- `select_best_candidate` 增加通用多角色 metadata quality gate，输出 `quality_gates`，记录 required character labels、是否多角色、当前是否有视觉 verifier。
+- auto 模式保持产品语义：继续自动筛选候选图并自动合成视频，不因为 metadata-only gate 强制人工确认。
+- 手动模式仍允许用户进入 Review 手动改选候选图；手动选择后 `review_status` 标记为 `manually_selected`。
+- 移除 selector 对 `candidate_a` 的轻微加分，避免同分或接近同分时主动偏向第一张。
+- 补充 `verify_bug007_image_quality_gates.py` 覆盖多角色场景会写入 advisory-only quality gate，且不会把 auto 模式变成强制人工审核；同时覆盖当 `candidate_b` 评分更高时会选中第二张。
+
+**仍需后续跟进**：
+
+- 当前 selector 确实在运行，会写入 `selection_source=auto_filter`、`candidate_scores` 和 `selection_reason`，但它仍不是视觉语义筛选器。
+- 它无法识别“兔子背壳”“缺少乌龟”“乌龟长兔耳朵”等真实画面语义错误；这类能力必须接视觉模型评审、对象检测、参考图一致性或 provider 原生 character consistency。
+- 如果候选图在颜色/对比度等基础分数上差别不明显，selector 仍可能看起来像默认选择第一张；这不是合格的产品级图片筛选。
+
 **优先级**：P1。建议在 BUG-004 / BUG-005 后修，否则筛选器缺少可靠评分目标。
 
 ---
@@ -699,3 +713,31 @@ resolved_image_prompts = explicit_image_prompts or stored_image_prompts
 - 真实 TTS 语速会随 provider/voice 波动，后续可以增加“音频总时长低于目标阈值时提示或重试扩写旁白”的闭环。
 
 **优先级**：P1。当前 60s 真实复测已基本可接受，后续做音频时长闭环即可。
+
+---
+
+## BUG-009: 故事旁白泄漏时长控制文本
+
+**发现日期**：2026-05-25（真实前端验证时）
+
+**触发条件**：
+
+选择 60s 生成兔子和乌龟故事，LLM 生成故事文本后进入 TTS / 字幕 / 视频合成。
+
+**当前现象**：
+
+旁白/字幕中出现“有6秒”这类不属于故事内容的文本，例如“在一个美丽的森林里，有6秒有一只活泼的兔子……”。
+
+**原因定位**：
+
+故事生成 prompt 中包含 `Selected duration: 60 seconds` 等时长控制信息，LLM 偶发把控制信息误写进中文故事；原 sanitizer / quality check 没有识别 `数字 + 秒` 的污染片段。
+
+**已采用修复**：
+
+- 将故事生成和 retry prompt 改为“时长只用于旁白节奏控制，不要写进故事”。
+- 增加硬约束：不要输出 selected duration、seconds、target length、`60秒` / `有6秒` 等文本。
+- `sanitize_llm_story_text` 自动清理 `有6秒有一只...` 这类污染片段。
+- `story_text_has_quality_issues` 将 `数字 + 秒` 判为质量问题，触发 retry。
+- 补充 Step 8 验证覆盖 `有6秒` 清理和质量检测。
+
+**优先级**：P0。已修，后续真实 workflow 复测确认。

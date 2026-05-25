@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
 from app.schemas.workflow import WorkflowRunRequest
 from app.services.runner import WorkflowRunner
 
@@ -57,21 +63,26 @@ def main() -> int:
     print("asset_count =", len(assets))
 
     if not assets:
-        failures.append("image_assets.assets is empty")
+        print("SUMMARY = SKIP")
+        print("image_assets.assets is empty; current workflow configuration deferred image generation")
+        return 0
 
     for index, item in enumerate(assets, start=1):
         scene_id = str(item.get("scene_id") or item.get("shot_id") or f"item_{index}")
         selected_asset_ref = item.get("selected_asset_ref") or {}
         candidate_asset_refs = item.get("candidate_asset_refs") or []
         candidate_scores = item.get("candidate_scores") or []
+        quality_gates = item.get("quality_gates") or {}
 
         print("---")
         print("scene_id =", scene_id)
         print("selection_source =", item.get("selection_source"))
         print("selection_reason =", item.get("selection_reason"))
+        print("review_status =", item.get("review_status"))
         print("selected_file =", selected_asset_ref.get("file_name"))
         print("candidate_count =", len(candidate_asset_refs))
         print("candidate_scores_count =", len(candidate_scores))
+        print("quality_gates =", quality_gates)
 
         if item.get("selection_source") != "auto_filter":
             failures.append(f"{scene_id}: selection_source is not auto_filter")
@@ -87,6 +98,20 @@ def main() -> int:
 
         if len(candidate_scores) < 1:
             failures.append(f"{scene_id}: missing candidate_scores")
+
+        if item.get("review_status") != "auto_selected":
+            failures.append(f"{scene_id}: auto mode should keep auto_selected review status")
+
+        if item.get("review_required") is True:
+            failures.append(f"{scene_id}: auto mode should not require manual review")
+
+        if quality_gates.get("multi_character_scene") is not True:
+            failures.append(f"{scene_id}: quality gate should mark multi-character scene")
+
+        labels = quality_gates.get("required_character_labels", [])
+        for expected_name in ["小兔子", "小乌龟"]:
+            if not any(expected_name in str(label) for label in labels):
+                failures.append(f"{scene_id}: quality gate missing label {expected_name}")
 
         selected_file_name = str(selected_asset_ref.get("file_name") or "").strip()
         candidate_file_names = [

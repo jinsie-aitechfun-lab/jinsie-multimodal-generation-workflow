@@ -195,6 +195,9 @@ def story_text_has_quality_issues(text: str) -> bool:
     if any(token in lower for token in suspicious_tokens):
         return True
 
+    if re.search(r"\d+\s*秒", normalized):
+        return True
+
     has_chinese = re.search(r"[\u4e00-\u9fff]", normalized) is not None
     if has_chinese and re.search(r"[A-Za-z]{2,}", normalized):
         return True
@@ -665,7 +668,7 @@ def retry_story_with_llm(
         f"Topic: {topic}\n"
         f"Tone: {tone_label}\n"
         f"Audience: {audience_label}\n"
-        f"Selected duration: {story_plan['duration_sec']} seconds\n"
+        f"Narration pacing target only: about {story_plan['duration_sec']} seconds. Do not mention this duration in the story.\n"
         f"Target Chinese story length: {target_min}-{target_max} Chinese characters, about {target_chars} Chinese characters.\n"
         f"Validation failure reasons: {reason_text}\n"
         f"Original story character count: {original_char_count}\n"
@@ -676,6 +679,7 @@ def retry_story_with_llm(
         f"- Do not include JSON, markdown, headings, scene numbers, bullet points, or labels.\n"
         f"- Do not include English/Latin words such as mexico, user, assistant, system, role, undefined, null, nan.\n"
         f"- Do not include scene labels such as Scene 1, Scene 2, or any numbered outline.\n"
+        f"- Do not include the selected duration, seconds, target length, or phrases such as 60秒 / 有6秒 in the story.\n"
         f"- Do not include garbled fragments such as 小ěr or repeated corrupted characters.\n"
         f"- Keep the story meaningfully related to the topic.\n"
         f"- Keep a complete beginning, development, problem or discovery, action, resolution, and warm ending.\n"
