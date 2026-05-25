@@ -1287,6 +1287,34 @@ async function refreshImageReviewScene(sceneId: string, signal?: AbortSignal) {
   markPlaceholderState(sceneId, 'done')
 }
 
+async function retryImageReviewScene(sceneId: string) {
+  if (!sceneId || refreshingImageReview.value || sceneRefreshingId.value) {
+    return
+  }
+
+  errorMessage.value = ''
+  imageReviewRefreshAbortController = new AbortController()
+
+  try {
+    await refreshImageReviewScene(sceneId, imageReviewRefreshAbortController.signal)
+    if (workflowForm.value.renderMode === 'auto' && currentWorkflowResponse.value) {
+      void renderFinalVideoIfReady(currentWorkflowResponse.value)
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      markPlaceholderState(sceneId, 'waiting')
+      return
+    }
+
+    const message = error instanceof Error ? error.message : '候选图场景重试失败'
+    markPlaceholderState(sceneId, 'failed', message)
+    errorMessage.value = message
+  } finally {
+    sceneRefreshingId.value = ''
+    imageReviewRefreshAbortController = null
+  }
+}
+
 function cancelImageReviewRefresh() {
   if (!refreshingImageReview.value) {
     return
@@ -1870,6 +1898,7 @@ async function runWorkflow() {
               :progress-percent="reviewRefreshProgress.percent"
               :can-cancel="refreshingImageReview"
               @select-asset="({ sceneId, assetRef }) => selectImageAsset(sceneId, assetRef)"
+              @retry-scene="retryImageReviewScene"
               @cancel-refresh="cancelImageReviewRefresh"
             />
             <WorkflowResultsPanel
