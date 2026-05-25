@@ -83,27 +83,38 @@ def main() -> int:
 
     required_block = support.scene_character_required_presence_block(OUTPUTS, SCENE)
     assert "required scene characters: 小兔子 and 小乌龟" in required_block
+    assert "not a solo portrait" in required_block
     assert "include all of 小兔子 and 小乌龟 together" in required_block
-    assert "小兔子 remains the main protagonist" in required_block
-    assert "小乌龟 are required supporting characters" in required_block
+    assert "小兔子 may lead the action" in required_block
+    assert "小乌龟 must be clearly visible near 小兔子" in required_block
 
     prompt_block = support.scene_character_prompt_block(OUTPUTS, SCENE)
     assert "scene cast lock" in prompt_block
     assert "name: 小兔子" in prompt_block
     assert "must keep: long upright ears, red scarf" in prompt_block
     assert "must avoid: no rabbit ears" in prompt_block
+    assert "cross-character must avoid" in prompt_block
+    assert "no turtle shell" in prompt_block
+    assert "no long upright rabbit ears" in prompt_block
 
     negative_block = support.scene_character_negative_block(OUTPUTS, SCENE)
     assert negative_block.startswith("subject negative constraints: ")
     assert "no turtle shell" in negative_block
+    assert "小兔子: no turtle shell" in negative_block
+    assert "小乌龟: no rabbit ears" in negative_block
     assert "missing required scene character" in negative_block
-    assert negative_block.count("no turtle shell") == 1
+    assert negative_block.count("no turtle shell") == 2
 
     character_ids = support.character_ids_from_bindings(
         SCENE["characters"]
         + [{"character_id": "char_primary_01"}, {"character_id": ""}, "bad-item"]
     )
     assert character_ids == ["char_primary_01", "char_secondary_01"], character_ids
+    character_names = support.character_names_from_bindings(
+        SCENE["characters"]
+        + [{"display_name": "小兔子"}, {"species": "bad"}, "bad-item"]
+    )
+    assert character_names == ["小兔子", "小乌龟", "bad"], character_names
 
     print("[OK] scene character bindings")
     print("[OK] scene character prompt contracts")

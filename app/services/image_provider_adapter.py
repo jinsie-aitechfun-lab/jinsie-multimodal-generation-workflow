@@ -55,6 +55,7 @@ class ApiImageGeneratorAdapter:
             prompt=task.prompt,
             scene=task.prompt_metadata.get("scene") or {},
             scene_index=int(task.prompt_metadata.get("scene_index") or 1),
+            negative_prompt=str(task.prompt_metadata.get("negative_prompt") or ""),
         )
 
     def _generate_api_image_bytes(
@@ -63,6 +64,7 @@ class ApiImageGeneratorAdapter:
         prompt: str,
         scene: dict[str, Any],
         scene_index: int,
+        negative_prompt: str = "",
     ) -> bytes:
         if self._runner._force_image_rate_limit():
             raise RuntimeError("HTTP 429: IPM limit reached (forced for local testing)")
@@ -84,13 +86,17 @@ class ApiImageGeneratorAdapter:
         if not image_size:
             image_size = "1280x720"
 
-        negative_prompt = os.getenv(
+        default_negative_prompt = os.getenv(
             "SILICONFLOW_IMAGE_NEGATIVE_PROMPT",
             (
                 "low quality, blurry, distorted anatomy, broken composition, "
                 "extra limbs, duplicated subject, unreadable details"
             ),
         ).strip()
+        negative_prompt = self._merge_negative_prompt(
+            default_negative_prompt,
+            negative_prompt,
+        )
 
         num_inference_steps_raw = os.getenv("SILICONFLOW_IMAGE_STEPS", "20").strip()
         guidance_scale_raw = os.getenv("SILICONFLOW_IMAGE_GUIDANCE", "7.5").strip()
@@ -205,6 +211,19 @@ class ApiImageGeneratorAdapter:
         raise RuntimeError(
             f"Generated image download returned empty bytes for scene {scene_index}"
         )
+
+    def _merge_negative_prompt(self, *parts: str) -> str:
+        merged: list[str] = []
+        seen = set()
+
+        for part in parts:
+            for item in str(part or "").replace("；", ",").replace(";", ",").split(","):
+                value = item.strip()
+                if value and value not in seen:
+                    merged.append(value)
+                    seen.add(value)
+
+        return ", ".join(merged)
 
     def _request_generation_response_text(
         self,

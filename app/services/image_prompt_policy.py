@@ -109,7 +109,7 @@ def build_character_separation_block(outputs: Dict[str, Any]) -> str:
         "character separation: keep every character visually distinct",
         "do not transfer visual traits, body parts, clothing, shell, ears, tail, or accessories between characters",
         "each character must keep only its own defined appearance traits",
-        "supporting characters may appear, but they must not change the main subject identity",
+        "each required character must remain a separate readable character, not a background hint",
     ]
 
     for item in characters:
@@ -162,10 +162,10 @@ def build_scene_action_binding_block(
         parts.append(f"must match this story moment: {story}")
 
     parts.append(
-        "keep the main subject visually consistent while changing only pose, framing, background, and action"
+        "keep every required character visually consistent while changing only pose, framing, background, and action"
     )
     parts.append(
-        "do not let supporting characters or props become the main subject of this image"
+        "do not let props or background replace any required character in this image"
     )
 
     return "; ".join(parts)

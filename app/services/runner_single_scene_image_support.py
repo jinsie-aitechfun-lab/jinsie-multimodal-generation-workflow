@@ -12,6 +12,94 @@ class RunnerSingleSceneImageSupport:
     def __init__(self, runner: Any) -> None:
         self._runner = runner
 
+    def scene_negative_prompt_from_characters(
+        self,
+        characters: List[Dict[str, Any]],
+    ) -> str:
+        family_text = " ".join(
+            " ".join(
+                [
+                    str(character.get("display_name") or ""),
+                    str(character.get("species") or ""),
+                    str(character.get("visual_identity") or ""),
+                ]
+            )
+            for character in characters
+            if isinstance(character, dict)
+        ).lower()
+        has_rabbit = any(keyword in family_text for keyword in ["rabbit", "bunny", "兔"])
+        has_turtle = any(
+            keyword in family_text for keyword in ["turtle", "tortoise", "乌龟", "海龟", "龟"]
+        )
+
+        negatives: List[str] = [
+            "hybrid rabbit turtle creature",
+            "rabbit with turtle shell",
+            "rabbit wearing turtle shell",
+            "shell on rabbit body",
+            "turtle with rabbit ears",
+            "turtle with bunny ears",
+            "turtle with long upright ears",
+            "turtle with external ears",
+            "mixed animal anatomy",
+            "merged characters",
+            "one body containing multiple characters",
+            "missing required character",
+            "solo portrait when multiple characters are required",
+            "malformed animal anatomy",
+            "unclear character species",
+        ]
+
+        for character in characters:
+            if not isinstance(character, dict):
+                continue
+
+            forbidden_traits = character.get("forbidden_traits") or []
+            if isinstance(forbidden_traits, str):
+                forbidden_traits = [
+                    item.strip()
+                    for item in forbidden_traits.replace("；", ",")
+                    .replace(";", ",")
+                    .split(",")
+                    if item.strip()
+                ]
+
+            if isinstance(forbidden_traits, list):
+                for item in forbidden_traits:
+                    value = str(item or "").strip()
+                    lowered = value.lower()
+                    conflicts_with_required_rabbit = has_rabbit and (
+                        "rabbit ear" in lowered
+                        or "bunny ear" in lowered
+                        or "upright ear" in lowered
+                        or "external ear" in lowered
+                        or "rabbit tail" in lowered
+                        or "rabbit body" in lowered
+                        or "rabbit fur" in lowered
+                    )
+                    conflicts_with_required_turtle = has_turtle and (
+                        "turtle shell" in lowered
+                        or "hard round shell" in lowered
+                        or "turtle body" in lowered
+                        or "turtle leg" in lowered
+                        or "turtle skin" in lowered
+                    )
+                    if value and not (
+                        conflicts_with_required_rabbit
+                        or conflicts_with_required_turtle
+                    ):
+                        negatives.append(value)
+
+        deduped: List[str] = []
+        seen = set()
+        for item in negatives:
+            value = str(item or "").strip()
+            if value and value not in seen:
+                deduped.append(value)
+                seen.add(value)
+
+        return ", ".join(deduped)
+
     def run_single_scene_pillow_image_asset(
         self,
         *,
@@ -115,6 +203,9 @@ class RunnerSingleSceneImageSupport:
             prompt_item=prompt_item,
             fallback_scene_title=str(scene.get("scene_title") or "").strip(),
         )
+        negative_prompt = self.scene_negative_prompt_from_characters(
+            asset_meta["characters"]
+        )
 
         candidate_asset_refs: List[Dict[str, Any]] = []
         adapter = ApiImageGeneratorAdapter(runner)
@@ -148,6 +239,7 @@ class RunnerSingleSceneImageSupport:
                     "ctx": ctx,
                     "scene": candidate_scene,
                     "scene_index": scene_index + candidate_index,
+                    "negative_prompt": negative_prompt,
                 },
             )
 
@@ -169,6 +261,7 @@ class RunnerSingleSceneImageSupport:
                     "public_url": task.public_url,
                     "mime_type": "image/png",
                     "provider": "api_image_generator",
+                    "negative_prompt": negative_prompt,
                 }
             )
 
@@ -186,6 +279,7 @@ class RunnerSingleSceneImageSupport:
             "characters": asset_meta["characters"],
             "character_ids": asset_meta["character_ids"],
             "prompt": base_prompt,
+            "negative_prompt": negative_prompt,
             "selected_asset_ref": dict(selected_asset_ref),
             "file_name": selected_asset_ref["file_name"],
             "relative_path": selected_asset_ref["relative_path"],

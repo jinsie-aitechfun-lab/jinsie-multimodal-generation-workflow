@@ -491,3 +491,211 @@ resolved_image_prompts = explicit_image_prompts or stored_image_prompts
 
 - Step 19 只做 `refresh_image_review_scene` 的等价搬移。
 - 这个问题属于现有 API 调用契约不一致，修复会改变 `/v1/image-review/refresh` 行为，适合单独提交。
+
+---
+
+## BUG-004: 多角色主题生成图缺少关键角色
+
+**发现日期**：2026-05-25（真实生图前端验证时）
+
+**触发条件**：
+
+主题包含多个核心角色，例如：
+
+```text
+写一个关于兔子和乌龟赛跑的故事
+```
+
+**当前现象**：
+
+生成出的图片里经常只有兔子，没有乌龟；即使故事和分镜中包含乌龟，候选图也可能没有把乌龟画出来。
+
+**用户可见影响**：
+
+- 故事主题和画面内容不一致。
+- 多角色故事无法成立，后续视频画面也会缺失关键角色。
+- 用户会认为系统没有理解主题。
+
+**可能原因**：
+
+- scene 的 `characters` / `character_ids` 没有稳定传入真实生图 prompt。
+- image prompt 对“每个 scene 必须出现哪些角色”的约束不够强。
+- prompt 对 supporting / secondary 角色的权重不足，模型倾向只画主角。
+- 自动选图器没有把“缺少角色”作为硬性失败条件。
+
+**建议修复**：
+
+- 在 image prompt 中增加 scene-level required character list，例如 `required_characters`。
+- 对每个 scene 明确写入“必须同时出现：兔子、乌龟”，而不是只在全局角色 profile 里描述。
+- 自动筛选器需要检测/评估候选图是否包含所有 required characters；缺失关键角色时不能选中。
+- 补进程内验证：`兔子和乌龟赛跑` 的 storyboard / image_prompts / image_assets contract 中，每个相关 scene 都保留两个角色约束。
+
+**已采用修复（prompt contract 层）**：
+
+- `image_prompts` 每条 prompt 增加 `required_character_ids` / `required_character_names` metadata。
+- 多角色 scene prompt 保留 `scene cast lock` / `required scene characters` 强约束，明确要求所有角色同框且不可省略。
+- 补充 `verify_bug004_005_multi_character_prompt_contract.py`，覆盖非结构化主题“兔子和乌龟赛跑”的角色 manifest、storyboard、prompt 必需角色约束。
+- 真实出图复测发现模型仍被“主角兔子”前置提示带偏后，已把多角色 required characters 约束前置到 prompt 开头，并增加 `not a solo portrait` 防单角色肖像约束。
+
+**仍需后续跟进**：
+
+- 真实图片候选是否真的包含全部角色，需要 BUG-007 的自动筛选器接入 required character metadata 后继续验证。
+
+**优先级**：P0。建议下一步优先修。
+
+---
+
+## BUG-005: 多角色身份串扰，角色特征互相污染
+
+**发现日期**：2026-05-25（真实生图前端验证时）
+
+**触发条件**：
+
+主题或结构化角色中同时包含外形差异大的角色，例如兔子和乌龟。
+
+**当前现象**：
+
+- 乌龟会长兔耳朵。
+- 兔子会出现乌龟壳。
+- 不同角色的物种、服装、身体特征互相串。
+- 2026-05-25 真实复测：即使 prompt / negative prompt 已强化，仍出现“蓝色兔耳乌龟”“兔子背乌龟壳”“画面中出现额外小乌龟壳”等明显串扰。
+
+**用户可见影响**：
+
+画面中角色身份混乱，用户无法判断哪个角色是谁；多角色故事的视频连续性被破坏。
+
+**可能原因**：
+
+- 角色 identity lock 只描述了角色本身，但没有足够强的 negative constraints。
+- prompt 没有明确写“兔子不能有壳 / 乌龟不能有兔耳朵”等跨角色 forbidden traits。
+- 候选筛选器没有识别 identity leakage。
+
+**建议修复**：
+
+- 从 `character_manifest` 生成 cross-character negative constraints：
+  - 兔子：must_avoid turtle shell。
+  - 乌龟：must_avoid rabbit ears。
+- 每个 scene prompt 同时包含 `must_keep` 与 `must_avoid`。
+- 筛选器把“角色特征串扰”作为强扣分或失败条件。
+- 补验证脚本覆盖兔子/乌龟互斥特征写入 prompt。
+
+**已采用修复（prompt contract 层）**：
+
+- 多角色 scene 自动生成跨角色 negative constraints，例如：
+  - 兔子不能有 turtle shell / turtle body / short turtle legs。
+  - 乌龟不能有 rabbit ears / fluffy rabbit tail / rabbit body。
+- `scene_character_prompt_block` 写入 `cross-character must avoid`。
+- `scene_character_negative_block` 写入带角色名的串扰负面约束，避免不同角色身体特征互相污染。
+- 为兔子 / 乌龟 deterministic visual profile 增加固定外观、固定配饰和互斥特征，避免 LLM profile 失败时回落到过于泛化的“same color palette”描述。
+- 真实复测仍出现兔子有壳、乌龟有耳朵后，已把 `hybrid rabbit turtle creature`、`rabbit with turtle shell`、`turtle with rabbit ears` 等约束写入 API 生图请求的 `negative_prompt` 字段。
+- 真实复测仍出现乌龟长耳朵后，继续强化正向结构约束：乌龟必须是 `earless rounded turtle head / no external ears`，只有兔子有长耳，只有乌龟有壳；同时避免在全局 `negative_prompt` 中写入裸的 `rabbit ears` / `turtle shell`，只禁止 `turtle with rabbit ears`、`rabbit with turtle shell` 这类串扰组合，避免把合法特征也负向掉。
+
+**仍需后续跟进**：
+
+- 仅靠继续叠加 prompt / negative prompt 已经接近收益上限，真实 provider 仍可能把兔子和乌龟的身体特征混合。
+- 下一步应转为“视觉级失败检测 + 自动重试”：检测到乌龟长兔耳、兔子背龟壳、缺少必需角色、额外混合物种角色时，候选图直接判失败并重新生成。
+- 如果 provider 支持 reference image / seed / character consistency，应引入每个角色的参考图或稳定 seed；纯文本 prompt 很难保证多图、多角色一致。
+- BUG-007 的候选评分/筛选逻辑必须把这些 forbidden traits 作为硬扣分或失败条件，不能继续默认选择第一张。
+
+**优先级**：P0。prompt contract 已做基础修复，但真实画面仍未达产品可用标准；下一步优先做视觉检测/自动重试或参考图一致性方案。
+
+---
+
+## BUG-006: 角色跨图不一致，装饰、服装、外貌和颜色漂移
+
+**发现日期**：2026-05-25（真实生图前端验证时）
+
+**触发条件**：
+
+同一个 workflow 生成多个 scene / candidate 图。
+
+**当前现象**：
+
+同一角色在不同图片里的装饰、衣服、外貌甚至颜色不一致；例如同一只兔子在不同场景中颜色、服装、配饰变化明显。2026-05-25 真实复测中，同一组兔子/乌龟仍会出现颜色、体型和物种特征漂移。
+
+**用户可见影响**：
+
+多张图无法构成连续故事，最终视频像是多个不同角色拼接。
+
+**可能原因**：
+
+- 角色视觉 profile 不够具体，缺少稳定的 color palette / outfit / accessory 锁定字段。
+- 每张图 prompt 没有重复引用完整角色视觉锚点。
+- 真实生图 provider 没有参考图或 seed 锁定，纯文本 prompt 难以保持跨图一致。
+
+**建议修复**：
+
+- 为每个角色生成稳定视觉签名：
+  - 主色、辅色、衣服、配饰、体型、面部特征。
+- 每个 image prompt 都注入同一份角色视觉签名。
+- 如果 provider 支持参考图/seed，后续增加 reference image 或 seed 策略。
+- 在 `image_review` 中展示角色一致性风险，便于人工选择。
+- 仅靠当前文本 prompt 不能稳定保证跨图一致性，建议把 reference image / seed / 视觉评审重试作为后续主方案。
+
+**优先级**：P0。现在已影响最终视频观感，建议和 BUG-005 的视觉检测/自动重试一起做。
+
+---
+
+## BUG-007: 图片自动筛选器没有生效，总是默认选择第一张
+
+**发现日期**：2026-05-25（真实生图前端验证时）
+
+**触发条件**：
+
+每个 scene 生成多张候选图后进入自动筛选流程。
+
+**当前现象**：
+
+自动筛选器看起来没有真正按质量/角色匹配评分，总是默认选择第一张候选图。
+
+**用户可见影响**：
+
+- 如果第一张缺角色或角色串扰，系统仍会自动选中。
+- “候选图筛选”功能名存实亡，用户需要手动检查每一张。
+
+**可能原因**：
+
+- 当前筛选器可能只做占位逻辑或 fallback 到第一张。
+- 没有从候选图本身提取可评分信号。
+- 没有把 prompt contract（required characters / forbidden traits）接入评分。
+
+**建议修复**：
+
+- 先明确当前 selector 的真实逻辑，补一个验证证明它不是固定选第一张。
+- 如果当前只能基于 metadata，至少按以下规则排序：
+  - provider 成功状态。
+  - required characters 是否完整。
+  - 是否包含 identity leakage 风险。
+  - prompt/candidate metadata 是否完整。
+- 如果需要视觉级判断，后续接入视觉模型评审候选图。
+
+**优先级**：P1。建议在 BUG-004 / BUG-005 后修，否则筛选器缺少可靠评分目标。
+
+---
+
+## BUG-008: 60s 主题最终音频/视频只有约 40s
+
+**发现日期**：2026-05-25（真实前端验证时）
+
+**触发条件**：
+
+选择 `duration_sec=60`，开启旁白/音频并生成最终视频。
+
+**当前现象**：
+
+最终视频跟随真实 TTS 音频时长，曾只有约 40s；不是 final video 合成层被硬截断，而是故事/分镜旁白文本总量偏短，真实音频读完后视频自然结束。后续一次修复把 60s 文本目标调到 `420-520` 字，真实验证又生成约 1:25；再调到 `300-380` 字后真实验证仍约 1:14；最终调到 `250-310` 字后真实复测约 0:58，基本符合 60s 预期。
+
+**原因定位**：
+
+60s story plan 的目标中文字符数原本只有 `190-260`，对真实 TTS 来说偏短，容易生成约 40s 左右的旁白；但 `420-520` 会把真实音频拉到约 80s+，`300-380` 仍会拉到 70s+，需要按真实 TTS 结果做中间校准。
+
+**已采用修复**：
+
+- 将 60s story plan 调整为 `250-310` 中文字符，目标约 `280` 字，按真实 TTS 验证结果从过长配置继续回调到更接近 60s 的范围。
+- 补充 Step 8 验证，确保 60s template fallback story 达到新的最低文本长度。
+
+**仍需后续跟进**：
+
+- 真实 TTS 语速会随 provider/voice 波动，后续可以增加“音频总时长低于目标阈值时提示或重试扩写旁白”的闭环。
+
+**优先级**：P1。当前 60s 真实复测已基本可接受，后续做音频时长闭环即可。

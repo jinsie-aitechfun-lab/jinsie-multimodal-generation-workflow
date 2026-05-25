@@ -50,9 +50,9 @@ def main() -> int:
     assert runner._duration_story_plan(60) == {
         "duration_sec": 60,
         "scene_count": 6,
-        "target_min_chars": 190,
-        "target_max_chars": 260,
-        "target_chars": 230,
+        "target_min_chars": 250,
+        "target_max_chars": 310,
+        "target_chars": 280,
     }
     assert runner._duration_story_plan(90)["scene_count"] == 12
 
@@ -95,6 +95,25 @@ def main() -> int:
     assert len(paragraphs) == 7
     assert "小兔子" in paragraphs[0]
     assert "小乌龟" in paragraphs[0]
+
+    workflow_input_60 = WorkflowInput(
+        topic="小兔子和小乌龟一起过河",
+        duration_sec=60,
+        audio_enabled=True,
+        voiceover_enabled=True,
+    )
+    ctx_60 = runner._build_step_context(
+        workflow_id="verify-step8-60",
+        session_id="verify-session",
+        run_id="run_verify_step8_60",
+        workflow_input=workflow_input_60,
+    )
+    story_60 = runner._run_story(ctx_60, outputs)
+    story_plan_60 = runner._duration_story_plan(60)
+    assert (
+        runner._story_text_char_count(story_60["text"])
+        >= story_plan_60["target_min_chars"] - 10
+    )
 
     print("[OK] story duration plan helpers")
     print("[OK] story sanitization helpers")

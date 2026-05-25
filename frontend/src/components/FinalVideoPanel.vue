@@ -48,6 +48,7 @@ const props = defineProps<{
   workflowResponse: UnknownRecord | null
   renderInFlight: boolean
   loading: boolean
+  errorMessage?: string
   workflowStatusMessage?: string
   workflowStatusProgress?: number | null
 }>()
@@ -73,9 +74,11 @@ const finalVideo = computed(() => asObj(outputs.value?.final_video))
 const indeterminate = computed(() => {
   if (props.finalVideoUrl) return false
   if (props.renderInFlight || finalStatus.value === 'rendering') return false
-  if (workflowInFlight.value && props.workflowStatusProgress != null) return false
+  if (workflowInFlight.value && props.workflowStatusProgress != null) {
+    return props.workflowStatusProgress <= 0
+  }
   // runWorkflow 请求中，或 refresh 正在跑，但还没有任何 image_assets
-  return props.loading  && imageAssetCount.value === 0
+  return props.loading && imageAssetCount.value === 0
 })
 
 const sceneCount = computed(() => {
@@ -95,6 +98,10 @@ const audioItemCount = computed(() => {
 
 const finalStatus = computed(() => asStr(finalVideo.value?.status).toLowerCase())
 const workflowInFlight = computed(() => props.loading && !outputs.value)
+const blockingErrorMessage = computed(() => asStr(props.errorMessage).trim())
+const hasBlockingError = computed(() => {
+  return Boolean(blockingErrorMessage.value && !props.loading && !props.finalVideoUrl)
+})
 
 const assetsReady = computed(() => {
   return sceneCount.value > 0 && imageAssetCount.value >= sceneCount.value
@@ -113,6 +120,7 @@ const progressPct = computed(() => {
 })
 
 const progressLabel = computed(() => {
+  if (hasBlockingError.value) return `候选图生成失败（${imageAssetCount.value}/${sceneCount.value || '?'}）`
   if (workflowInFlight.value) return '处理中…'
   if (indeterminate.value) return '准备中…'
   if (props.finalVideoUrl) return '已生成'
@@ -123,6 +131,7 @@ const progressLabel = computed(() => {
 })
 
 const placeholderTitle = computed(() => {
+  if (hasBlockingError.value) return '候选图生成失败'
   if (workflowInFlight.value) return '正在生成分镜'
   if (props.renderInFlight || finalStatus.value === 'rendering') return '正在生成视频'
   if (!sceneCount.value) return '等待分镜'
@@ -131,6 +140,9 @@ const placeholderTitle = computed(() => {
 })
 
 const placeholderDesc = computed(() => {
+  if (hasBlockingError.value) {
+    return blockingErrorMessage.value
+  }
   if (workflowInFlight.value) {
     return props.workflowStatusMessage || 'Workflow 已提交，后端正在生成故事与分镜。完成后会自动进入候选图与视频准备阶段。'
   }

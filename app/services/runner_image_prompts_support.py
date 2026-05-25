@@ -111,6 +111,22 @@ class RunnerImagePromptsSupport:
                 text = str(shot.get("text") or "").strip()
 
                 scene_data = scene_map.get(scene_id) or {}
+                enriched_scene_characters = (
+                    runner._scene_characters.enriched_scene_characters_from_manifest(
+                        outputs,
+                        scene_data,
+                    )
+                )
+                required_character_ids = (
+                    runner._scene_characters.character_ids_from_bindings(
+                        enriched_scene_characters
+                    )
+                )
+                required_character_names = (
+                    runner._scene_characters.character_names_from_bindings(
+                        enriched_scene_characters
+                    )
+                )
                 character_block = runner._scene_characters.scene_character_prompt_block(
                     outputs, scene_data
                 )
@@ -143,23 +159,36 @@ class RunnerImagePromptsSupport:
                 if not character_visual_profile:
                     character_visual_profile = policy_blocks.get("profile") or {}
 
-                prompt = ", ".join(
-                    part
-                    for part in [
-                        global_style_anchor,
-                        character_anchor,
-                        policy_blocks.get("visual_profile_block"),
-                        policy_blocks.get("character_visual_profiles_block"),
-                        character_block,
+                is_multi_character_scene = len(required_character_names) >= 2
+                prompt_parts = [
+                    global_style_anchor,
+                    character_anchor,
+                    policy_blocks.get("visual_profile_block"),
+                    policy_blocks.get("character_visual_profiles_block"),
+                    character_block,
+                    scene_required_presence_block,
+                    policy_blocks.get("character_separation_block"),
+                    shot_anchor,
+                    policy_blocks.get("scene_action_block"),
+                    story_anchor,
+                    policy_blocks.get("subject_negative_block"),
+                    negative_block,
+                ]
+                if is_multi_character_scene:
+                    prompt_parts = [
                         scene_required_presence_block,
+                        character_block,
+                        policy_blocks.get("character_visual_profiles_block"),
                         policy_blocks.get("character_separation_block"),
+                        global_style_anchor,
                         shot_anchor,
                         policy_blocks.get("scene_action_block"),
                         story_anchor,
-                        policy_blocks.get("subject_negative_block"),
                         negative_block,
                     ]
-                    if part
+
+                prompt = ", ".join(
+                    part for part in prompt_parts if part
                 )
 
                 prompts.append(
@@ -168,6 +197,8 @@ class RunnerImagePromptsSupport:
                         "scene_id": scene_id,
                         "scene_title": scene_title,
                         "characters": scene_data.get("characters") or [],
+                        "required_character_ids": required_character_ids,
+                        "required_character_names": required_character_names,
                         "prompt": prompt,
                         "character_anchor": character_anchor_metadata,
                         "reference_images": character_anchor_metadata.get(
@@ -192,6 +223,20 @@ class RunnerImagePromptsSupport:
             shot_type = str(scene.get("shot_type", "medium")).strip()
             transition = str(scene.get("transition", "fade")).strip()
             scene_title = str(scene.get("scene_title", "")).strip()
+            enriched_scene_characters = (
+                runner._scene_characters.enriched_scene_characters_from_manifest(
+                    outputs,
+                    scene,
+                )
+            )
+            required_character_ids = runner._scene_characters.character_ids_from_bindings(
+                enriched_scene_characters
+            )
+            required_character_names = (
+                runner._scene_characters.character_names_from_bindings(
+                    enriched_scene_characters
+                )
+            )
 
             character_block = runner._scene_characters.scene_character_prompt_block(
                 outputs, scene
@@ -225,33 +270,45 @@ class RunnerImagePromptsSupport:
             if not character_visual_profile:
                 character_visual_profile = policy_blocks.get("profile") or {}
 
-            prompt = ", ".join(
-                part
-                for part in [
-                    global_style_anchor,
-                    character_anchor,
-                    policy_blocks.get("visual_profile_block"),
-                    policy_blocks.get("character_visual_profiles_block"),
-                    character_block,
+            is_multi_character_scene = len(required_character_names) >= 2
+            prompt_parts = [
+                global_style_anchor,
+                character_anchor,
+                policy_blocks.get("visual_profile_block"),
+                policy_blocks.get("character_visual_profiles_block"),
+                character_block,
+                scene_required_presence_block,
+                policy_blocks.get("character_separation_block"),
+                scene_anchor,
+                policy_blocks.get("scene_action_block"),
+                story_anchor,
+                policy_blocks.get("subject_negative_block"),
+                negative_block,
+            ]
+            if is_multi_character_scene:
+                prompt_parts = [
                     scene_required_presence_block,
+                    character_block,
+                    policy_blocks.get("character_visual_profiles_block"),
                     policy_blocks.get("character_separation_block"),
+                    global_style_anchor,
                     scene_anchor,
                     policy_blocks.get("scene_action_block"),
                     story_anchor,
-                    policy_blocks.get("subject_negative_block"),
                     negative_block,
                 ]
-                if part
+
+            prompt = ", ".join(
+                part for part in prompt_parts if part
             )
 
             prompts.append(
                 {
                     "scene_id": scene_id,
                     "scene_title": scene_title,
-                    "characters": runner._scene_characters.enriched_scene_characters_from_manifest(
-                        outputs,
-                        scene,
-                    ),
+                    "characters": enriched_scene_characters,
+                    "required_character_ids": required_character_ids,
+                    "required_character_names": required_character_names,
                     "prompt": prompt,
                     "character_anchor": character_anchor_metadata,
                     "reference_images": character_anchor_metadata.get(

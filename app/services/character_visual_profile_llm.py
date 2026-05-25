@@ -471,6 +471,81 @@ def _deterministic_profile_payload(subject: str) -> Dict[str, Any]:
             "confidence": "fallback",
         }
 
+    if "兔" in value or "rabbit" in value.lower() or "bunny" in value.lower():
+        return {
+            "subject": value,
+            "visual_identity": (
+                "A small white storybook rabbit with long upright ears, soft pink inner ears, "
+                "a round fluffy tail, bright friendly eyes, and a small red scarf as its fixed "
+                "signature accessory. Only this rabbit has long upright ears."
+            ),
+            "must_keep": [
+                "small white storybook rabbit",
+                "long upright rabbit ears",
+                "only the rabbit has long upright ears",
+                "soft pink inner ears",
+                "round fluffy rabbit tail",
+                "bright friendly eyes",
+                "small red scarf",
+            ],
+            "must_avoid": [
+                "turtle shell",
+                "hard round shell",
+                "shell on rabbit body",
+                "turtle body",
+                "short turtle legs",
+                "green turtle skin",
+                "rabbit replaced by turtle",
+            ],
+            "required_presence_rules": [
+                "the rabbit must be clearly visible as a separate character",
+                "do not merge the rabbit with a turtle or shell body",
+            ],
+            "confidence": "fallback",
+        }
+
+    if (
+        "乌龟" in value
+        or "海龟" in value
+        or "龟" in value
+        or "turtle" in value.lower()
+        or "tortoise" in value.lower()
+    ):
+        return {
+            "subject": value,
+            "visual_identity": (
+                "A small green storybook turtle with a round green shell, olive green body, "
+                "an earless rounded turtle head with no external ears, short turtle legs, "
+                "gentle round eyes, and a small blue neck scarf as its fixed signature accessory."
+            ),
+            "must_keep": [
+                "small green storybook turtle",
+                "round green turtle shell",
+                "olive green turtle body",
+                "earless rounded turtle head",
+                "no external ears on the turtle",
+                "short turtle legs",
+                "gentle round eyes",
+                "small blue neck scarf",
+            ],
+            "must_avoid": [
+                "rabbit ears",
+                "bunny ears",
+                "long upright ears",
+                "external ears",
+                "fluffy rabbit tail",
+                "rabbit body",
+                "white rabbit fur",
+                "turtle replaced by rabbit",
+            ],
+            "required_presence_rules": [
+                "the turtle must be clearly visible as a separate character",
+                "do not merge the turtle with rabbit ears or rabbit body",
+                "draw the turtle as an earless turtle, never as a rabbit-like animal",
+            ],
+            "confidence": "fallback",
+        }
+
     return {
         "subject": value,
         "visual_identity": (
@@ -479,7 +554,7 @@ def _deterministic_profile_payload(subject: str) -> Dict[str, Any]:
             "and one small signature accessory that stays the same in every scene."
         ),
         "must_keep": [
-            f"same main subject: {value}",
+            f"same character identity: {value}",
             "same fixed color palette",
             "same body shape",
             "same facial features",
@@ -742,4 +817,3 @@ def build_llm_character_visual_profiles(
         "count": len(profiles),
         "profiles": profiles,
     }
-

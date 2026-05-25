@@ -107,6 +107,66 @@ def _known_risk_rules(subject: str) -> Dict[str, List[str]]:
             ],
         }
 
+    if "兔" in value or "rabbit" in value.lower() or "bunny" in value.lower():
+        return {
+            "must_keep": [
+                "small white storybook rabbit",
+                "long upright rabbit ears with soft pink inner ears",
+                "only the rabbit has long upright ears",
+                "round fluffy rabbit tail",
+                "soft white fur",
+                "small red scarf",
+            ],
+            "must_avoid": [
+                "turtle shell",
+                "hard round shell",
+                "shell on rabbit body",
+                "turtle body",
+                "short turtle legs",
+                "green turtle skin",
+                "rabbit replaced by turtle",
+            ],
+            "required_presence_rules": [
+                "the rabbit must be clearly visible as a separate character",
+                "do not merge the rabbit with a turtle or shell body",
+            ],
+        }
+
+    if (
+        "乌龟" in value
+        or "海龟" in value
+        or "龟" in value
+        or "turtle" in value.lower()
+        or "tortoise" in value.lower()
+    ):
+        return {
+            "must_keep": [
+                "small green storybook turtle",
+                "round green turtle shell",
+                "olive green turtle body",
+                "earless rounded turtle head",
+                "no external ears on the turtle",
+                "short turtle legs",
+                "gentle round eyes",
+                "small blue neck scarf",
+            ],
+            "must_avoid": [
+                "rabbit ears",
+                "bunny ears",
+                "long upright ears",
+                "external ears",
+                "fluffy rabbit tail",
+                "rabbit body",
+                "white rabbit fur",
+                "turtle replaced by rabbit",
+            ],
+            "required_presence_rules": [
+                "the turtle must be clearly visible as a separate character",
+                "do not merge the turtle with rabbit ears or rabbit body",
+                "draw the turtle as an earless turtle, never as a rabbit-like animal",
+            ],
+        }
+
     return {
         "must_keep": [],
         "must_avoid": [],
@@ -125,7 +185,7 @@ def _generic_visual_identity(subject: str) -> str:
 
 def _generic_must_keep(subject: str) -> List[str]:
     return [
-        f"same main subject: {subject}",
+        f"same character identity: {subject}",
         "same body shape",
         "same color palette",
         "same facial features",

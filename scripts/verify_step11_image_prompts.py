@@ -198,11 +198,20 @@ def main() -> int:
     assert "scene action binding" in first_scene_prompt
     assert "subject negative constraints" in first_scene_prompt
     assert "no turtle shell" in first_scene_prompt
+    assert "cross-character must avoid" in first_scene_prompt
+    assert scene_result["prompts"][0]["required_character_ids"] == [
+        "char_primary_01",
+        "char_secondary_01",
+    ]
+    assert scene_result["prompts"][0]["required_character_names"] == [
+        "小兔子",
+        "小乌龟",
+    ]
     first_character = scene_result["prompts"][0]["characters"][0]
     assert first_character["character_id"] == "char_primary_01"
     assert first_character["display_name"] == "小兔子"
     assert "long upright ears" in first_character["signature_traits"]
-    assert "same main subject: 小兔子" in first_character["signature_traits"]
+    assert "same character identity: 小兔子" in first_character["signature_traits"]
     assert "no turtle shell" in first_character["forbidden_traits"]
     assert first_character["visual_identity"]
 
@@ -214,6 +223,14 @@ def main() -> int:
     assert len(shot_result["prompts"]) == 2
     assert shot_result["prompts"][0]["shot_id"] == "shot_01"
     assert shot_result["prompts"][0]["characters"] == SCENES[0]["characters"]
+    assert shot_result["prompts"][0]["required_character_ids"] == [
+        "char_primary_01",
+        "char_secondary_01",
+    ]
+    assert shot_result["prompts"][0]["required_character_names"] == [
+        "小兔子",
+        "小乌龟",
+    ]
     assert "story context: 小兔子和小乌龟来到河边。" in shot_result["prompts"][0][
         "prompt"
     ]
