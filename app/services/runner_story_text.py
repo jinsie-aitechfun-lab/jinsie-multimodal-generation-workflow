@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Optional
 
 from app.services.story_retry_policy import story_text_has_quality_issues
@@ -98,6 +99,13 @@ class RunnerStoryTextSupport:
             lines.append(item)
 
         cleaned = "\n".join(lines).strip()
+        cleaned = re.sub(
+            r"(?<=[，。！？、；：\s])有\s*\d+\s*秒(?=[\u4e00-\u9fff])",
+            "",
+            cleaned,
+        )
+        cleaned = re.sub(r"^有\s*\d+\s*秒(?=[\u4e00-\u9fff])", "", cleaned)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
 
         # If the model echoed a noisy title/prefix before the first real story
         # sentence, keep text from the first reasonably long Chinese narrative

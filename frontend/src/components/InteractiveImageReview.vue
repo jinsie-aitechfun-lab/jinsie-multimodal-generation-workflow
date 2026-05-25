@@ -179,6 +179,16 @@ function selectedStatusCopy(state: 'waiting' | 'refreshing' | 'done' | 'failed')
   return '等待生成当前预览图'
 }
 
+function reviewStatusLabel(status: string | undefined): string {
+  if (status === 'manually_selected') {
+    return '已手动确认'
+  }
+  if (status === 'auto_selected') {
+    return '已自动选择'
+  }
+  return status || '-'
+}
+
 function candidateStatusCopy(state: 'waiting' | 'refreshing' | 'done' | 'failed', index: 'A' | 'B'): string {
   if (state === 'refreshing') {
     return `正在生成候选图 ${index}`
@@ -363,7 +373,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
           <span class="summary-status">
             {{
               entry.kind === 'item'
-                ? (selectingSceneId === entry.sceneId ? '切换中' : entry.item.review_status || '-')
+                ? (selectingSceneId === entry.sceneId ? '切换中' : reviewStatusLabel(entry.item.review_status))
                 : placeholderStatusText(entry.state)
             }}
           </span>

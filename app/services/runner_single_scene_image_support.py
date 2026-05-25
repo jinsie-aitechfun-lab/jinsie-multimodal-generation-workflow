@@ -290,6 +290,8 @@ class RunnerSingleSceneImageSupport:
             "selection_source": selection.get("selection_source"),
             "selection_reason": selection.get("selection_reason"),
             "candidate_scores": selection.get("candidate_scores") or [],
+            "quality_gates": selection.get("quality_gates") or {},
+            "review_required": bool(selection.get("review_required")),
         }
 
     def run_single_scene_image_asset(

@@ -84,6 +84,7 @@ class RunnerImageReviewSupport:
                 or "default_selected_from_image_assets"
             )
             candidate_scores = item.get("candidate_scores") or []
+            quality_gates = item.get("quality_gates") or {}
 
             selected_assets.append(
                 {
@@ -100,6 +101,8 @@ class RunnerImageReviewSupport:
                     "selected_asset_ref": selected_asset_ref,
                     "candidate_asset_refs": candidate_asset_refs,
                     "candidate_scores": candidate_scores,
+                    "quality_gates": quality_gates,
+                    "review_required": False,
                     "characters": item.get("characters") or [],
                     "character_ids": item.get("character_ids") or [],
                     "prompt": str(item.get("prompt") or "").strip(),
@@ -179,6 +182,7 @@ class RunnerImageReviewSupport:
             or "default_selected_from_image_assets"
         )
         candidate_scores = asset.get("candidate_scores") or []
+        quality_gates = asset.get("quality_gates") or {}
 
         return {
             "scene_id": scene_id,
@@ -194,6 +198,8 @@ class RunnerImageReviewSupport:
             "selected_asset_ref": selected_asset_ref,
             "candidate_asset_refs": candidate_asset_refs,
             "candidate_scores": candidate_scores,
+            "quality_gates": quality_gates,
+            "review_required": False,
             "characters": asset.get("characters") or [],
             "character_ids": asset.get("character_ids") or [],
             "prompt": str(asset.get("prompt") or "").strip(),

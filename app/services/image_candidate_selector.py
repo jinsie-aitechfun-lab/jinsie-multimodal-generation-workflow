@@ -31,6 +31,48 @@ def _normalize_text(value: Any) -> str:
     return str(value or "").strip().lower()
 
 
+def _character_label(item: Dict[str, Any]) -> str:
+    return (
+        str(item.get("display_name") or "").strip()
+        or str(item.get("species") or "").strip()
+        or str(item.get("character_id") or "").strip()
+    )
+
+
+def _required_character_labels(characters: List[Dict[str, Any]]) -> List[str]:
+    labels: List[str] = []
+    for item in characters or []:
+        if not isinstance(item, dict):
+            continue
+        label = _character_label(item)
+        if label and label not in labels:
+            labels.append(label)
+    return labels
+
+
+def _quality_gates(characters: List[Dict[str, Any]]) -> Dict[str, Any]:
+    labels = _required_character_labels(characters)
+    multi_character_scene = len(labels) >= 2
+    risk_reasons: List[str] = []
+
+    if multi_character_scene:
+        risk_reasons.extend(
+            [
+                "multi_character_scene",
+                "metadata_only_candidate_filter",
+                "visual_verifier_not_available",
+            ]
+        )
+
+    return {
+        "required_character_labels": labels,
+        "multi_character_scene": multi_character_scene,
+        "visual_verifier_available": False,
+        "advisory_only": True,
+        "risk_reasons": risk_reasons,
+    }
+
+
 def _extract_positive_texts(prompt: str, characters: List[Dict[str, Any]]) -> List[str]:
     texts: List[str] = [str(prompt or "")]
     for item in characters or []:
@@ -197,6 +239,7 @@ def _score_candidate(
     *,
     prompt: str,
     characters: List[Dict[str, Any]],
+    quality_gates: Dict[str, Any],
 ) -> Dict[str, Any]:
     path = _candidate_path(candidate)
     reasons: List[str] = []
@@ -213,6 +256,7 @@ def _score_candidate(
             "expected_colors": expected_colors,
             "matched_colors": [],
             "color_ratios": {},
+            "quality_gates": quality_gates,
         }
 
     score += 20.0
@@ -290,10 +334,8 @@ def _score_candidate(
             reasons.append("forbidden_colors:" + ",".join(forbidden_matched_colors))
             reasons.append(f"forbidden_color_penalty:{penalty:.1f}")
 
-    file_name = str(candidate.get("file_name") or "")
-    if "candidate_a" in file_name:
-        score += 0.1
-        reasons.append("stable_tiebreak_candidate_a_light")
+    if quality_gates.get("multi_character_scene"):
+        reasons.append("metadata_quality_gate_multi_character_scene")
 
     passed = score >= MIN_PASS_SCORE
 
@@ -308,6 +350,7 @@ def _score_candidate(
         "forbidden_colors": forbidden_colors,
         "forbidden_matched_colors": forbidden_matched_colors,
         "forbidden_color_ratios": forbidden_color_ratios,
+        "quality_gates": quality_gates,
     }
 
 
@@ -318,6 +361,7 @@ def select_best_candidate(
     characters: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
     scored: List[Dict[str, Any]] = []
+    quality_gates = _quality_gates(characters)
 
     for candidate in candidate_asset_refs or []:
         if not isinstance(candidate, dict):
@@ -326,6 +370,7 @@ def select_best_candidate(
             candidate,
             prompt=prompt,
             characters=characters,
+            quality_gates=quality_gates,
         )
         enriched_ref = dict(candidate)
         enriched_ref["auto_filter_score"] = score_item["score"]
@@ -340,7 +385,6 @@ def select_best_candidate(
     scored.sort(
         key=lambda item: (
             float(item.get("score") or 0.0),
-            1 if "candidate_a" in str(item.get("asset_ref", {}).get("file_name") or "") else 0,
         ),
         reverse=True,
     )
@@ -369,10 +413,13 @@ def select_best_candidate(
                 "expected_colors": item.get("expected_colors") or [],
                 "matched_colors": item.get("matched_colors") or [],
                 "color_ratios": item.get("color_ratios") or {},
+                "quality_gates": item.get("quality_gates") or {},
             }
             for item in scored
         ],
         "candidate_asset_refs": [dict(item.get("asset_ref") or {}) for item in scored],
         "best_score": best_score,
         "should_retry": best_score < MIN_PASS_SCORE,
+        "quality_gates": quality_gates,
+        "review_required": False,
     }

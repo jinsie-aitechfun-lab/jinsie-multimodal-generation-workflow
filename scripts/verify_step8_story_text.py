@@ -67,9 +67,14 @@ def main() -> int:
     cleaned = runner._sanitize_llm_story_text(noisy_text, "小兔子过河")
     assert cleaned == "在一个阳光明亮的早晨，小兔子和小乌龟准备一起过河。"
     assert cleaned == support.sanitize_llm_story_text(noisy_text, "小兔子过河")
+    duration_leaked_text = "在一个美丽的森林里，有6秒有一只活泼的兔子和一只慢吞吞的乌龟。"
+    assert runner._sanitize_llm_story_text(duration_leaked_text) == (
+        "在一个美丽的森林里，有一只活泼的兔子和一只慢吞吞的乌龟。"
+    )
 
     assert runner._story_text_has_blocked_tokens("hero species=rabbit") is True
     assert runner._story_text_has_blocked_tokens("温暖的小故事") is False
+    assert runner._story_text_has_quality_issues("在森林里，有6秒有一只兔子。") is True
     assert runner._story_text_char_count(" 小 兔 子 \n 过 河 ") == 5
     assert runner._audience_label("children") == "小朋友"
     assert runner._tone_label("warm") == "温暖"
