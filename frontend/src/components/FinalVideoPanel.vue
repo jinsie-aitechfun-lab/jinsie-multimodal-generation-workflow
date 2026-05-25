@@ -48,6 +48,8 @@ const props = defineProps<{
   workflowResponse: UnknownRecord | null
   renderInFlight: boolean
   loading: boolean
+  workflowStatusMessage?: string
+  workflowStatusProgress?: number | null
 }>()
 
 function asObj(v: unknown): UnknownRecord | null {
@@ -71,6 +73,7 @@ const finalVideo = computed(() => asObj(outputs.value?.final_video))
 const indeterminate = computed(() => {
   if (props.finalVideoUrl) return false
   if (props.renderInFlight || finalStatus.value === 'rendering') return false
+  if (workflowInFlight.value && props.workflowStatusProgress != null) return false
   // runWorkflow 请求中，或 refresh 正在跑，但还没有任何 image_assets
   return props.loading  && imageAssetCount.value === 0
 })
@@ -100,6 +103,9 @@ const assetsReady = computed(() => {
 const progressPct = computed(() => {
   if (props.finalVideoUrl) return 100
   if (props.renderInFlight || finalStatus.value === 'rendering') return 90
+  if (workflowInFlight.value && props.workflowStatusProgress != null) {
+    return Math.max(0, Math.min(100, Math.round(props.workflowStatusProgress)))
+  }
   if (!sceneCount.value) return 0
 
   const ratio = Math.min(1, Math.max(0, imageAssetCount.value / sceneCount.value))
@@ -107,7 +113,7 @@ const progressPct = computed(() => {
 })
 
 const progressLabel = computed(() => {
-  if (workflowInFlight.value) return 'Workflow 运行中…'
+  if (workflowInFlight.value) return '处理中…'
   if (indeterminate.value) return '准备中…'
   if (props.finalVideoUrl) return '已生成'
   if (props.renderInFlight || finalStatus.value === 'rendering') return '视频渲染中'
@@ -126,7 +132,7 @@ const placeholderTitle = computed(() => {
 
 const placeholderDesc = computed(() => {
   if (workflowInFlight.value) {
-    return 'Workflow 已提交，后端正在生成故事与分镜。完成后会自动进入候选图与视频准备阶段。'
+    return props.workflowStatusMessage || 'Workflow 已提交，后端正在生成故事与分镜。完成后会自动进入候选图与视频准备阶段。'
   }
   if (props.renderInFlight || finalStatus.value === 'rendering') {
     return '视频正在合成中，请稍候（音频/字幕/画面正在拼接）。'

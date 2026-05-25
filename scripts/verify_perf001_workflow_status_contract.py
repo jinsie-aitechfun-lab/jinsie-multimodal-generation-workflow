@@ -42,10 +42,16 @@ def main() -> int:
 
             captured = {}
 
-            def pending_run_async(run_input, callback, error_callback=None):
+            def pending_run_async(
+                run_input,
+                callback,
+                error_callback=None,
+                progress_callback=None,
+            ):
                 captured["run_input"] = run_input
                 captured["callback"] = callback
                 captured["error_callback"] = error_callback
+                captured["progress_callback"] = progress_callback
 
             main_app._runner._run_async = pending_run_async
 
@@ -60,7 +66,26 @@ def main() -> int:
                 "/v1/workflow/status/wf_verify_status_processing"
             )
             assert status_response.status_code == 200, status_response.text
-            assert status_response.json()["status"] == "processing"
+            processing_body = status_response.json()
+            assert processing_body["status"] == "processing"
+            assert processing_body["current_step"] == "story"
+            assert processing_body["completed_steps"] == 0
+            assert processing_body["total_steps"] == 1
+
+            captured["progress_callback"](
+                {
+                    "current_step": "story",
+                    "current_step_index": 1,
+                    "completed_steps": 0,
+                    "total_steps": 1,
+                    "progress_percent": 0,
+                }
+            )
+            progress_response = client.get(
+                "/v1/workflow/status/wf_verify_status_processing"
+            )
+            assert progress_response.status_code == 200, progress_response.text
+            assert progress_response.json()["current_step"] == "story"
 
             captured["callback"](
                 {
@@ -86,7 +111,12 @@ def main() -> int:
                 outputs_payload = json.load(f)
             assert outputs_payload["outputs"]["story"]["title"] == "小兔子的一天"
 
-            def failing_run_async(run_input, callback, error_callback=None):
+            def failing_run_async(
+                run_input,
+                callback,
+                error_callback=None,
+                progress_callback=None,
+            ):
                 assert error_callback is not None
                 error_callback(RuntimeError("provider timeout"))
 
