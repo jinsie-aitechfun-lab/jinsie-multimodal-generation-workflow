@@ -23,8 +23,10 @@
             ></div>
           </div>
           <div class="ph-meta">
-            <span>{{ progressPct }}%</span>
-            <span class="ph-dot">·</span>
+            <template v-if="!indeterminate">
+              <span>{{ progressPct }}%</span>
+              <span class="ph-dot">·</span>
+            </template>
             <span>{{ progressLabel }}</span>
           </div>
         </div>
@@ -89,6 +91,7 @@ const audioItemCount = computed(() => {
 })
 
 const finalStatus = computed(() => asStr(finalVideo.value?.status).toLowerCase())
+const workflowInFlight = computed(() => props.loading && !outputs.value)
 
 const assetsReady = computed(() => {
   return sceneCount.value > 0 && imageAssetCount.value >= sceneCount.value
@@ -104,6 +107,7 @@ const progressPct = computed(() => {
 })
 
 const progressLabel = computed(() => {
+  if (workflowInFlight.value) return 'Workflow 运行中…'
   if (indeterminate.value) return '准备中…'
   if (props.finalVideoUrl) return '已生成'
   if (props.renderInFlight || finalStatus.value === 'rendering') return '视频渲染中'
@@ -113,6 +117,7 @@ const progressLabel = computed(() => {
 })
 
 const placeholderTitle = computed(() => {
+  if (workflowInFlight.value) return '正在生成分镜'
   if (props.renderInFlight || finalStatus.value === 'rendering') return '正在生成视频'
   if (!sceneCount.value) return '等待分镜'
   if (!assetsReady.value) return '等待候选图生成'
@@ -120,11 +125,14 @@ const placeholderTitle = computed(() => {
 })
 
 const placeholderDesc = computed(() => {
+  if (workflowInFlight.value) {
+    return 'Workflow 已提交，后端正在生成故事与分镜。完成后会自动进入候选图与视频准备阶段。'
+  }
   if (props.renderInFlight || finalStatus.value === 'rendering') {
     return '视频正在合成中，请稍候（音频/字幕/画面正在拼接）。'
   }
   if (!sceneCount.value) {
-    return '请先在 Run 执行一次，生成 storyboard。'
+    return '还没有可用的 storyboard。请在 Run 页签执行一次 workflow。'
   }
   if (!assetsReady.value) {
     return '系统正在准备每个场景的候选图，默认图生成后即可直接渲染，也可以手动改选。'
