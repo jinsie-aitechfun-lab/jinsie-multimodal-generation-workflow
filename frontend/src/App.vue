@@ -317,8 +317,10 @@ const refreshingImageReview = ref(false)
 const sceneRefreshQueue = ref<string[]>([])
 const sceneRefreshingId = ref('')
 const reviewPlaceholders = ref<ReviewPlaceholderItem[]>([])
+const imageReviewRefreshCancelled = ref(false)
 let reviewAutoRefreshFiredOnce = false
 let imageReviewAutoRefreshTimer: number | null = null
+let imageReviewRefreshAbortController: AbortController | null = null
 type ViewTab = 'run' | 'review' | 'assets' | 'debug'
 const activeTab = ref<ViewTab>('run')
 
@@ -1112,7 +1114,7 @@ function handleManualRender() {
   renderFinalVideoIfReady(currentWorkflowResponse.value)
 }
 
-async function refreshImageReviewScene(sceneId: string) {
+async function refreshImageReviewScene(sceneId: string, signal?: AbortSignal) {
   if (!currentWorkflowResponse.value || !currentWorkflowPayload.value) {
     return
   }
@@ -1160,8 +1162,12 @@ async function refreshImageReviewScene(sceneId: string) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),
+      signal,
     })
   } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error
+    }
     const message = error instanceof Error ? error.message : 'unknown network error'
     throw new Error(`${sceneId} 候选图生成失败：无法连接后端或请求被中断 · ${message}`)
   }
@@ -1201,6 +1207,21 @@ async function refreshImageReviewScene(sceneId: string) {
 
   applyWorkflowResponse(mergedResponse)
   markPlaceholderState(sceneId, 'done')
+}
+
+function cancelImageReviewRefresh() {
+  if (!refreshingImageReview.value) {
+    return
+  }
+
+  imageReviewRefreshCancelled.value = true
+  imageReviewRefreshAbortController?.abort()
+
+  if (sceneRefreshingId.value) {
+    markPlaceholderState(sceneRefreshingId.value, 'waiting')
+  }
+
+  errorMessage.value = '已取消剩余候选图生成。'
 }
 
 async function refreshImageReview() {
@@ -1243,24 +1264,42 @@ async function refreshImageReview() {
   }
 
   refreshingImageReview.value = true
+  imageReviewRefreshCancelled.value = false
   errorMessage.value = ''
 
   const failures: string[] = []
 
   try {
     for (const sceneId of sceneRefreshQueue.value) {
+      if (imageReviewRefreshCancelled.value) {
+        break
+      }
+
+      imageReviewRefreshAbortController = new AbortController()
       try {
-        await refreshImageReviewScene(sceneId)
+        await refreshImageReviewScene(sceneId, imageReviewRefreshAbortController.signal)
       } catch (error) {
+        if (
+          imageReviewRefreshCancelled.value ||
+          (error instanceof DOMException && error.name === 'AbortError')
+        ) {
+          markPlaceholderState(sceneId, 'waiting')
+          break
+        }
+
         const message = error instanceof Error ? error.message : '候选图分场景刷新失败'
         failures.push(message)
         markPlaceholderState(sceneId, 'failed', message)
+      } finally {
+        imageReviewRefreshAbortController = null
       }
     }
   } finally {
     sceneRefreshingId.value = ''
     sceneRefreshQueue.value = []
     refreshingImageReview.value = false
+    imageReviewRefreshCancelled.value = false
+    imageReviewRefreshAbortController = null
   }
 
   if (failures.length > 0) {
@@ -1730,7 +1769,9 @@ async function runWorkflow() {
               :selecting-scene-id="selectingSceneId || sceneRefreshingId"
               :progress-text="reviewRefreshProgress.text"
               :progress-percent="reviewRefreshProgress.percent"
+              :can-cancel="refreshingImageReview"
               @select-asset="({ sceneId, assetRef }) => selectImageAsset(sceneId, assetRef)"
+              @cancel-refresh="cancelImageReviewRefresh"
             />
             <WorkflowResultsPanel
               :story-text="storyText"
