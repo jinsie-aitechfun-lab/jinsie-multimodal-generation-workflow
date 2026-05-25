@@ -15,6 +15,82 @@ class RunnerSceneCharactersSupport:
     def __init__(self, runner: Any) -> None:
         self._runner = runner
 
+    def _character_label(self, item: Dict[str, Any]) -> str:
+        return (
+            str(item.get("display_name") or "").strip()
+            or str(item.get("species") or "").strip()
+            or str(item.get("character_id") or "").strip()
+        )
+
+    def _character_family(self, item: Dict[str, Any]) -> str:
+        text = " ".join(
+            [
+                str(item.get("display_name") or ""),
+                str(item.get("species") or ""),
+                str(item.get("visual_identity") or ""),
+            ]
+        ).lower()
+
+        if any(keyword in text for keyword in ["rabbit", "bunny", "兔"]):
+            return "rabbit"
+        if any(keyword in text for keyword in ["turtle", "tortoise", "乌龟", "海龟", "龟"]):
+            return "turtle"
+        return ""
+
+    def _family_forbidden_traits(self, family: str) -> List[str]:
+        if family == "rabbit":
+            return [
+                "no rabbit ears",
+                "no long upright rabbit ears",
+                "no fluffy rabbit tail",
+                "no rabbit body",
+            ]
+        if family == "turtle":
+            return [
+                "no turtle shell",
+                "no hard turtle shell",
+                "no turtle body",
+                "no short turtle legs",
+            ]
+        return []
+
+    def _cross_character_forbidden_traits(
+        self,
+        character: Dict[str, Any],
+        scene_characters: List[Dict[str, Any]],
+    ) -> List[str]:
+        character_family = self._character_family(character)
+        if not character_family:
+            return []
+
+        other_families: List[str] = []
+        for other in scene_characters:
+            if not isinstance(other, dict):
+                continue
+
+            other_label = self._character_label(other)
+            character_label = self._character_label(character)
+            if other_label and other_label == character_label:
+                continue
+
+            other_family = self._character_family(other)
+            if (
+                other_family
+                and other_family != character_family
+                and other_family not in other_families
+            ):
+                other_families.append(other_family)
+
+        constraints: List[str] = []
+        seen = set()
+        for family in other_families:
+            for trait in self._family_forbidden_traits(family):
+                if trait and trait not in seen:
+                    constraints.append(trait)
+                    seen.add(trait)
+
+        return constraints
+
     def enriched_scene_characters_from_manifest(
         self,
         outputs: Dict[str, Any],
@@ -188,6 +264,10 @@ class RunnerSceneCharactersSupport:
 
         parts: List[str] = []
         required_names: List[str] = []
+        enriched_scene_characters = self.enriched_scene_characters_from_manifest(
+            outputs,
+            scene,
+        )
 
         for binding in scene_characters:
             if not isinstance(binding, dict):
@@ -204,6 +284,10 @@ class RunnerSceneCharactersSupport:
 
             signature_traits = manifest_item.get("signature_traits") or []
             forbidden_traits = manifest_item.get("forbidden_traits") or []
+            cross_forbidden_traits = self._cross_character_forbidden_traits(
+                manifest_item,
+                enriched_scene_characters,
+            )
 
             name = display_name or species
             if name and name not in required_names:
@@ -214,6 +298,11 @@ class RunnerSceneCharactersSupport:
             )
             forbidden_text = ", ".join(
                 item.strip() for item in forbidden_traits if str(item).strip()
+            )
+            cross_forbidden_text = ", ".join(
+                item.strip()
+                for item in cross_forbidden_traits
+                if str(item).strip()
             )
 
             detail_parts = [
@@ -226,6 +315,9 @@ class RunnerSceneCharactersSupport:
                 "presence rule: when this character is required by the scene, it must appear as a real on-screen character in the frame",
                 f"must keep: {signature_text}" if signature_text else "",
                 f"must avoid: {forbidden_text}" if forbidden_text else "",
+                f"cross-character must avoid: {cross_forbidden_text}"
+                if cross_forbidden_text
+                else "",
             ]
             detail_text = "; ".join(part for part in detail_parts if part)
             if detail_text:
@@ -273,6 +365,23 @@ class RunnerSceneCharactersSupport:
                 if value:
                     negatives.append(value)
 
+        enriched_scene_characters = self.enriched_scene_characters_from_manifest(
+            outputs,
+            scene,
+        )
+        for character in enriched_scene_characters:
+            if not isinstance(character, dict):
+                continue
+
+            label = self._character_label(character)
+            for item in self._cross_character_forbidden_traits(
+                character,
+                enriched_scene_characters,
+            ):
+                value = str(item or "").strip()
+                if value:
+                    negatives.append(f"{label}: {value}" if label else value)
+
         generic_negatives = [
             "missing required scene character",
             "character omitted from scene",
@@ -283,6 +392,7 @@ class RunnerSceneCharactersSupport:
             "trait transfer between characters",
             "mixed body parts between characters",
             "merged characters",
+            "one character wearing another character's defining body traits",
         ]
         negatives.extend(generic_negatives)
 
@@ -309,5 +419,19 @@ class RunnerSceneCharactersSupport:
             if character_id and character_id not in seen:
                 results.append(character_id)
                 seen.add(character_id)
+
+        return results
+
+    def character_names_from_bindings(self, bindings: List[Dict[str, Any]]) -> List[str]:
+        results: List[str] = []
+        seen = set()
+
+        for item in bindings:
+            if not isinstance(item, dict):
+                continue
+            name = self._character_label(item)
+            if name and name not in seen:
+                results.append(name)
+                seen.add(name)
 
         return results

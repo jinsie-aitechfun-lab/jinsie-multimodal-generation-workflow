@@ -530,6 +530,16 @@ resolved_image_prompts = explicit_image_prompts or stored_image_prompts
 - 自动筛选器需要检测/评估候选图是否包含所有 required characters；缺失关键角色时不能选中。
 - 补进程内验证：`兔子和乌龟赛跑` 的 storyboard / image_prompts / image_assets contract 中，每个相关 scene 都保留两个角色约束。
 
+**已采用修复（prompt contract 层）**：
+
+- `image_prompts` 每条 prompt 增加 `required_character_ids` / `required_character_names` metadata。
+- 多角色 scene prompt 保留 `scene cast lock` / `required scene characters` 强约束，明确要求所有角色同框且不可省略。
+- 补充 `verify_bug004_005_multi_character_prompt_contract.py`，覆盖非结构化主题“兔子和乌龟赛跑”的角色 manifest、storyboard、prompt 必需角色约束。
+
+**仍需后续跟进**：
+
+- 真实图片候选是否真的包含全部角色，需要 BUG-007 的自动筛选器接入 required character metadata 后继续验证。
+
 **优先级**：P0。建议下一步优先修。
 
 ---
@@ -566,6 +576,18 @@ resolved_image_prompts = explicit_image_prompts or stored_image_prompts
 - 每个 scene prompt 同时包含 `must_keep` 与 `must_avoid`。
 - 筛选器把“角色特征串扰”作为强扣分或失败条件。
 - 补验证脚本覆盖兔子/乌龟互斥特征写入 prompt。
+
+**已采用修复（prompt contract 层）**：
+
+- 多角色 scene 自动生成跨角色 negative constraints，例如：
+  - 兔子不能有 turtle shell / turtle body / short turtle legs。
+  - 乌龟不能有 rabbit ears / fluffy rabbit tail / rabbit body。
+- `scene_character_prompt_block` 写入 `cross-character must avoid`。
+- `scene_character_negative_block` 写入带角色名的串扰负面约束，避免不同角色身体特征互相污染。
+
+**仍需后续跟进**：
+
+- 真实候选图是否仍存在串扰，需要 BUG-007 的候选评分/筛选逻辑把这些 forbidden traits 作为硬扣分或失败条件。
 
 **优先级**：P0。建议和 BUG-004 同一轮修复。
 
