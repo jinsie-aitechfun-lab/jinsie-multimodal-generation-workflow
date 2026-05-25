@@ -80,6 +80,7 @@ const emit = defineEmits<{
     }
   ): void
   (e: 'refresh-review'): void
+  (e: 'retry-scene', sceneId: string): void
   (e: 'cancel-refresh'): void
 }>()
 
@@ -147,6 +148,10 @@ function onSelect(sceneId: string, assetRef: ImageAssetRef) {
 
 function onRefreshReview() {
   emit('refresh-review')
+}
+
+function onRetryScene(sceneId: string) {
+  emit('retry-scene', sceneId)
 }
 
 function onCancelRefresh() {
@@ -672,6 +677,16 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                 >
                   {{ entry.errorMessage }}
                 </div>
+
+                <button
+                  v-if="entry.state === 'failed'"
+                  type="button"
+                  class="retry-scene-button"
+                  :disabled="loading || refreshing || selectingSceneId === entry.sceneId"
+                  @click="onRetryScene(entry.sceneId)"
+                >
+                  重试该场景
+                </button>
               </div>
             </div>
           </div>
@@ -1075,6 +1090,28 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   font-size: 12px;
   line-height: 1.45;
   overflow-wrap: anywhere;
+}
+
+.retry-scene-button {
+  width: fit-content;
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid #fecaca;
+  background: #fff1f2;
+  color: #b91c1c;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.retry-scene-button:hover:not(:disabled) {
+  background: #ffe4e6;
+}
+
+.retry-scene-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
 }
 
 .candidate-header {

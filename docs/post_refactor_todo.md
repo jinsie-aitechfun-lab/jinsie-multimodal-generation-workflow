@@ -775,6 +775,7 @@ resolved_image_prompts = explicit_image_prompts or stored_image_prompts
 
 - `should_retry` 增加对 `http 500` / `http 502` / `http 503` / `http 504` 和 `Request failed: Unknown error` 的识别。
 - 补充 `verify_bug010_image_provider_retry_contract.py`，覆盖 SiliconFlow `HTTP 500`、接口层 `HTTP 502`、下载 `HTTP 504` 应被重试，`HTTP 400` 不应被当作临时错误重试。
+- 前端失败 scene 卡片增加“重试该场景”入口，只重新调用当前 scene 的 `refresh-scene`，避免用户必须重新跑整批候选图。
 
 **仍需后续跟进**：
 
