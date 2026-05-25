@@ -462,6 +462,13 @@ const hasDebugContent = computed(() => {
   )
 })
 
+const reviewEmptyStateText = computed(() => {
+  if (loading.value) {
+    return 'Workflow 正在运行，故事和分镜生成完成后会自动在 Review 页展示选图和结果。'
+  }
+  return '请先在 Run 页签执行一次 workflow，然后回到 Review 查看选图和结果。'
+})
+
 
 const imageAssetsOutput = computed<Record<string, unknown>>(() => {
   const imageAssets = currentWorkflowResponse.value?.outputs?.image_assets
@@ -1790,7 +1797,7 @@ async function runWorkflow() {
         </template>
 
         <p v-else class="empty-state">
-          请先在 Run 页签执行一次 workflow，然后回到 Review 查看选图和结果。
+          {{ reviewEmptyStateText }}
         </p>
       </section>
       <section v-if="activeTab === 'assets'">
