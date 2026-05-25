@@ -558,6 +558,7 @@ resolved_image_prompts = explicit_image_prompts or stored_image_prompts
 - 乌龟会长兔耳朵。
 - 兔子会出现乌龟壳。
 - 不同角色的物种、服装、身体特征互相串。
+- 2026-05-25 真实复测：即使 prompt / negative prompt 已强化，仍出现“蓝色兔耳乌龟”“兔子背乌龟壳”“画面中出现额外小乌龟壳”等明显串扰。
 
 **用户可见影响**：
 
@@ -587,12 +588,16 @@ resolved_image_prompts = explicit_image_prompts or stored_image_prompts
 - `scene_character_negative_block` 写入带角色名的串扰负面约束，避免不同角色身体特征互相污染。
 - 为兔子 / 乌龟 deterministic visual profile 增加固定外观、固定配饰和互斥特征，避免 LLM profile 失败时回落到过于泛化的“same color palette”描述。
 - 真实复测仍出现兔子有壳、乌龟有耳朵后，已把 `hybrid rabbit turtle creature`、`rabbit with turtle shell`、`turtle with rabbit ears` 等约束写入 API 生图请求的 `negative_prompt` 字段。
+- 真实复测仍出现乌龟长耳朵后，继续强化正向结构约束：乌龟必须是 `earless rounded turtle head / no external ears`，只有兔子有长耳，只有乌龟有壳；同时避免在全局 `negative_prompt` 中写入裸的 `rabbit ears` / `turtle shell`，只禁止 `turtle with rabbit ears`、`rabbit with turtle shell` 这类串扰组合，避免把合法特征也负向掉。
 
 **仍需后续跟进**：
 
-- 真实候选图是否仍存在串扰，需要 BUG-007 的候选评分/筛选逻辑把这些 forbidden traits 作为硬扣分或失败条件。
+- 仅靠继续叠加 prompt / negative prompt 已经接近收益上限，真实 provider 仍可能把兔子和乌龟的身体特征混合。
+- 下一步应转为“视觉级失败检测 + 自动重试”：检测到乌龟长兔耳、兔子背龟壳、缺少必需角色、额外混合物种角色时，候选图直接判失败并重新生成。
+- 如果 provider 支持 reference image / seed / character consistency，应引入每个角色的参考图或稳定 seed；纯文本 prompt 很难保证多图、多角色一致。
+- BUG-007 的候选评分/筛选逻辑必须把这些 forbidden traits 作为硬扣分或失败条件，不能继续默认选择第一张。
 
-**优先级**：P0。建议和 BUG-004 同一轮修复。
+**优先级**：P0。prompt contract 已做基础修复，但真实画面仍未达产品可用标准；下一步优先做视觉检测/自动重试或参考图一致性方案。
 
 ---
 
@@ -606,7 +611,7 @@ resolved_image_prompts = explicit_image_prompts or stored_image_prompts
 
 **当前现象**：
 
-同一角色在不同图片里的装饰、衣服、外貌甚至颜色不一致；例如同一只兔子在不同场景中颜色、服装、配饰变化明显。
+同一角色在不同图片里的装饰、衣服、外貌甚至颜色不一致；例如同一只兔子在不同场景中颜色、服装、配饰变化明显。2026-05-25 真实复测中，同一组兔子/乌龟仍会出现颜色、体型和物种特征漂移。
 
 **用户可见影响**：
 
@@ -625,8 +630,9 @@ resolved_image_prompts = explicit_image_prompts or stored_image_prompts
 - 每个 image prompt 都注入同一份角色视觉签名。
 - 如果 provider 支持参考图/seed，后续增加 reference image 或 seed 策略。
 - 在 `image_review` 中展示角色一致性风险，便于人工选择。
+- 仅靠当前文本 prompt 不能稳定保证跨图一致性，建议把 reference image / seed / 视觉评审重试作为后续主方案。
 
-**优先级**：P1。BUG-004 / BUG-005 修完后处理。
+**优先级**：P0。现在已影响最终视频观感，建议和 BUG-005 的视觉检测/自动重试一起做。
 
 ---
 
@@ -677,19 +683,19 @@ resolved_image_prompts = explicit_image_prompts or stored_image_prompts
 
 **当前现象**：
 
-最终视频跟随真实 TTS 音频时长，只有约 40s；不是 final video 合成层被硬截断，而是故事/分镜旁白文本总量偏短，真实音频读完后视频自然结束。
+最终视频跟随真实 TTS 音频时长，曾只有约 40s；不是 final video 合成层被硬截断，而是故事/分镜旁白文本总量偏短，真实音频读完后视频自然结束。后续一次修复把 60s 文本目标调到 `420-520` 字，真实验证又生成约 1:25；再调到 `300-380` 字后真实验证仍约 1:14；最终调到 `250-310` 字后真实复测约 0:58，基本符合 60s 预期。
 
 **原因定位**：
 
-60s story plan 的目标中文字符数只有 `190-260`，对真实 TTS 来说偏短，容易生成约 40s 左右的旁白。
+60s story plan 的目标中文字符数原本只有 `190-260`，对真实 TTS 来说偏短，容易生成约 40s 左右的旁白；但 `420-520` 会把真实音频拉到约 80s+，`300-380` 仍会拉到 70s+，需要按真实 TTS 结果做中间校准。
 
 **已采用修复**：
 
-- 将 60s story plan 调整为 `420-520` 中文字符，目标约 `470` 字。
+- 将 60s story plan 调整为 `250-310` 中文字符，目标约 `280` 字，按真实 TTS 验证结果从过长配置继续回调到更接近 60s 的范围。
 - 补充 Step 8 验证，确保 60s template fallback story 达到新的最低文本长度。
 
 **仍需后续跟进**：
 
 - 真实 TTS 语速会随 provider/voice 波动，后续可以增加“音频总时长低于目标阈值时提示或重试扩写旁白”的闭环。
 
-**优先级**：P0。属于用户可见时长回归，建议和本轮一起提交。
+**优先级**：P1。当前 60s 真实复测已基本可接受，后续做音频时长闭环即可。

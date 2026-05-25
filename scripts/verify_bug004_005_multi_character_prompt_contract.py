@@ -133,10 +133,24 @@ def main() -> int:
             "hybrid rabbit turtle creature",
             "rabbit with turtle shell",
             "turtle with rabbit ears",
+            "turtle with long upright ears",
             "missing required character",
         ]:
             if expected not in negative_prompt:
                 failures.append(f"negative_prompt missing {expected}")
+        negative_terms = [
+            item.strip() for item in negative_prompt.split(",") if item.strip()
+        ]
+        for conflicting_bare_term in [
+            "rabbit ears",
+            "long upright ears",
+            "turtle shell",
+            "hard round shell",
+        ]:
+            if conflicting_bare_term in negative_terms:
+                failures.append(
+                    f"negative_prompt contains conflicting bare trait {conflicting_bare_term}"
+                )
 
     if failures:
         print("---")

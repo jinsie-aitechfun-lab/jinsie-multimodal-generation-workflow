@@ -141,7 +141,7 @@ const placeholderTitle = computed(() => {
 
 const placeholderDesc = computed(() => {
   if (hasBlockingError.value) {
-    return `${blockingErrorMessage.value}。请在 Review 中重新生成失败场景，全部候选图生成后才能渲染视频。`
+    return blockingErrorMessage.value
   }
   if (workflowInFlight.value) {
     return props.workflowStatusMessage || 'Workflow 已提交，后端正在生成故事与分镜。完成后会自动进入候选图与视频准备阶段。'

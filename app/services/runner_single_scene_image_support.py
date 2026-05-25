@@ -16,15 +16,38 @@ class RunnerSingleSceneImageSupport:
         self,
         characters: List[Dict[str, Any]],
     ) -> str:
+        family_text = " ".join(
+            " ".join(
+                [
+                    str(character.get("display_name") or ""),
+                    str(character.get("species") or ""),
+                    str(character.get("visual_identity") or ""),
+                ]
+            )
+            for character in characters
+            if isinstance(character, dict)
+        ).lower()
+        has_rabbit = any(keyword in family_text for keyword in ["rabbit", "bunny", "兔"])
+        has_turtle = any(
+            keyword in family_text for keyword in ["turtle", "tortoise", "乌龟", "海龟", "龟"]
+        )
+
         negatives: List[str] = [
             "hybrid rabbit turtle creature",
             "rabbit with turtle shell",
+            "rabbit wearing turtle shell",
+            "shell on rabbit body",
             "turtle with rabbit ears",
+            "turtle with bunny ears",
+            "turtle with long upright ears",
+            "turtle with external ears",
             "mixed animal anatomy",
             "merged characters",
             "one body containing multiple characters",
             "missing required character",
             "solo portrait when multiple characters are required",
+            "malformed animal anatomy",
+            "unclear character species",
         ]
 
         for character in characters:
@@ -44,7 +67,27 @@ class RunnerSingleSceneImageSupport:
             if isinstance(forbidden_traits, list):
                 for item in forbidden_traits:
                     value = str(item or "").strip()
-                    if value:
+                    lowered = value.lower()
+                    conflicts_with_required_rabbit = has_rabbit and (
+                        "rabbit ear" in lowered
+                        or "bunny ear" in lowered
+                        or "upright ear" in lowered
+                        or "external ear" in lowered
+                        or "rabbit tail" in lowered
+                        or "rabbit body" in lowered
+                        or "rabbit fur" in lowered
+                    )
+                    conflicts_with_required_turtle = has_turtle and (
+                        "turtle shell" in lowered
+                        or "hard round shell" in lowered
+                        or "turtle body" in lowered
+                        or "turtle leg" in lowered
+                        or "turtle skin" in lowered
+                    )
+                    if value and not (
+                        conflicts_with_required_rabbit
+                        or conflicts_with_required_turtle
+                    ):
                         negatives.append(value)
 
         deduped: List[str] = []

@@ -906,24 +906,23 @@ function markPlaceholderState(
   )
 }
 
-function formatApiErrorDetail(sceneId: string, status: number, errorBody: unknown): string {
+function formatImageReviewUserError(sceneId: string, status: number, errorBody: unknown): string {
   const body = errorBody as Record<string, unknown> | null
   const detailValue = body && typeof body === 'object' ? body.detail : undefined
+  const detail =
+    detailValue && typeof detailValue === 'object' ? (detailValue as ApiErrorDetail) : null
+  const detailSceneId = detail?.scene_id || sceneId
+  const code = String(detail?.code || '').toUpperCase()
 
-  if (typeof detailValue === 'string') {
-    return `${sceneId} 候选图生成失败：HTTP ${status} · ${detailValue}`
+  if (status >= 500 || code === 'IMAGE_GENERATION_FAILED') {
+    return `${detailSceneId} 候选图生成失败：图片服务暂时不可用，请稍后重试。`
   }
 
-  if (detailValue && typeof detailValue === 'object') {
-    const detail = detailValue as ApiErrorDetail
-    const code = detail.code ? ` · ${detail.code}` : ''
-    const provider = detail.provider ? ` · provider=${detail.provider}` : ''
-    const message = detail.message ? ` · ${detail.message}` : ''
-    const detailSceneId = detail.scene_id || sceneId
-    return `${detailSceneId} 候选图生成失败：HTTP ${status}${code}${provider}${message}`
+  if (status === 408 || status === 429) {
+    return `${detailSceneId} 候选图生成失败：图片服务响应较慢，请稍后重试。`
   }
 
-  return `${sceneId} 候选图生成失败：HTTP ${status} · ${JSON.stringify(errorBody)}`
+  return `${detailSceneId} 候选图生成失败：请稍后重试。`
 }
 async function fetchSamplesSummary() {
   const response = await fetch(`${apiBaseUrl}/v1/samples/summary`)
@@ -1243,20 +1242,23 @@ async function refreshImageReviewScene(sceneId: string, signal?: AbortSignal) {
     if (error instanceof DOMException && error.name === 'AbortError') {
       throw error
     }
-    const message = error instanceof Error ? error.message : 'unknown network error'
-    throw new Error(`${sceneId} 候选图生成失败：无法连接后端或请求被中断 · ${message}`)
+    console.warn('[image-review] refresh-scene network error', sceneId, error)
+    throw new Error(`${sceneId} 候选图生成失败：网络连接不稳定，请稍后重试。`)
   }
 
   if (!response.ok) {
     let message = ''
     try {
       const errorBody = await response.json()
-      message = formatApiErrorDetail(sceneId, response.status, errorBody)
+      console.warn('[image-review] refresh-scene failed', sceneId, response.status, errorBody)
+      message = formatImageReviewUserError(sceneId, response.status, errorBody)
     } catch {
       const detail = await response.text().catch(() => '')
-      message = `${sceneId} 候选图生成失败：HTTP ${response.status}${
-        detail ? ` · ${detail}` : ''
-      }`
+      console.warn('[image-review] refresh-scene failed', sceneId, response.status, detail)
+      message =
+        response.status >= 500
+          ? `${sceneId} 候选图生成失败：图片服务暂时不可用，请稍后重试。`
+          : `${sceneId} 候选图生成失败：请稍后重试。`
     }
 
     throw new Error(message)
@@ -1343,6 +1345,7 @@ async function refreshImageReview() {
   errorMessage.value = ''
 
   const failures: string[] = []
+  const refreshTotal = sceneRefreshQueue.value.length
 
   try {
     for (const sceneId of sceneRefreshQueue.value) {
@@ -1378,7 +1381,7 @@ async function refreshImageReview() {
   }
 
   if (failures.length > 0) {
-    errorMessage.value = `部分候选图生成失败：${failures.join('；')}`
+    errorMessage.value = `部分候选图生成失败：${failures.length}/${refreshTotal} 个场景未完成。图片服务暂时不可用，请在 Review 中重试失败场景或稍后再试。`
     return
   }
 

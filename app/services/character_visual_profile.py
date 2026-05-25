@@ -112,6 +112,7 @@ def _known_risk_rules(subject: str) -> Dict[str, List[str]]:
             "must_keep": [
                 "small white storybook rabbit",
                 "long upright rabbit ears with soft pink inner ears",
+                "only the rabbit has long upright ears",
                 "round fluffy rabbit tail",
                 "soft white fur",
                 "small red scarf",
@@ -119,6 +120,7 @@ def _known_risk_rules(subject: str) -> Dict[str, List[str]]:
             "must_avoid": [
                 "turtle shell",
                 "hard round shell",
+                "shell on rabbit body",
                 "turtle body",
                 "short turtle legs",
                 "green turtle skin",
@@ -142,13 +144,17 @@ def _known_risk_rules(subject: str) -> Dict[str, List[str]]:
                 "small green storybook turtle",
                 "round green turtle shell",
                 "olive green turtle body",
+                "earless rounded turtle head",
+                "no external ears on the turtle",
                 "short turtle legs",
                 "gentle round eyes",
                 "small blue neck scarf",
             ],
             "must_avoid": [
                 "rabbit ears",
+                "bunny ears",
                 "long upright ears",
+                "external ears",
                 "fluffy rabbit tail",
                 "rabbit body",
                 "white rabbit fur",
@@ -157,6 +163,7 @@ def _known_risk_rules(subject: str) -> Dict[str, List[str]]:
             "required_presence_rules": [
                 "the turtle must be clearly visible as a separate character",
                 "do not merge the turtle with rabbit ears or rabbit body",
+                "draw the turtle as an earless turtle, never as a rabbit-like animal",
             ],
         }
 

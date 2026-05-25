@@ -477,11 +477,12 @@ def _deterministic_profile_payload(subject: str) -> Dict[str, Any]:
             "visual_identity": (
                 "A small white storybook rabbit with long upright ears, soft pink inner ears, "
                 "a round fluffy tail, bright friendly eyes, and a small red scarf as its fixed "
-                "signature accessory."
+                "signature accessory. Only this rabbit has long upright ears."
             ),
             "must_keep": [
                 "small white storybook rabbit",
                 "long upright rabbit ears",
+                "only the rabbit has long upright ears",
                 "soft pink inner ears",
                 "round fluffy rabbit tail",
                 "bright friendly eyes",
@@ -490,6 +491,7 @@ def _deterministic_profile_payload(subject: str) -> Dict[str, Any]:
             "must_avoid": [
                 "turtle shell",
                 "hard round shell",
+                "shell on rabbit body",
                 "turtle body",
                 "short turtle legs",
                 "green turtle skin",
@@ -513,20 +515,24 @@ def _deterministic_profile_payload(subject: str) -> Dict[str, Any]:
             "subject": value,
             "visual_identity": (
                 "A small green storybook turtle with a round green shell, olive green body, "
-                "short turtle legs, gentle round eyes, and a small blue neck scarf as its "
-                "fixed signature accessory."
+                "an earless rounded turtle head with no external ears, short turtle legs, "
+                "gentle round eyes, and a small blue neck scarf as its fixed signature accessory."
             ),
             "must_keep": [
                 "small green storybook turtle",
                 "round green turtle shell",
                 "olive green turtle body",
+                "earless rounded turtle head",
+                "no external ears on the turtle",
                 "short turtle legs",
                 "gentle round eyes",
                 "small blue neck scarf",
             ],
             "must_avoid": [
                 "rabbit ears",
+                "bunny ears",
                 "long upright ears",
+                "external ears",
                 "fluffy rabbit tail",
                 "rabbit body",
                 "white rabbit fur",
@@ -535,6 +541,7 @@ def _deterministic_profile_payload(subject: str) -> Dict[str, Any]:
             "required_presence_rules": [
                 "the turtle must be clearly visible as a separate character",
                 "do not merge the turtle with rabbit ears or rabbit body",
+                "draw the turtle as an earless turtle, never as a rabbit-like animal",
             ],
             "confidence": "fallback",
         }

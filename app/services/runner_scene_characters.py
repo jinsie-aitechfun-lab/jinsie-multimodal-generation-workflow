@@ -41,7 +41,9 @@ class RunnerSceneCharactersSupport:
         if family == "rabbit":
             return [
                 "no rabbit ears",
+                "no bunny ears",
                 "no long upright rabbit ears",
+                "no external ears",
                 "no fluffy rabbit tail",
                 "no rabbit body",
             ]
@@ -49,6 +51,7 @@ class RunnerSceneCharactersSupport:
             return [
                 "no turtle shell",
                 "no hard turtle shell",
+                "no shell on body",
                 "no turtle body",
                 "no short turtle legs",
             ]
@@ -241,6 +244,9 @@ class RunnerSceneCharactersSupport:
             "do not merge multiple characters into one body",
             "do not create a hybrid creature that combines traits from multiple required characters",
             "do not replace one character with another character",
+            "anatomy separation: only rabbit characters may have long upright ears; only turtle characters may have shells",
+            "turtle anatomy rule: turtles must have an earless rounded reptile head with no external ears",
+            "rabbit anatomy rule: rabbits must not have a shell or turtle body",
             "give every required character clear readable scale and enough visual space",
             f"{primary_text} may lead the action, but must not hide, replace, or visually erase the other required characters",
         ]
@@ -316,6 +322,7 @@ class RunnerSceneCharactersSupport:
                 "appearance lock: keep the same body shape, proportions, facial features, dominant colors, outfit or shell or ears or tail, and the same signature accessory or detail in every scene",
                 "consistency rule: do not redesign this character between scenes; only change pose, camera angle, expression, background, and current action",
                 "presence rule: when this character is required by the scene, it must appear as a real on-screen character in the frame",
+                "strict anatomy rule: do not transfer this character's defining anatomy to any other character",
                 f"must keep: {signature_text}" if signature_text else "",
                 f"must avoid: {forbidden_text}" if forbidden_text else "",
                 f"cross-character must avoid: {cross_forbidden_text}"
