@@ -211,7 +211,7 @@ def main() -> int:
     assert first_character["character_id"] == "char_primary_01"
     assert first_character["display_name"] == "小兔子"
     assert "long upright ears" in first_character["signature_traits"]
-    assert "same main subject: 小兔子" in first_character["signature_traits"]
+    assert "same character identity: 小兔子" in first_character["signature_traits"]
     assert "no turtle shell" in first_character["forbidden_traits"]
     assert first_character["visual_identity"]
 

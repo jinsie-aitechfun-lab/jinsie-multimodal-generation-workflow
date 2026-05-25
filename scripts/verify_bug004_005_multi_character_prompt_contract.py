@@ -40,7 +40,8 @@ def build_request() -> WorkflowRunRequest:
 def main() -> int:
     os.environ["CHARACTER_PROFILE_PROVIDER"] = "template"
 
-    result = WorkflowRunner().run(build_request())
+    runner = WorkflowRunner()
+    result = runner.run(build_request())
     manifest = result.outputs.get("character_manifest") or {}
     storyboard = result.outputs.get("storyboard") or {}
     image_prompts = result.outputs.get("image_prompts") or {}
@@ -94,12 +95,22 @@ def main() -> int:
         print("has_scene_cast_lock =", "scene cast lock" in prompt)
         print("has_cross_character_avoid =", "cross-character must avoid" in prompt)
 
+        if not prompt.startswith("required scene characters:"):
+            failures.append(f"{scene_id}: prompt must start with required characters")
         if "scene cast lock" not in prompt:
             failures.append(f"{scene_id}: prompt missing scene cast lock")
         if "required scene characters" not in prompt:
             failures.append(f"{scene_id}: prompt missing required scene characters")
+        if "not a solo portrait" not in prompt:
+            failures.append(f"{scene_id}: prompt missing solo-portrait guardrail")
+        if "hybrid creature" not in prompt:
+            failures.append(f"{scene_id}: prompt missing hybrid guardrail")
         if "cross-character must avoid" not in prompt:
             failures.append(f"{scene_id}: prompt missing cross-character constraints")
+        if "small white storybook rabbit" not in prompt:
+            failures.append(f"{scene_id}: prompt missing concrete rabbit profile")
+        if "small green storybook turtle" not in prompt:
+            failures.append(f"{scene_id}: prompt missing concrete turtle profile")
         for expected in ["兔子", "乌龟", "no turtle shell", "no rabbit ears"]:
             if expected not in prompt:
                 failures.append(f"{scene_id}: prompt missing {expected}")
@@ -110,6 +121,22 @@ def main() -> int:
                 )
         if len(required_ids) < 2:
             failures.append(f"{scene_id}: required_character_ids missing characters")
+
+    if prompts:
+        negative_prompt = (
+            runner._single_scene_image_support.scene_negative_prompt_from_characters(
+                prompts[0].get("characters") or []
+            )
+        )
+        print("negative_prompt =", negative_prompt)
+        for expected in [
+            "hybrid rabbit turtle creature",
+            "rabbit with turtle shell",
+            "turtle with rabbit ears",
+            "missing required character",
+        ]:
+            if expected not in negative_prompt:
+                failures.append(f"negative_prompt missing {expected}")
 
     if failures:
         print("---")

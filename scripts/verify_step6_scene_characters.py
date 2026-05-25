@@ -83,9 +83,10 @@ def main() -> int:
 
     required_block = support.scene_character_required_presence_block(OUTPUTS, SCENE)
     assert "required scene characters: 小兔子 and 小乌龟" in required_block
+    assert "not a solo portrait" in required_block
     assert "include all of 小兔子 and 小乌龟 together" in required_block
-    assert "小兔子 remains the main protagonist" in required_block
-    assert "小乌龟 are required supporting characters" in required_block
+    assert "小兔子 may lead the action" in required_block
+    assert "小乌龟 must be clearly visible near 小兔子" in required_block
 
     prompt_block = support.scene_character_prompt_block(OUTPUTS, SCENE)
     assert "scene cast lock" in prompt_block

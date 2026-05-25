@@ -159,23 +159,36 @@ class RunnerImagePromptsSupport:
                 if not character_visual_profile:
                     character_visual_profile = policy_blocks.get("profile") or {}
 
-                prompt = ", ".join(
-                    part
-                    for part in [
-                        global_style_anchor,
-                        character_anchor,
-                        policy_blocks.get("visual_profile_block"),
-                        policy_blocks.get("character_visual_profiles_block"),
-                        character_block,
+                is_multi_character_scene = len(required_character_names) >= 2
+                prompt_parts = [
+                    global_style_anchor,
+                    character_anchor,
+                    policy_blocks.get("visual_profile_block"),
+                    policy_blocks.get("character_visual_profiles_block"),
+                    character_block,
+                    scene_required_presence_block,
+                    policy_blocks.get("character_separation_block"),
+                    shot_anchor,
+                    policy_blocks.get("scene_action_block"),
+                    story_anchor,
+                    policy_blocks.get("subject_negative_block"),
+                    negative_block,
+                ]
+                if is_multi_character_scene:
+                    prompt_parts = [
                         scene_required_presence_block,
+                        character_block,
+                        policy_blocks.get("character_visual_profiles_block"),
                         policy_blocks.get("character_separation_block"),
+                        global_style_anchor,
                         shot_anchor,
                         policy_blocks.get("scene_action_block"),
                         story_anchor,
-                        policy_blocks.get("subject_negative_block"),
                         negative_block,
                     ]
-                    if part
+
+                prompt = ", ".join(
+                    part for part in prompt_parts if part
                 )
 
                 prompts.append(
@@ -257,23 +270,36 @@ class RunnerImagePromptsSupport:
             if not character_visual_profile:
                 character_visual_profile = policy_blocks.get("profile") or {}
 
-            prompt = ", ".join(
-                part
-                for part in [
-                    global_style_anchor,
-                    character_anchor,
-                    policy_blocks.get("visual_profile_block"),
-                    policy_blocks.get("character_visual_profiles_block"),
-                    character_block,
+            is_multi_character_scene = len(required_character_names) >= 2
+            prompt_parts = [
+                global_style_anchor,
+                character_anchor,
+                policy_blocks.get("visual_profile_block"),
+                policy_blocks.get("character_visual_profiles_block"),
+                character_block,
+                scene_required_presence_block,
+                policy_blocks.get("character_separation_block"),
+                scene_anchor,
+                policy_blocks.get("scene_action_block"),
+                story_anchor,
+                policy_blocks.get("subject_negative_block"),
+                negative_block,
+            ]
+            if is_multi_character_scene:
+                prompt_parts = [
                     scene_required_presence_block,
+                    character_block,
+                    policy_blocks.get("character_visual_profiles_block"),
                     policy_blocks.get("character_separation_block"),
+                    global_style_anchor,
                     scene_anchor,
                     policy_blocks.get("scene_action_block"),
                     story_anchor,
-                    policy_blocks.get("subject_negative_block"),
                     negative_block,
                 ]
-                if part
+
+            prompt = ", ".join(
+                part for part in prompt_parts if part
             )
 
             prompts.append(

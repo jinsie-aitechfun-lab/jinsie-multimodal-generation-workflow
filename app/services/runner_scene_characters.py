@@ -232,19 +232,22 @@ class RunnerSceneCharactersSupport:
 
         parts = [
             f"required scene characters: {required_text}",
+            f"first priority: draw a multi-character scene with {required_text}, not a solo portrait",
             f"hard requirement: include all of {required_text} together in the same image",
             f"hard requirement: {required_text} must all be clearly visible at the same time in one coherent composition",
             "every listed scene character must be a real on-screen character in the frame, not omitted, not hidden, not cropped out, and not reduced to a tiny background decoration",
             "do not render only one character when multiple required scene characters are listed",
             "do not omit any listed scene character",
             "do not merge multiple characters into one body",
+            "do not create a hybrid creature that combines traits from multiple required characters",
             "do not replace one character with another character",
-            f"{primary_text} remains the main protagonist and visual focus",
+            "give every required character clear readable scale and enough visual space",
+            f"{primary_text} may lead the action, but must not hide, replace, or visually erase the other required characters",
         ]
 
         if secondary_text:
             parts.append(
-                f"{secondary_text} are required supporting characters and are not optional background hints"
+                f"{secondary_text} must be clearly visible near {primary_text} and are not optional background hints"
             )
 
         parts.append(

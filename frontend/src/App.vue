@@ -1823,6 +1823,7 @@ async function runWorkflow() {
               :workflow-response="currentWorkflowResponse"
               :render-in-flight="finalVideoRenderInFlight"
               :loading="workflowIsProcessing || refreshingImageReview || finalVideoRenderInFlight"
+              :error-message="errorMessage"
               :workflow-status-message="workflowRunStatusMessage"
               :workflow-status-progress="workflowStatusProgress"
               @render="renderFinalVideoIfReady(currentWorkflowResponse || {})"

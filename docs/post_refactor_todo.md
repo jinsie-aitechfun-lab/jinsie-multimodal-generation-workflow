@@ -535,6 +535,7 @@ resolved_image_prompts = explicit_image_prompts or stored_image_prompts
 - `image_prompts` 每条 prompt 增加 `required_character_ids` / `required_character_names` metadata。
 - 多角色 scene prompt 保留 `scene cast lock` / `required scene characters` 强约束，明确要求所有角色同框且不可省略。
 - 补充 `verify_bug004_005_multi_character_prompt_contract.py`，覆盖非结构化主题“兔子和乌龟赛跑”的角色 manifest、storyboard、prompt 必需角色约束。
+- 真实出图复测发现模型仍被“主角兔子”前置提示带偏后，已把多角色 required characters 约束前置到 prompt 开头，并增加 `not a solo portrait` 防单角色肖像约束。
 
 **仍需后续跟进**：
 
@@ -584,6 +585,8 @@ resolved_image_prompts = explicit_image_prompts or stored_image_prompts
   - 乌龟不能有 rabbit ears / fluffy rabbit tail / rabbit body。
 - `scene_character_prompt_block` 写入 `cross-character must avoid`。
 - `scene_character_negative_block` 写入带角色名的串扰负面约束，避免不同角色身体特征互相污染。
+- 为兔子 / 乌龟 deterministic visual profile 增加固定外观、固定配饰和互斥特征，避免 LLM profile 失败时回落到过于泛化的“same color palette”描述。
+- 真实复测仍出现兔子有壳、乌龟有耳朵后，已把 `hybrid rabbit turtle creature`、`rabbit with turtle shell`、`turtle with rabbit ears` 等约束写入 API 生图请求的 `negative_prompt` 字段。
 
 **仍需后续跟进**：
 
@@ -661,3 +664,32 @@ resolved_image_prompts = explicit_image_prompts or stored_image_prompts
 - 如果需要视觉级判断，后续接入视觉模型评审候选图。
 
 **优先级**：P1。建议在 BUG-004 / BUG-005 后修，否则筛选器缺少可靠评分目标。
+
+---
+
+## BUG-008: 60s 主题最终音频/视频只有约 40s
+
+**发现日期**：2026-05-25（真实前端验证时）
+
+**触发条件**：
+
+选择 `duration_sec=60`，开启旁白/音频并生成最终视频。
+
+**当前现象**：
+
+最终视频跟随真实 TTS 音频时长，只有约 40s；不是 final video 合成层被硬截断，而是故事/分镜旁白文本总量偏短，真实音频读完后视频自然结束。
+
+**原因定位**：
+
+60s story plan 的目标中文字符数只有 `190-260`，对真实 TTS 来说偏短，容易生成约 40s 左右的旁白。
+
+**已采用修复**：
+
+- 将 60s story plan 调整为 `420-520` 中文字符，目标约 `470` 字。
+- 补充 Step 8 验证，确保 60s template fallback story 达到新的最低文本长度。
+
+**仍需后续跟进**：
+
+- 真实 TTS 语速会随 provider/voice 波动，后续可以增加“音频总时长低于目标阈值时提示或重试扩写旁白”的闭环。
+
+**优先级**：P0。属于用户可见时长回归，建议和本轮一起提交。

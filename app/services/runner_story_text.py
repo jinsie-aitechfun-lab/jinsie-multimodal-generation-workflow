@@ -28,9 +28,9 @@ class RunnerStoryTextSupport:
             {
                 "duration_sec": 60,
                 "scene_count": 6,
-                "target_min_chars": 190,
-                "target_max_chars": 260,
-                "target_chars": 230,
+                "target_min_chars": 420,
+                "target_max_chars": 520,
+                "target_chars": 470,
             },
             {
                 "duration_sec": 120,
