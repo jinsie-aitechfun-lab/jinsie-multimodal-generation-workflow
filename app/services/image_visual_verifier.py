@@ -62,23 +62,31 @@ def _character_summary(characters: List[Dict[str, Any]]) -> str:
 
         name = str(item.get("display_name") or item.get("species") or "").strip()
         species = str(item.get("species") or "").strip()
+        # visual_identity is the richest appearance description; use it as the
+        # primary trait source so the verifier matches by appearance, not by
+        # species taxonomy.
+        visual_identity = str(item.get("visual_identity") or "").strip()
         traits = item.get("signature_traits") or item.get("visual_traits") or []
         forbidden = item.get("forbidden_traits") or []
+
         if isinstance(traits, list):
-            traits_text = ", ".join(str(value).strip() for value in traits if str(value).strip())
+            traits_text = ", ".join(str(v).strip() for v in traits if str(v).strip())
         else:
             traits_text = str(traits or "").strip()
         if isinstance(forbidden, list):
             forbidden_text = ", ".join(
-                str(value).strip() for value in forbidden if str(value).strip()
+                str(v).strip() for v in forbidden if str(v).strip()
             )
         else:
             forbidden_text = str(forbidden or "").strip()
 
+        # Prefer visual_identity; fall back to signature_traits if absent.
+        appearance_text = visual_identity or traits_text
+
         parts = [
             f"name={name}" if name else "",
-            f"species={species}" if species else "",
-            f"must_keep={traits_text}" if traits_text else "",
+            f"species_hint={species}" if species else "",
+            f"visual_appearance={appearance_text}" if appearance_text else "",
             f"must_avoid={forbidden_text}" if forbidden_text else "",
         ]
         line = "; ".join(part for part in parts if part)
@@ -134,11 +142,20 @@ class OpenAICompatibleImageVisualVerifier:
     ) -> Dict[str, Any]:
         character_summary = _character_summary(characters)
         instruction = (
-            "You are a strict visual reviewer for children's story image candidates.\n"
+            "You are a visual reviewer for children's story image candidates.\n"
             "Return ONLY compact JSON with these keys: score, passed, "
             "missing_required_characters, forbidden_trait_issues, anatomy_leakage_issues, notes.\n"
-            "Score from 0 to 100. Penalize missing required characters, merged characters, "
-            "wrong species, and traits transferred between characters.\n"
+            "Score from 0 to 100.\n\n"
+            "IMPORTANT — identify characters by visual appearance, NOT by species taxonomy:\n"
+            "- Each character entry has a 'visual_appearance' field describing exactly what to look for.\n"
+            "- A character is PRESENT if you can see visual features matching its description.\n"
+            "- Do NOT use your own species knowledge to reject a character. "
+            "If the described visual features are visible, the character is present.\n"
+            "- Example: a character described as 'round black body, long thin tail, no limbs' "
+            "is present if you see exactly those features — even if the creature looks like "
+            "a larva, a fish, or an unusual shape to you.\n\n"
+            "Penalize: missing required characters, merged characters, "
+            "traits explicitly listed in must_avoid appearing on a character.\n"
             f"Scene prompt:\n{prompt}\n\nRequired characters:\n{character_summary or '- none'}"
         )
 
