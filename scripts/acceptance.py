@@ -1,6 +1,8 @@
 import argparse
 import json
 import sys
+import time
+from pathlib import Path
 from typing import Any, Dict
 from uuid import uuid4
 
@@ -16,11 +18,25 @@ def _ok(msg: str) -> None:
     print(f"[OK] {msg}")
 
 
-def _run_request(
+_WORKFLOW_STEPS = [
+    {"name": "story"},
+    {"name": "storyboard"},
+    {"name": "image_prompts"},
+    {"name": "video_prompts"},
+    {"name": "dialogue_script"},
+    {"name": "audio_segments"},
+    {"name": "narration"},
+    {"name": "subtitles"},
+    {"name": "render_plan"},
+]
+
+
+def _submit_workflow(
     base_url: str,
     session_id: str,
     topic: str,
-) -> Dict[str, Any]:
+) -> str:
+    """POST /v1/workflow/run, assert async acceptance, return workflow_id."""
     payload: Dict[str, Any] = {
         "workflow_id": "storybook-demo",
         "session_id": session_id,
@@ -44,22 +60,53 @@ def _run_request(
             "video_provider": "mock",
             "output_mode": "full_video",
         },
-        "steps": [
-            {"name": "story"},
-            {"name": "storyboard"},
-            {"name": "image_prompts"},
-            {"name": "video_prompts"},
-            {"name": "dialogue_script"},
-            {"name": "audio_segments"},
-            {"name": "narration"},
-            {"name": "subtitles"},
-            {"name": "render_plan"},
-        ],
+        "steps": _WORKFLOW_STEPS,
     }
     r = requests.post(f"{base_url}/v1/workflow/run", json=payload, timeout=15)
     if r.status_code != 200:
         _fail(f"/v1/workflow/run http_status={r.status_code}, body={r.text}")
-    return r.json()
+    body = r.json()
+    if body.get("status") != "processing":
+        _fail(f"/v1/workflow/run status != processing: {body}")
+    workflow_id = body.get("workflow_id")
+    if not workflow_id:
+        _fail(f"/v1/workflow/run missing workflow_id: {body}")
+    return workflow_id
+
+
+def _poll_until_complete(
+    base_url: str,
+    workflow_id: str,
+    timeout_sec: int = 120,
+    poll_interval_sec: float = 1.5,
+) -> None:
+    """Poll GET /v1/workflow/status until completed or timeout."""
+    deadline = time.monotonic() + timeout_sec
+    while time.monotonic() < deadline:
+        r = requests.get(
+            f"{base_url}/v1/workflow/status/{workflow_id}", timeout=5
+        )
+        if r.status_code != 200:
+            _fail(
+                f"/v1/workflow/status/{workflow_id} http_status={r.status_code}"
+            )
+        body = r.json()
+        status = body.get("status")
+        if status == "completed":
+            return
+        if status == "failed":
+            _fail(f"workflow {workflow_id} failed: {body}")
+        time.sleep(poll_interval_sec)
+    _fail(f"workflow {workflow_id} did not complete within {timeout_sec}s")
+
+
+def _load_outputs(workflow_id: str) -> Dict[str, Any]:
+    """Read outputs.json written by the async runner."""
+    outputs_path = Path("assets/mock") / workflow_id / "outputs.json"
+    if not outputs_path.exists():
+        _fail(f"outputs.json not found: {outputs_path}")
+    with open(outputs_path, encoding="utf-8") as f:
+        return json.load(f)
 
 
 def main() -> None:
@@ -188,7 +235,10 @@ def main() -> None:
     _ok("/v1/samples/kling/real/{sample_id}")
 
     # 5) first run
-    resp1 = _run_request(base_url, session_id, "小兔子的一天")
+    wf_id1 = _submit_workflow(base_url, session_id, "小兔子的一天")
+    _poll_until_complete(base_url, wf_id1)
+    resp1 = _load_outputs(wf_id1)
+    _ok(f"/v1/workflow/run (async, {wf_id1})")
 
     if resp1.get("workflow_id") != "storybook-demo":
         _fail(f"workflow_id mismatch: {resp1.get('workflow_id')}")
@@ -341,7 +391,10 @@ def main() -> None:
         )
 
     # 6) second run with same session id
-    resp2 = _run_request(base_url, session_id, "小兔子的新冒险")
+    wf_id2 = _submit_workflow(base_url, session_id, "小兔子的新冒险")
+    _poll_until_complete(base_url, wf_id2)
+    resp2 = _load_outputs(wf_id2)
+    _ok(f"/v1/workflow/run second run (async, {wf_id2})")
     memory2 = resp2.get("session_memory_summary") or {}
 
     if memory2.get("enabled") is not True:
@@ -368,7 +421,7 @@ def main() -> None:
     if not isinstance(notes, list) or len(notes) == 0:
         _fail(f"kling_scene_package manual_generation_notes invalid: {kling_scene_package2}")
 
-    _ok("/v1/workflow/run")
+    _ok("all workflow assertions passed")
     print(json.dumps(resp2, ensure_ascii=False, indent=2))
 
 

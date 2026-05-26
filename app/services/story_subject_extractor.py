@@ -3,6 +3,12 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+try:
+    import jieba.posseg as _posseg
+    _JIEBA_AVAILABLE = True
+except Exception:  # pragma: no cover
+    _JIEBA_AVAILABLE = False
+
 
 @dataclass
 class StorySubjectExtraction:
@@ -58,13 +64,59 @@ def _clean_piece(value: str) -> str:
     return text.strip(" \t\n\r，。！？、,.!?：:；;“”\"'《》")
 
 
+def _cut_at_verb_boundary_jieba(text: str) -> str:
+    """遇到动词或第二个非修饰名词（activity noun）就截断，返回角色名部分。"""
+    tokens = list(_posseg.cut(text))
+    if len(tokens) <= 1:
+        return text  # 单 token，无需截断
+
+    accumulated = ""
+    pending_xiao_prefix = False  # 上一个 token 是 "小" 修饰前缀
+
+    for word, flag in tokens:
+        # 动词截断
+        if flag.startswith("v"):
+            break
+        # 量词、副词、介词、助词等截断
+        if flag in ("m", "d", "p", "u", "e", "y", "o", "w", "f"):
+            break
+
+        if flag == "n":
+            if pending_xiao_prefix:
+                # "小(a)" + "狐狸(n)" → 合并为角色名，继续
+                accumulated += word
+                pending_xiao_prefix = False
+                continue
+            if accumulated:
+                # 第二个独立名词 → activity noun，截断
+                break
+            accumulated += word
+        elif flag == "a" and word == "小" and not accumulated:
+            # "小" 作修饰前缀，暂存，等下一个名词合并
+            accumulated += word
+            pending_xiao_prefix = True
+        elif flag in ("n", "nr", "nz"):
+            accumulated += word
+            pending_xiao_prefix = False
+        else:
+            accumulated += word
+            pending_xiao_prefix = False
+
+    return accumulated.strip() or text
+
+
 def _cut_at_generic_syntax_boundary(value: str) -> str:
     text = str(value or "").strip()
     if not text:
         return ""
 
-    boundaries = ("去", "在", "被", "把", "给", "为", "从", "到", "向", "对", "用")
+    if _JIEBA_AVAILABLE:
+        cut = _cut_at_verb_boundary_jieba(text)
+        if cut and cut != text:
+            return cut
 
+    # fallback: 仅介词边界（jieba 不可用时）
+    boundaries = ("去", "在", "被", "把", "给", "为", "从", "到", "向", "对", "用")
     best_pos: int | None = None
     for boundary in boundaries:
         pos = text.find(boundary)
