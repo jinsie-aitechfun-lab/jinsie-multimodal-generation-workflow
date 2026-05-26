@@ -57,9 +57,16 @@ def main() -> int:
 
     failures: list[str] = []
 
+    multi_char_keywords = [
+        "multi-character identity lock",
+        "required scene characters",
+        "scene cast lock",
+    ]
+    has_multi_char_block = any(kw in first_prompt for kw in multi_char_keywords)
+
     print("profile_count =", len(profiles))
     print("payload_count =", payload.get("count"))
-    print("has_multi_profile_block =", "multi-character visual profiles" in first_prompt)
+    print("has_multi_char_block =", has_multi_char_block)
 
     if len(profiles) != 2:
         failures.append(f"expected 2 profiles, got {len(profiles)}")
@@ -103,8 +110,11 @@ def main() -> int:
         if not profile.get("must_avoid"):
             failures.append(f"{name}: missing must_avoid")
 
-    if "multi-character visual profiles" not in first_prompt:
-        failures.append("first prompt missing multi-character visual profiles block")
+    if not has_multi_char_block:
+        failures.append(
+            "first prompt missing multi-character block "
+            f"(checked: {multi_char_keywords})"
+        )
 
     for name in ["小兔子", "小乌龟"]:
         if name not in first_prompt:
