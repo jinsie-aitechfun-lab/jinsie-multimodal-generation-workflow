@@ -409,6 +409,26 @@ class RunnerAudioRenderSupport:
             else "mock_tts"
         )
 
+        total_duration_sec = sum(float(item.get("duration_sec") or 0) for item in items)
+        target_duration_sec = float(getattr(ctx.input, "duration_sec", 0) or 0)
+        duration_too_short = (
+            target_duration_sec > 0
+            and real_generation_count > 0
+            and total_duration_sec < target_duration_sec * 0.80
+        )
+        duration_summary = {
+            "total_duration_sec": round(total_duration_sec, 2),
+            "target_duration_sec": target_duration_sec,
+            "duration_gap_sec": round(max(0.0, target_duration_sec - total_duration_sec), 2),
+            "duration_too_short": duration_too_short,
+        }
+        if duration_too_short:
+            duration_summary["warning"] = (
+                f"audio total {total_duration_sec:.1f}s is shorter than "
+                f"80% of target {target_duration_sec:.0f}s; "
+                "consider expanding narration text"
+            )
+
         return {
             "enabled": True,
             "provider": overall_provider,
@@ -422,6 +442,7 @@ class RunnerAudioRenderSupport:
             },
             "directory_manifest": directory_manifest,
             "scene_asset_map": scene_asset_map,
+            "duration_summary": duration_summary,
         }
 
     def run_narration(self, ctx: Any, outputs: Dict[str, Any]) -> Dict[str, Any]:
