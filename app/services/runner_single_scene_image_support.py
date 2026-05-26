@@ -6,6 +6,11 @@ from typing import Any, Dict, List
 from app.services.image_candidate_selector import select_best_candidate
 from app.services.image_provider_adapter import ApiImageGeneratorAdapter
 from app.services.image_provider_types import ImageGenerationTask
+from app.services.image_quality_retry_policy import (
+    derive_retry_prompt_amendment,
+    quality_max_retries,
+    summarize_selection_for_history,
+)
 
 
 class RunnerSingleSceneImageSupport:
@@ -207,71 +212,143 @@ class RunnerSingleSceneImageSupport:
             asset_meta["characters"]
         )
 
-        candidate_asset_refs: List[Dict[str, Any]] = []
         adapter = ApiImageGeneratorAdapter(runner)
 
-        for candidate_index, candidate_suffix in enumerate(["candidate_a", "candidate_b"]):
-            candidate_scene = runner._scene_candidate_variant(
-                scene=scene,
-                candidate_index=candidate_index,
-            )
-
-            candidate_prompt = base_prompt
-            if candidate_index == 1:
-                candidate_prompt = (
-                    f"{base_prompt}, alternate composition, different framing, "
-                    "slightly changed pose emphasis, secondary visual arrangement"
+        def _generate_candidate_pair(
+            active_prompt: str,
+            active_negative: str,
+        ) -> List[Dict[str, Any]]:
+            candidates: List[Dict[str, Any]] = []
+            for candidate_index, candidate_suffix in enumerate(
+                ["candidate_a", "candidate_b"]
+            ):
+                candidate_scene = runner._scene_candidate_variant(
+                    scene=scene,
+                    candidate_index=candidate_index,
                 )
 
-            file_name = f"{scene_id}__{candidate_suffix}.png"
-            output_path = run_dir / file_name
+                candidate_prompt = active_prompt
+                if candidate_index == 1:
+                    candidate_prompt = (
+                        f"{active_prompt}, alternate composition, different framing, "
+                        "slightly changed pose emphasis, secondary visual arrangement"
+                    )
 
-            task = ImageGenerationTask(
-                run_id=ctx.run_id,
-                item_id=scene_id,
-                scene_id=scene_id,
-                prompt=candidate_prompt,
-                candidate_suffix=candidate_suffix,
-                output_path=output_path,
-                relative_path=f"assets/mock/image/{ctx.run_id}/{file_name}",
-                public_url=f"/assets/mock/image/{ctx.run_id}/{file_name}",
-                prompt_metadata={
-                    "ctx": ctx,
-                    "scene": candidate_scene,
-                    "scene_index": scene_index + candidate_index,
-                    "negative_prompt": negative_prompt,
-                },
-            )
+                file_name = f"{scene_id}__{candidate_suffix}.png"
+                output_path = run_dir / file_name
 
-            image_bytes = adapter.generate(task)
-            if not isinstance(image_bytes, (bytes, bytearray)):
-                raise RuntimeError(
-                    f"api image provider returned invalid bytes for scene {scene_id} ({candidate_suffix})"
+                task = ImageGenerationTask(
+                    run_id=ctx.run_id,
+                    item_id=scene_id,
+                    scene_id=scene_id,
+                    prompt=candidate_prompt,
+                    candidate_suffix=candidate_suffix,
+                    output_path=output_path,
+                    relative_path=f"assets/mock/image/{ctx.run_id}/{file_name}",
+                    public_url=f"/assets/mock/image/{ctx.run_id}/{file_name}",
+                    prompt_metadata={
+                        "ctx": ctx,
+                        "scene": candidate_scene,
+                        "scene_index": scene_index + candidate_index,
+                        "negative_prompt": active_negative,
+                    },
                 )
 
-            output_path = Path(output_path)
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_bytes(bytes(image_bytes))
+                image_bytes = adapter.generate(task)
+                if not isinstance(image_bytes, (bytes, bytearray)):
+                    raise RuntimeError(
+                        f"api image provider returned invalid bytes for scene {scene_id} ({candidate_suffix})"
+                    )
 
-            candidate_asset_refs.append(
-                {
-                    "scene_id": scene_id,
-                    "file_name": file_name,
-                    "relative_path": task.relative_path,
-                    "public_url": task.public_url,
-                    "mime_type": "image/png",
-                    "provider": "api_image_generator",
-                    "negative_prompt": negative_prompt,
-                }
-            )
+                output_path = Path(output_path)
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                output_path.write_bytes(bytes(image_bytes))
 
+                candidates.append(
+                    {
+                        "scene_id": scene_id,
+                        "file_name": file_name,
+                        "relative_path": task.relative_path,
+                        "public_url": task.public_url,
+                        "mime_type": "image/png",
+                        "provider": "api_image_generator",
+                        "negative_prompt": active_negative,
+                    }
+                )
+            return candidates
+
+        # === Attempt 1: original prompt ===
+        active_prompt = base_prompt
+        active_negative = negative_prompt
+        candidate_asset_refs = _generate_candidate_pair(active_prompt, active_negative)
         selection = select_best_candidate(
             candidate_asset_refs=candidate_asset_refs,
-            prompt=base_prompt,
+            prompt=active_prompt,
             characters=asset_meta["characters"],
         )
+        selection_history: List[Dict[str, Any]] = [
+            summarize_selection_for_history(
+                attempt=1, selection=selection, amendment_reasons=[]
+            )
+        ]
+        attempt = 1
+        max_retries = quality_max_retries()
+
+        # === Quality retry loop ===
+        # When the selector reports should_retry (best candidate's vision score
+        # plus hard-failure caps put it below MIN_PASS_SCORE), regenerate the
+        # candidate pair with prompt amendments derived from the failing
+        # visual_review (missing characters / forbidden traits / anatomy
+        # leakage). Only accept a retry if it scored strictly higher; stop on
+        # diminishing returns to avoid burning API budget for no gain.
+        while selection.get("should_retry") and attempt <= max_retries:
+            candidate_scores = selection.get("candidate_scores") or []
+            failing_visual_review = (
+                (candidate_scores[0].get("visual_review") if candidate_scores else {})
+                or {}
+            )
+            amendment = derive_retry_prompt_amendment(
+                base_prompt=base_prompt,
+                base_negative_prompt=negative_prompt,
+                visual_review=failing_visual_review,
+                attempt=attempt + 1,
+            )
+            if not amendment.get("has_amendments"):
+                # No structured failure signals to act on; retrying the same
+                # prompt with the same provider is unlikely to help.
+                break
+
+            attempt += 1
+            active_prompt = amendment["prompt"]
+            active_negative = amendment["negative_prompt"]
+
+            retry_candidates = _generate_candidate_pair(active_prompt, active_negative)
+            retry_selection = select_best_candidate(
+                candidate_asset_refs=retry_candidates,
+                prompt=active_prompt,
+                characters=asset_meta["characters"],
+            )
+            selection_history.append(
+                summarize_selection_for_history(
+                    attempt=attempt,
+                    selection=retry_selection,
+                    amendment_reasons=amendment.get("amendment_reasons") or [],
+                )
+            )
+
+            if float(retry_selection.get("best_score") or 0.0) > float(
+                selection.get("best_score") or 0.0
+            ):
+                selection = retry_selection
+                candidate_asset_refs = retry_candidates
+            else:
+                # Retry scored no better — stop to avoid runaway API cost.
+                break
+
         candidate_asset_refs = selection["candidate_asset_refs"]
         selected_asset_ref = selection["selected_asset_ref"]
+        quality_retry_attempts = max(0, attempt - 1)
+        quality_retry_exhausted = bool(selection.get("should_retry"))
 
         return {
             "scene_id": scene_id,
@@ -291,7 +368,11 @@ class RunnerSingleSceneImageSupport:
             "selection_reason": selection.get("selection_reason"),
             "candidate_scores": selection.get("candidate_scores") or [],
             "quality_gates": selection.get("quality_gates") or {},
-            "review_required": bool(selection.get("review_required")),
+            "review_required": bool(selection.get("review_required"))
+            or quality_retry_exhausted,
+            "quality_retry_attempts": quality_retry_attempts,
+            "quality_retry_exhausted": quality_retry_exhausted,
+            "selection_history": selection_history,
         }
 
     def run_single_scene_image_asset(
