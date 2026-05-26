@@ -27,6 +27,17 @@ COLOR_KEYWORDS = {
 }
 
 MIN_PASS_SCORE = 45.0
+
+# Vision-dominant scoring tunables. When the visual verifier returns a score:
+#  - metadata contribution is capped (no more drowning the signal in
+#    file_exists + image_readable + color overhead)
+#  - visual_score * VISION_SCORE_WEIGHT carries the main signal
+#  - any hard failure (missing/forbidden/anatomy) drops the score below
+#    MIN_PASS_SCORE by HARD_FAIL_MARGIN so should_retry fires
+VISION_MODE_METADATA_CAP = 25.0
+VISION_SCORE_WEIGHT = 0.7
+HARD_FAIL_MARGIN = 10.0
+
 VisualVerifier = Callable[..., Dict[str, Any]]
 
 
@@ -346,7 +357,11 @@ def _score_candidate(
     if quality_gates.get("multi_character_scene"):
         reasons.append("metadata_quality_gate_multi_character_scene")
 
+    metadata_score = score
+
     visual_review: Dict[str, Any] = {}
+    visual_score_value: Optional[float] = None
+    visual_hard_failures: List[str] = []
     if image is not None and visual_verifier is not None:
         try:
             visual_review = visual_verifier(
@@ -354,33 +369,51 @@ def _score_candidate(
                 prompt=prompt,
                 characters=characters,
             )
-            visual_score = float(visual_review.get("score") or 0.0)
-            visual_score = max(0.0, min(100.0, visual_score))
-            visual_delta = (visual_score - 50.0) * 0.9
-            score += visual_delta
-            reasons.append(f"visual_score:{visual_score:.1f}")
-            reasons.append(f"visual_delta:{visual_delta:.1f}")
+            raw_score = float(visual_review.get("score") or 0.0)
+            visual_score_value = max(0.0, min(100.0, raw_score))
 
             missing = visual_review.get("missing_required_characters") or []
             forbidden = visual_review.get("forbidden_trait_issues") or []
             anatomy = visual_review.get("anatomy_leakage_issues") or []
             if missing:
-                score -= 35.0
-                reasons.append("visual_missing_required_characters")
+                visual_hard_failures.append("missing_required_characters")
             if forbidden:
-                score -= 30.0
-                reasons.append("visual_forbidden_trait_issues")
+                visual_hard_failures.append("forbidden_trait_issues")
             if anatomy:
-                score -= 30.0
-                reasons.append("visual_anatomy_leakage_issues")
-            if visual_review.get("passed") is False:
-                reasons.append("visual_review_failed")
+                visual_hard_failures.append("anatomy_leakage_issues")
         except Exception as error:  # pragma: no cover - network/provider dependent
             visual_review = {
                 "enabled": True,
                 "error": type(error).__name__,
             }
             reasons.append(f"visual_review_error:{type(error).__name__}")
+
+    # Score modes:
+    # - vision_dominant: visual verifier ran successfully; the model's score
+    #   drives the result, metadata only contributes a small floor. Any hard
+    #   failure (missing/forbidden/anatomy) caps the score below the pass
+    #   threshold so the candidate is rejected and `should_retry` fires.
+    # - metadata_only: visual verifier disabled or errored; fall back to the
+    #   legacy metadata + color rule scoring.
+    if visual_score_value is not None:
+        score_mode = "vision_dominant"
+        capped_metadata = max(0.0, min(metadata_score, VISION_MODE_METADATA_CAP))
+        visual_contribution = visual_score_value * VISION_SCORE_WEIGHT
+        score = capped_metadata + visual_contribution
+        reasons.append("score_mode:vision_dominant")
+        reasons.append(f"visual_score:{visual_score_value:.1f}")
+        reasons.append(f"visual_contribution:{visual_contribution:.1f}")
+        reasons.append(f"capped_metadata_floor:{capped_metadata:.1f}")
+        for failure in visual_hard_failures:
+            reasons.append(f"visual_hard_fail:{failure}")
+        if visual_hard_failures:
+            score = min(score, MIN_PASS_SCORE - HARD_FAIL_MARGIN)
+        if visual_review.get("passed") is False:
+            reasons.append("visual_review_failed")
+            score = min(score, MIN_PASS_SCORE - 1.0)
+    else:
+        score_mode = "metadata_only"
+        reasons.append("score_mode:metadata_only")
 
     passed = score >= MIN_PASS_SCORE
 
@@ -389,6 +422,7 @@ def _score_candidate(
         "score": round(score, 2),
         "passed": passed,
         "reasons": reasons,
+        "score_mode": score_mode,
         "expected_colors": expected_colors,
         "matched_colors": matched_colors,
         "color_ratios": color_ratios,
@@ -397,6 +431,7 @@ def _score_candidate(
         "forbidden_color_ratios": forbidden_color_ratios,
         "quality_gates": quality_gates,
         "visual_review": visual_review,
+        "visual_hard_failures": visual_hard_failures,
     }
 
 
