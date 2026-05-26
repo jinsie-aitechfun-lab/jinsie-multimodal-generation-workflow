@@ -176,11 +176,11 @@ class RunnerImagePromptsSupport:
                 ]
                 if is_multi_character_scene:
                     prompt_parts = [
+                        global_style_anchor,
                         scene_required_presence_block,
                         character_block,
                         policy_blocks.get("character_visual_profiles_block"),
                         policy_blocks.get("character_separation_block"),
-                        global_style_anchor,
                         shot_anchor,
                         policy_blocks.get("scene_action_block"),
                         story_anchor,
@@ -287,11 +287,11 @@ class RunnerImagePromptsSupport:
             ]
             if is_multi_character_scene:
                 prompt_parts = [
+                    global_style_anchor,
                     scene_required_presence_block,
                     character_block,
                     policy_blocks.get("character_visual_profiles_block"),
                     policy_blocks.get("character_separation_block"),
-                    global_style_anchor,
                     scene_anchor,
                     policy_blocks.get("scene_action_block"),
                     story_anchor,
