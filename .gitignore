@@ -81,3 +81,8 @@ desktop.ini
 # Archived / sidelined scripts (kept locally for reference, not tracked)
 # =========================
 scripts/_archive/
+
+# =========================
+# Runtime-generated assets (audio, images, video — never commit)
+# =========================
+assets/mock/
