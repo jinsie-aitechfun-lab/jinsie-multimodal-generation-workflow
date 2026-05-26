@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import os
 import time
 import urllib.error
 import urllib.request
-from typing import Any
+from pathlib import Path
+from typing import Any, Optional
 
 from app.services.image_provider_retry import run_with_retry
 from app.services.image_provider_types import (
@@ -14,6 +17,26 @@ from app.services.image_provider_types import (
     ImageGenerationTask,
     RetryConfig,
 )
+
+
+def _derive_run_seed(run_id: str) -> int:
+    """Deterministic seed in [0, 9999999999] derived from run_id."""
+    digest = hashlib.sha256(run_id.encode("utf-8")).digest()
+    return int.from_bytes(digest[:5], "big") % 10_000_000_000
+
+
+def _img2img_enabled() -> bool:
+    return (os.getenv("SILICONFLOW_IMG2IMG_ENABLED") or "").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+
+
+def _img2img_strength() -> float:
+    raw = (os.getenv("SILICONFLOW_IMG2IMG_STRENGTH") or "0.75").strip()
+    try:
+        return max(0.1, min(1.0, float(raw)))
+    except ValueError:
+        return 0.75
 
 
 class PillowStorybookAdapter:
@@ -53,18 +76,22 @@ class ApiImageGeneratorAdapter:
     def generate(self, task: ImageGenerationTask) -> bytes:
         return self._generate_api_image_bytes(
             prompt=task.prompt,
+            run_id=task.run_id,
             scene=task.prompt_metadata.get("scene") or {},
             scene_index=int(task.prompt_metadata.get("scene_index") or 1),
             negative_prompt=str(task.prompt_metadata.get("negative_prompt") or ""),
+            img2img_reference_path=task.prompt_metadata.get("img2img_reference_path"),
         )
 
     def _generate_api_image_bytes(
         self,
         *,
         prompt: str,
+        run_id: str = "",
         scene: dict[str, Any],
         scene_index: int,
         negative_prompt: str = "",
+        img2img_reference_path: Optional[Any] = None,
     ) -> bytes:
         if self._runner._force_image_rate_limit():
             raise RuntimeError("HTTP 429: IPM limit reached (forced for local testing)")
@@ -117,9 +144,8 @@ class ApiImageGeneratorAdapter:
             "image_size": image_size,
         }
 
-        # Reference images are intentionally not sent here yet.
-        # Current api_image_generator is treated as text-to-image only until
-        # a provider with explicit reference-image support is integrated.
+        if run_id:
+            payload["seed"] = _derive_run_seed(run_id)
 
         if negative_prompt:
             payload["negative_prompt"] = negative_prompt
@@ -128,6 +154,13 @@ class ApiImageGeneratorAdapter:
             payload["batch_size"] = 1
             payload["num_inference_steps"] = num_inference_steps
             payload["guidance_scale"] = guidance_scale
+
+        if _img2img_enabled() and img2img_reference_path is not None:
+            ref_path = Path(img2img_reference_path)
+            if ref_path.is_file():
+                ref_b64 = base64.b64encode(ref_path.read_bytes()).decode("ascii")
+                payload["image"] = f"data:image/png;base64,{ref_b64}"
+                payload["strength"] = _img2img_strength()
 
         request_url = f"{base_url.rstrip('/')}/images/generations"
         request_body = json.dumps(payload).encode("utf-8")
