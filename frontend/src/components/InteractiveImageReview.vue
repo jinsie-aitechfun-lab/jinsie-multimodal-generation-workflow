@@ -973,7 +973,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 
 .preview-card {
   display: grid;
-  grid-template-columns: 132px minmax(0, 1fr);
+  grid-template-columns: 192px minmax(0, 1fr);
   gap: 14px;
   align-items: stretch;
   padding: 10px;
@@ -984,12 +984,12 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 
 .preview-card-selected,
 .preview-card-candidate {
-  min-height: 184px;
+  min-height: 120px;
 }
 
 .preview-visual-frame {
-  width: 132px;
-  min-height: 164px;
+  width: 192px;
+  aspect-ratio: 16 / 9;
   border-radius: 12px;
   overflow: hidden;
   border: 1px solid #d7dee8;
@@ -1001,7 +1001,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 }
 
 .preview-visual-frame-candidate {
-  min-height: 164px;
+  aspect-ratio: 16 / 9;
 }
 
 .preview-visual-image {
@@ -1499,7 +1499,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   }
 
   .preview-visual-frame {
-    width: 132px;
+    width: 100%;
   }
 }
 
