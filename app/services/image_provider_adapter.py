@@ -120,8 +120,14 @@ class ApiImageGeneratorAdapter:
                 "extra limbs, duplicated subject, unreadable details"
             ),
         ).strip()
+        style_negative = (
+            "3D render, CGI, photorealistic, realistic photography, "
+            "computer graphics, digital 3D, plastic texture, "
+            "sharp hard edges, studio lighting"
+        )
         negative_prompt = self._merge_negative_prompt(
             default_negative_prompt,
+            style_negative,
             negative_prompt,
         )
 

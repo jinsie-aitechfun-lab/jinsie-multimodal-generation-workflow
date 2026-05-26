@@ -31,15 +31,21 @@ class RunnerImagePromptsSupport:
         storyboard = outputs.get("storyboard") or {}
         scenes = storyboard.get("scenes") or []
 
+        image_size = __import__("os").getenv(
+            "SILICONFLOW_IMAGE_SIZE", "1280x720"
+        ).strip()
+        framing = "vertical 9:16 framing" if image_size.startswith("720") else "horizontal 16:9 framing"
         global_style_anchor = (
             f"{ctx.input.visual_style} illustration, "
             f"{ctx.input.tone} mood, "
-            "children's storybook art, "
+            "2D hand-painted children's picture book art, "
             "soft pastel palette, "
             "warm gentle lighting, "
+            "painterly brushstroke texture, "
+            "NOT 3D render, NOT photorealistic, NOT CGI, "
             "clean composition, "
             "consistent character design, "
-            "vertical 9:16 framing"
+            f"{framing}"
         )
 
         character_anchor = runner._character_consistency_anchor(ctx, outputs)
