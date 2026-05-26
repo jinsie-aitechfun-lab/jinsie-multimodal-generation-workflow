@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from app.services.image_provider_adapter import (
     ApiImageGeneratorAdapter,
@@ -100,6 +101,7 @@ class ImageProviderQueue:
         )
         anchor_reference_images = character_anchor.get("reference_images") or []
         assets: List[Dict[str, Any]] = []
+        first_item_img_path: Optional[Path] = None
 
         if shot_items:
             for index, shot in enumerate(shot_items, start=1):
@@ -142,6 +144,7 @@ class ImageProviderQueue:
                     shot_type=shot_type,
                     transition=transition,
                     anchor_reference_images=anchor_reference_images,
+                    img2img_reference_path=first_item_img_path,
                 )
 
                 selection = select_best_candidate(
@@ -168,6 +171,7 @@ class ImageProviderQueue:
                         shot_type=shot_type,
                         transition=transition,
                         anchor_reference_images=anchor_reference_images,
+                        img2img_reference_path=first_item_img_path,
                     )
                     retry_selection = select_best_candidate(
                         candidate_asset_refs=retry_candidate_asset_refs,
@@ -178,6 +182,13 @@ class ImageProviderQueue:
                         selection = retry_selection
                         candidate_asset_refs = retry_selection["candidate_asset_refs"]
                         selected_asset_ref = retry_selection["selected_asset_ref"]
+
+                if index == 1 and first_item_img_path is None:
+                    ref_file = str(selected_asset_ref.get("file_name") or "")
+                    if ref_file:
+                        candidate_path = run_dir / ref_file
+                        if candidate_path.is_file():
+                            first_item_img_path = candidate_path
 
                 assets.append(
                     {
@@ -211,6 +222,7 @@ class ImageProviderQueue:
                     }
                 )
         else:
+            first_item_img_path = None
             for index, scene in enumerate(scenes, start=1):
                 scene_id = str(scene.get("scene_id") or f"scene_{index:02d}")
                 prompt_item = prompt_by_scene_id.get(scene_id) or {}
@@ -237,6 +249,7 @@ class ImageProviderQueue:
                     base_prompt=base_prompt,
                     prompt_item=prompt_item,
                     anchor_reference_images=anchor_reference_images,
+                    img2img_reference_path=first_item_img_path,
                 )
 
                 selection = select_best_candidate(
@@ -258,6 +271,7 @@ class ImageProviderQueue:
                         base_prompt=base_prompt,
                         prompt_item=prompt_item,
                         anchor_reference_images=anchor_reference_images,
+                        img2img_reference_path=first_item_img_path,
                     )
                     retry_selection = select_best_candidate(
                         candidate_asset_refs=retry_candidate_asset_refs,
@@ -268,6 +282,13 @@ class ImageProviderQueue:
                         selection = retry_selection
                         candidate_asset_refs = retry_selection["candidate_asset_refs"]
                         selected_asset_ref = retry_selection["selected_asset_ref"]
+
+                if index == 1 and first_item_img_path is None:
+                    ref_file = str(selected_asset_ref.get("file_name") or "")
+                    if ref_file:
+                        candidate_path = run_dir / ref_file
+                        if candidate_path.is_file():
+                            first_item_img_path = candidate_path
 
                 assets.append(
                     {
@@ -450,6 +471,7 @@ class ImageProviderQueue:
         shot_type: str,
         transition: str,
         anchor_reference_images: List[Dict[str, Any]],
+        img2img_reference_path: Optional[Path] = None,
     ) -> List[Dict[str, Any]]:
         candidate_asset_refs: List[Dict[str, Any]] = []
 
@@ -509,6 +531,7 @@ class ImageProviderQueue:
                     "scene_index": index + candidate_index,
                     "character_anchor": character_anchor,
                     "reference_images": reference_images,
+                    "img2img_reference_path": img2img_reference_path,
                 },
             )
 
@@ -554,6 +577,7 @@ class ImageProviderQueue:
         base_prompt: str,
         prompt_item: Dict[str, Any],
         anchor_reference_images: List[Dict[str, Any]],
+        img2img_reference_path: Optional[Path] = None,
     ) -> List[Dict[str, Any]]:
         candidate_asset_refs: List[Dict[str, Any]] = []
 
@@ -597,6 +621,7 @@ class ImageProviderQueue:
                     "scene_index": index + candidate_index,
                     "character_anchor": character_anchor,
                     "reference_images": reference_images,
+                    "img2img_reference_path": img2img_reference_path,
                 },
             )
 
