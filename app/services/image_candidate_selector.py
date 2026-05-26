@@ -505,11 +505,13 @@ def select_best_candidate(
                 "score": item.get("score"),
                 "passed": item.get("passed"),
                 "reasons": item.get("reasons") or [],
+                "score_mode": item.get("score_mode"),
                 "expected_colors": item.get("expected_colors") or [],
                 "matched_colors": item.get("matched_colors") or [],
                 "color_ratios": item.get("color_ratios") or {},
                 "quality_gates": item.get("quality_gates") or {},
                 "visual_review": item.get("visual_review") or {},
+                "visual_hard_failures": item.get("visual_hard_failures") or [],
             }
             for item in scored
         ],
