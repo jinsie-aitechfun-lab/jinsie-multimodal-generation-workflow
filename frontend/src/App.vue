@@ -511,6 +511,7 @@ onMounted(() => {
         }
         if (data.outputs || data.steps) {
           applyWorkflowResponse(data)
+          resumePendingSceneGenerationAfterRestore()
         }
       })
       .catch(() => {/* silently ignore — server may not be up yet */})
@@ -1640,6 +1641,24 @@ function scheduleImageReviewAutoRefreshIfNeeded() {
   imageReviewAutoRefreshTimer = window.setTimeout(() => {
     if (refreshingImageReview.value) return
     void refreshImageReview()
+  }, 1200)
+}
+
+// Called after page-refresh restore only. Triggers generation for scenes that
+// are still 'waiting' (not in selected_assets). Safe to call even when some
+// scenes are already done — refreshImageReview() skips doneSceneIds internally.
+let restoreAutoRefreshFired = false
+function resumePendingSceneGenerationAfterRestore() {
+  if (restoreAutoRefreshFired) return
+  const hasPending = reviewPlaceholders.value.some((p) => p.state === 'waiting')
+  if (!hasPending) return
+  if (!currentWorkflowPayload.value) return
+
+  restoreAutoRefreshFired = true
+  window.setTimeout(() => {
+    if (!refreshingImageReview.value && reviewPlaceholders.value.some((p) => p.state === 'waiting')) {
+      void refreshImageReview()
+    }
   }, 1200)
 }
 
