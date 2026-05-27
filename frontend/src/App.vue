@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch} from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import InteractiveImageReview from './components/InteractiveImageReview.vue'
 import WorkflowResultsPanel from './components/WorkflowResultsPanel.vue'
 import WorkflowRunPanel from './components/WorkflowRunPanel.vue'
@@ -387,6 +387,32 @@ watch(
     renderFinalVideoIfReady(currentWorkflowResponse.value)
   }
 )
+
+const STORAGE_KEY_TAB = 'jinsie_active_tab'
+const STORAGE_KEY_SESSION = 'jinsie_session_id'
+const STORAGE_KEY_VIDEO_URL = 'jinsie_last_video_url'
+
+watch(activeTab, (tab) => {
+  localStorage.setItem(STORAGE_KEY_TAB, tab)
+})
+
+onMounted(() => {
+  const savedTab = localStorage.getItem(STORAGE_KEY_TAB) as ViewTab | null
+  if (savedTab && ['run', 'review', 'assets', 'debug'].includes(savedTab)) {
+    activeTab.value = savedTab
+  }
+
+  const savedSessionId = localStorage.getItem(STORAGE_KEY_SESSION)
+  if (savedSessionId) {
+    workflowForm.value.sessionId = savedSessionId
+  }
+
+  const savedVideoUrl = localStorage.getItem(STORAGE_KEY_VIDEO_URL)
+  if (savedVideoUrl) {
+    finalVideoUrl.value = savedVideoUrl
+    pushRecentFinalVideoUrl(savedVideoUrl)
+  }
+})
 
 const apiBaseUrl =
   (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() ||
@@ -845,6 +871,7 @@ function applyWorkflowResponse(data: WorkflowRunResponse) {
   finalVideoUrl.value = extractFinalVideoUrl(data)
   if (finalVideoUrl.value) {
     pushRecentFinalVideoUrl(finalVideoUrl.value)
+    localStorage.setItem(STORAGE_KEY_VIDEO_URL, finalVideoUrl.value)
   }
   extractMockAudioState(data)
   stepSummaries.value = buildStepSummaries(data)
@@ -853,6 +880,11 @@ function applyWorkflowResponse(data: WorkflowRunResponse) {
   resultText.value = stringifyPretty(data)
   currentWorkflowResponse.value = data
   syncReviewPlaceholders(data)
+
+  const sessionId = data.session_id || workflowForm.value.sessionId
+  if (sessionId) {
+    localStorage.setItem(STORAGE_KEY_SESSION, sessionId)
+  }
 }
 
 function buildReviewPlaceholdersFromStoryboard(data: WorkflowRunResponse): ReviewPlaceholderItem[] {
