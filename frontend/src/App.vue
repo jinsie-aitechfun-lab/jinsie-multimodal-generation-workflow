@@ -1,5 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import StudioLayout from './components/studio/StudioLayout.vue'
+import StudioProgress from './components/studio/StudioProgress.vue'
+import StudioCreatePanel from './components/studio/StudioCreatePanel.vue'
+import StudioPreviewPanel from './components/studio/StudioPreviewPanel.vue'
+import DiagnosticsPanel from './components/studio/DiagnosticsPanel.vue'
 import InteractiveImageReview from './components/InteractiveImageReview.vue'
 import WorkflowResultsPanel from './components/WorkflowResultsPanel.vue'
 import WorkflowRunPanel from './components/WorkflowRunPanel.vue'
@@ -342,6 +347,18 @@ let imageReviewRefreshAbortController: AbortController | null = null
 type ViewTab = 'run' | 'review' | 'assets' | 'debug'
 const activeTab = ref<ViewTab>('run')
 const devMode = ref(false)
+
+const studioTabs = computed(() => {
+  const tabs: Array<{ id: string; label: string; icon: string; badge?: string }> = [
+    { id: 'run', label: '创作故事', icon: '✦' },
+    { id: 'review', label: '画面审核', icon: '◈' },
+    { id: 'assets', label: '参考素材', icon: '◇' },
+  ]
+  if (devMode.value) {
+    tabs.push({ id: 'debug', label: '开发诊断', icon: '⚙' })
+  }
+  return tabs
+})
 
 const isWorkflowReadyForRender = computed(() => {
   const response = currentWorkflowResponse.value
@@ -2006,87 +2023,16 @@ async function runWorkflow() {
 </script>
 
 <template>
-  <main class="page">
-    <section class="card">
-      <h1>Jinsie Multimodal Frontend</h1>
-      <p class="desc">
-        输入一个主题，系统按默认参数或可选配置生成故事、分镜、旁白、字幕与视频渲染计划。
-      </p>
-      <div class="tabs-bar">
-        <button
-          class="tab-btn"
-          :class="{ active: activeTab === 'run' }"
-          @click="activeTab = 'run'"
-        >
-          Run
-        </button>
-
-        <button
-          class="tab-btn"
-          :class="{ active: activeTab === 'review' }"
-          @click="activeTab = 'review'"
-        >
-          Review
-        </button>
-
-        <button
-          class="tab-btn"
-          :class="{ active: activeTab === 'assets' }"
-          @click="activeTab = 'assets'"
-        >
-          Assets
-        </button>
-
-        <button
-          v-if="devMode"
-          class="tab-btn"
-          :class="{ active: activeTab === 'debug' }"
-          @click="activeTab = 'debug'"
-        >
-          Debug
-        </button>
-
-        <button
-          class="tab-btn dev-mode-toggle"
-          :class="{ active: devMode }"
-          :title="devMode ? '关闭开发者模式' : '开启开发者模式'"
-          @click="toggleDevMode"
-        >
-          ⚙
-        </button>
-      </div>
-      <section v-if="activeTab === 'run'">
-        <section class="recent-videos">
-          <h2 class="section-title">Recent Videos</h2>
-
-          <div v-if="recentFinalVideoUrls.length > 0" class="recent-videos-row">
-            <video
-              v-for="(url, idx) in recentFinalVideoUrls"
-              :key="`${url}-${idx}`"
-              class="recent-video-item"
-              :src="url"
-              controls
-              playsinline
-            />
-          </div>
-
-          <div v-else class="recent-videos-empty">
-            <div class="recent-videos-empty-title">还没有生成过视频</div>
-            <div class="recent-videos-empty-desc">
-              在下方选择配音模式与参数，然后点击 <strong>Run Workflow</strong> 生成第一条视频。
-            </div>
-            <div class="example-topics-row">
-              <span class="example-topics-label">试试：</span>
-              <button
-                v-for="topic in EXAMPLE_TOPICS"
-                :key="topic"
-                class="example-topic-btn"
-                @click="setExampleTopic(topic)"
-              >{{ topic }}</button>
-            </div>
-          </div>
-        </section>
-
+  <StudioLayout v-model="activeTab" :tabs="studioTabs" :dev-mode="devMode" @toggle-dev="toggleDevMode">
+    <template #progress>
+      <StudioProgress
+        :visible="workflowIsProcessing || refreshingImageReview"
+        :percent="workflowStatusProgress ?? (refreshingImageReview ? reviewRefreshProgress.percent : 0)"
+        :label="workflowIsProcessing ? workflowRunStatusMessage : reviewRefreshProgress.text"
+      />
+    </template>
+    <section v-if="activeTab === 'run'" class="studio-home-grid">
+      <StudioCreatePanel :loading="loading">
         <WorkflowRunPanel
           :loading="loading"
           :can-submit="canSubmit"
@@ -2098,54 +2044,59 @@ async function runWorkflow() {
           @update:selected-steps="onUpdateSelectedSteps"
           @run="runWorkflow"
         />
-      </section>
-      <section v-if="activeTab === 'review'">
-        <template v-if="hasReviewContent || workflowIsProcessing || refreshingImageReview || finalVideoRenderInFlight">
-          <section class="result-panel final-video-hero">
-            <div class="render-mode-switch">
-              <span class="label">Render Mode:</span>
-              <span class="value">{{ workflowForm.renderMode }}</span>
-            </div>   
-            <FinalVideoPanel
-              :final-video-url="finalVideoUrl"
-              :final-video-text="finalVideoText"
-              :workflow-response="currentWorkflowResponse"
-              :render-in-flight="finalVideoRenderInFlight"
-              :loading="workflowIsProcessing || refreshingImageReview || finalVideoRenderInFlight"
-              :error-message="errorMessage"
-              :workflow-status-message="workflowRunStatusMessage"
-              :workflow-status-progress="workflowStatusProgress"
-              @render="renderFinalVideoIfReady(currentWorkflowResponse || {})"
-              :show-render-button="workflowForm.renderMode === 'auto'"
-            />
-            <!-- Manual 主操作按钮 -->
-            <div
-              v-if="workflowForm.renderMode === 'manual'"
-              class="manual-render-wrapper"
-            >
-              <button
-                @click="handleManualRender"
-                class="manual-render-primary"
-                :disabled="!isWorkflowReadyForRender"
-              >
-                🎬 Generate Final Video
-              </button>
+      </StudioCreatePanel>
 
-              <div
-                v-if="!isWorkflowReadyForRender"
-                class="manual-hint"
+      <StudioPreviewPanel
+        :final-video-url="finalVideoUrl"
+        :recent-video-urls="recentFinalVideoUrls"
+        :render-in-flight="finalVideoRenderInFlight"
+        :is-processing="workflowIsProcessing"
+        :status-label="workflowRunStatusMessage"
+        :completed-steps="workflowStatusData?.completed_steps ?? 0"
+        :total-steps="workflowStatusData?.total_steps ?? 0"
+        :example-topics="EXAMPLE_TOPICS"
+        @set-topic="setExampleTopic"
+      />
+    </section>
+      <section v-if="activeTab === 'review'" class="review-layout">
+        <template v-if="hasReviewContent || workflowIsProcessing || refreshingImageReview || finalVideoRenderInFlight">
+          <!-- Video card -->
+          <div class="glass-card review-video-card animate-fade-in">
+            <div class="review-section-header">
+              <span class="review-section-icon" aria-hidden="true">▶</span>
+              <span class="review-section-title">最终视频</span>
+              <span v-if="finalVideoRenderInFlight" class="badge badge-arc" style="font-size:0.6rem;">渲染中</span>
+              <span v-else-if="finalVideoUrl" class="badge badge-ok" style="font-size:0.6rem;">已完成</span>
+              <span v-if="finalVideoAudioEnabled === false" class="badge badge-warn" style="font-size:0.6rem;">无声</span>
+              <!-- Manual render button -->
+              <button
+                v-if="workflowForm.renderMode === 'manual' && isWorkflowReadyForRender"
+                class="btn-primary review-render-btn"
+                @click="handleManualRender"
               >
+                生成视频
+              </button>
+            </div>
+            <div class="review-video-body">
+              <FinalVideoPanel
+                :final-video-url="finalVideoUrl"
+                :final-video-text="finalVideoText"
+                :workflow-response="currentWorkflowResponse"
+                :render-in-flight="finalVideoRenderInFlight"
+                :loading="workflowIsProcessing || refreshingImageReview || finalVideoRenderInFlight"
+                :error-message="errorMessage"
+                :workflow-status-message="workflowRunStatusMessage"
+                :workflow-status-progress="workflowStatusProgress"
+                @render="renderFinalVideoIfReady(currentWorkflowResponse || {})"
+                :show-render-button="workflowForm.renderMode === 'auto'"
+              />
+              <div v-if="workflowForm.renderMode === 'manual' && !isWorkflowReadyForRender" class="manual-hint" style="text-align:center;padding:0.5rem 0 0;">
                 等待候选图与音频生成完成…
               </div>
             </div>
-            <div v-if="finalVideoAudioEnabled === false" class="silent-badge">
-              🔇 无声模式
-            </div>
-          </section>
+          </div>
 
-          <!-- 有内容才显示选图和结果；没内容但在跑时，只显示 FinalVideoPanel 占位 -->
-
-          <!-- Deferred banner: images pending but not yet generated (restored session or fresh run) -->
+          <!-- Deferred banner -->
           <div
             v-if="reviewWaitingState === 'deferred_pending' && !refreshingImageReview"
             class="deferred-generate-banner"
@@ -2154,21 +2105,31 @@ async function runWorkflow() {
             <button class="deferred-generate-btn" @click="refreshImageReview()">立即生成候选图</button>
           </div>
 
+          <!-- Image review + results -->
           <template v-if="hasReviewContent">
-            <InteractiveImageReview
-              :items="imageReviewItems"
-              :placeholders="reviewPlaceholders"
-              :api-base-url="apiBaseUrl"
-              :loading="loading || refreshingImageReview"
-              :selecting-scene-id="selectingSceneId || sceneRefreshingId"
-              :progress-text="reviewRefreshProgress.text"
-              :progress-percent="reviewRefreshProgress.percent"
-              :can-cancel="refreshingImageReview"
-              @select-asset="({ sceneId, assetRef }) => selectImageAsset(sceneId, assetRef)"
-              @retry-scene="retryImageReviewScene"
-              @enhance-scene="enhanceImageReviewScene"
-              @cancel-refresh="cancelImageReviewRefresh"
-            />
+            <div class="glass-card review-images-card animate-fade-in">
+              <div class="review-section-header">
+                <span class="review-section-icon" aria-hidden="true">◈</span>
+                <span class="review-section-title">画面审核</span>
+                <span v-if="refreshingImageReview" class="badge badge-arc" style="font-size:0.6rem;">生成中</span>
+              </div>
+              <div class="review-images-body">
+                <InteractiveImageReview
+                  :items="imageReviewItems"
+                  :placeholders="reviewPlaceholders"
+                  :api-base-url="apiBaseUrl"
+                  :loading="loading || refreshingImageReview"
+                  :selecting-scene-id="selectingSceneId || sceneRefreshingId"
+                  :progress-text="reviewRefreshProgress.text"
+                  :progress-percent="reviewRefreshProgress.percent"
+                  :can-cancel="refreshingImageReview"
+                  @select-asset="({ sceneId, assetRef }) => selectImageAsset(sceneId, assetRef)"
+                  @retry-scene="retryImageReviewScene"
+                  @enhance-scene="enhanceImageReviewScene"
+                  @cancel-refresh="cancelImageReviewRefresh"
+                />
+              </div>
+            </div>
             <WorkflowResultsPanel
               :story-text="storyText"
               :storyboard-text="storyboardText"
@@ -2185,9 +2146,11 @@ async function runWorkflow() {
           </template>
         </template>
 
-        <p v-else class="empty-state">
-          {{ reviewEmptyStateText }}
-        </p>
+        <div v-else class="review-empty-state glass-card animate-fade-in">
+          <div class="review-empty-icon" aria-hidden="true">◈</div>
+          <div class="review-empty-title">尚无画面内容</div>
+          <p class="review-empty-desc">{{ reviewEmptyStateText }}</p>
+        </div>
       </section>
       <section v-if="activeTab === 'assets'">
         <SampleAssetsPanel
@@ -2267,243 +2230,156 @@ async function runWorkflow() {
           </details>
         </section>
       </section>
-      <section v-if="activeTab === 'debug'">
-        <p v-if="!hasDebugContent" class="empty-state">
-          请先运行一次 workflow，生成 Steps Summary 和 Raw JSON 调试信息。
-        </p>
+      <section v-if="activeTab === 'debug'" class="debug-layout">
+        <div v-if="!hasDebugContent" class="review-empty-state glass-card animate-fade-in">
+          <div class="review-empty-icon" aria-hidden="true">⚙</div>
+          <div class="review-empty-title">尚无诊断数据</div>
+          <p class="review-empty-desc">请先运行一次 Workflow，生成 Steps Summary 和原始 JSON 调试信息。</p>
+        </div>
 
         <template v-else>
-          <section class="summary-panel diag-header-panel">
-            <div class="diag-header-row">
-              <h2 class="section-title">Run Diagnostics</h2>
-              <button class="copy-diag-btn" @click="copyDiagnosticsJson">
+          <DiagnosticsPanel
+            :workflow-id="currentWorkflowResponse?.workflow_id"
+            :run-id="currentWorkflowResponse?.run_id"
+            :session-id="currentWorkflowResponse?.session_id"
+            :generation-source="storyDiagnostics?.generationSource"
+            :fallback-reason="storyDiagnostics?.fallbackReason !== 'None' ? storyDiagnostics?.fallbackReason : undefined"
+          >
+            <template #json>{{ runDiagnosticsJson }}</template>
+          </DiagnosticsPanel>
+
+          <div v-if="stepSummaries.length > 0" class="glass-card debug-steps-card animate-fade-in">
+            <div class="review-section-header">
+              <span class="review-section-icon" aria-hidden="true">≡</span>
+              <span class="review-section-title">Steps Summary</span>
+              <button class="btn-ghost copy-diag-btn" @click="copyDiagnosticsJson" style="font-size:0.7rem;padding:0.25rem 0.6rem;">
                 {{ diagCopied ? '✓ Copied' : 'Copy JSON' }}
               </button>
             </div>
-            <div class="diagnostics-grid">
-              <div class="diagnostics-item">
-                <span class="diagnostics-label">run_id</span>
-                <strong>{{ currentWorkflowResponse?.run_id || '—' }}</strong>
-              </div>
-              <div class="diagnostics-item">
-                <span class="diagnostics-label">session_id</span>
-                <strong>{{ currentWorkflowResponse?.session_id || '—' }}</strong>
-              </div>
-              <div class="diagnostics-item">
-                <span class="diagnostics-label">Provider</span>
-                <strong>{{ (currentWorkflowResponse?.outputs?.image_assets as any)?.provider || '—' }}</strong>
-              </div>
-              <div class="diagnostics-item">
-                <span class="diagnostics-label">Status</span>
-                <strong>{{ currentWorkflowResponse?.status || '—' }}</strong>
-              </div>
-              <div v-if="errorMessage" class="diagnostics-item diagnostics-item--error">
-                <span class="diagnostics-label">Error</span>
-                <strong>{{ errorMessage }}</strong>
-              </div>
+            <div class="debug-steps-body">
+              <article v-for="item in stepSummaries" :key="item.name" class="summary-item">
+                <div class="summary-head">
+                  <strong>{{ item.name }}</strong>
+                  <span class="summary-status">{{ item.status }}</span>
+                </div>
+                <pre class="summary-preview">{{ item.preview }}</pre>
+              </article>
             </div>
-          </section>
+          </div>
 
-          <section v-if="storyDiagnostics" class="summary-panel">
-            <h2 class="section-title">Story Diagnostics</h2>
-
-            <div class="diagnostics-grid">
-              <div class="diagnostics-item">
-                <span class="diagnostics-label">Title</span>
-                <strong>{{ storyDiagnostics.title }}</strong>
-              </div>
-              <div class="diagnostics-item">
-                <span class="diagnostics-label">Source</span>
-                <strong>{{ storyDiagnostics.generationSource }}</strong>
-              </div>
-              <div class="diagnostics-item">
-                <span class="diagnostics-label">LLM provider</span>
-                <strong :class="storyDiagnostics.providerUsed === 'fallback' ? 'warn-text' : ''">
-                  {{ storyDiagnostics.providerUsed }}
-                </strong>
-              </div>
-              <div class="diagnostics-item">
-                <span class="diagnostics-label">Fallback reason</span>
-                <strong>{{ storyDiagnostics.fallbackReason }}</strong>
-              </div>
-              <div class="diagnostics-item">
-                <span class="diagnostics-label">Character count</span>
-                <strong>{{ storyDiagnostics.characterCount }}</strong>
-              </div>
+          <div v-if="resultText" class="glass-card animate-fade-in">
+            <div class="review-section-header">
+              <span class="review-section-icon" aria-hidden="true">{ }</span>
+              <span class="review-section-title">Raw JSON</span>
             </div>
-          </section>
-
-          <section v-if="stepSummaries.length > 0" class="summary-panel">
-            <h2 class="section-title">Steps Summary</h2>
-
-            <article v-for="item in stepSummaries" :key="item.name" class="summary-item">
-              <div class="summary-head">
-                <strong>{{ item.name }}</strong>
-                <span class="summary-status">{{ item.status }}</span>
-              </div>
-              <pre class="summary-preview">{{ item.preview }}</pre>
-            </article>
-          </section>
-
-          <section v-if="resultText" class="debug-panel">
-            <h2 class="section-title">Raw JSON</h2>
-            <pre class="result">{{ resultText }}</pre>
-          </section>
+            <div style="padding:1rem 1.25rem;">
+              <pre class="result">{{ resultText }}</pre>
+            </div>
+          </div>
         </template>
-      </section>
     </section>
-  </main>
+  </StudioLayout>
 </template>
 
 <style scoped>
-.page {
-  min-height: 100vh;
+/* ── Homepage 2-column grid ── */
+.studio-home-grid {
+  display: grid;
+  grid-template-columns: 420px 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .studio-home-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Review tab ── */
+.review-layout {
   display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  background: #f7f8fa;
-  padding: 24px;
+  flex-direction: column;
+  gap: 1.5rem;
 }
 
-.card {
-  width: 100%;
-  max-width: 960px;
-  background: #ffffff;
-  border-radius: 16px;
-  padding: 32px;
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+.review-video-card,
+.review-images-card {
+  overflow: hidden;
 }
 
-h1 {
-  margin: 0 0 12px;
-  font-size: 32px;
-  line-height: 1.2;
-  color: #111827;
-}
-
-.desc {
-  margin: 0 0 24px;
-  color: #4b5563;
-  font-size: 15px;
-}
-.tabs-bar {
-  display: flex;
-  gap: 12px;
-  margin: 0 0 24px;
-  flex-wrap: wrap;
-}
-
-.empty-state {
-  margin: 20px 0 0;
-  padding: 20px;
-  border: 1px dashed #d1d5db;
-  border-radius: 14px;
-  background: #f8fafc;
-  color: #6b7280;
-  font-size: 14px;
-  line-height: 1.7;
-}
-
-.recent-videos {
-  margin: 0 0 18px;
-}
-
-.recent-videos-row {
-  display: flex;
-  gap: 12px;
-  overflow-x: auto;
-  padding: 6px 2px;
-  scroll-snap-type: x mandatory;
-}
-
-.recent-video-item {
-  flex: 0 0 auto;
-  width: 280px;
-  height: 180px;
-  border-radius: 12px;
-  border: 1px solid #e5e7eb;
-  background: #000000;
-  scroll-snap-align: start;
-}
-
-.recent-videos-empty {
-  border: 1px dashed #d1d5db;
-  border-radius: 14px;
-  background: #f8fafc;
-  padding: 16px;
-  color: #6b7280;
-  line-height: 1.6;
-}
-
-.recent-videos-empty-title {
-  font-weight: 700;
-  color: #111827;
-  margin-bottom: 6px;
-}
-
-.recent-videos-empty-desc strong {
-  color: #111827;
-}
-
-.example-topics-row {
+.review-section-header {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
+  gap: 0.5rem;
+  padding: 0.875rem 1.25rem 0.75rem;
+  border-bottom: 1px solid rgba(0,181,240,0.10);
 }
 
-.example-topics-label {
-  font-size: 13px;
-  color: #9ca3af;
+.review-section-icon {
+  color: var(--arc-400);
+  font-size: 0.75rem;
+  line-height: 1;
 }
 
-.example-topic-btn {
-  border: 1px solid #e5e7eb;
-  background: #ffffff;
-  color: #374151;
-  border-radius: 999px;
-  padding: 4px 12px;
-  font-size: 13px;
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+.review-section-title {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  flex: 1;
+  letter-spacing: 0.01em;
 }
 
-.example-topic-btn:hover {
-  border-color: #6366f1;
-  color: #6366f1;
-  background: #f5f3ff;
+.review-render-btn {
+  font-size: 0.75rem;
+  padding: 0.375rem 0.875rem;
 }
 
-.tab-btn {
-  border: 1px solid #d1d5db;
-  background: #ffffff;
-  color: #111827;
-  border-radius: 999px;
-  padding: 10px 16px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 600;
+.review-video-body,
+.review-images-body {
+  padding: 1.25rem;
 }
 
-.tab-btn.active {
-  background: #111827;
-  color: #ffffff;
-  border-color: #111827;
+.review-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 280px;
+  text-align: center;
+  gap: 0.75rem;
+  padding: 2rem;
 }
 
-.dev-mode-toggle {
-  margin-left: auto;
-  font-size: 16px;
-  padding: 10px 12px;
-  color: #9ca3af;
-  border-color: #e5e7eb;
+.review-empty-icon {
+  font-size: 2rem;
+  color: var(--arc-400);
+  opacity: 0.4;
 }
 
-.dev-mode-toggle.active {
-  background: #f5f3ff;
-  color: #6366f1;
-  border-color: #6366f1;
+.review-empty-title {
+  font-size: 1.0625rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.review-empty-desc {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  line-height: 1.7;
+  max-width: 42ch;
+  margin: 0;
+}
+
+/* ── Diagnostics tab ── */
+.debug-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.debug-steps-body {
+  padding: 1rem 1.25rem;
 }
 
 .diag-header-panel {
@@ -2532,79 +2408,45 @@ h1 {
   transition: border-color 0.15s, color 0.15s;
 }
 
-.copy-diag-btn:hover {
-  border-color: #6366f1;
-  color: #6366f1;
-}
-
-.diagnostics-item--error strong {
-  color: #dc2626;
-}
-
-.warn-text {
-  color: #d97706;
-}
-
-.hint {
-  margin: 12px 0 0;
-  color: #dc2626;
-  font-size: 13px;
-}
-
-.summary-panel,
-.debug-panel {
-  margin-top: 24px;
-}
-
 .summary-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  margin-bottom: 4px;
 }
 
 .summary-status {
-  color: #2563eb;
-  font-size: 13px;
+  font-size: 0.75rem;
   font-weight: 600;
-}
-
-.diagnostics-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.diagnostics-item {
-  padding: 12px;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  background: #f8fafc;
-}
-
-.diagnostics-label {
-  display: block;
-  margin-bottom: 6px;
-  color: #6b7280;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.diagnostics-item strong {
-  color: #111827;
-  font-size: 14px;
-  line-height: 1.5;
-  word-break: break-word;
+  color: var(--arc-300);
+  font-family: var(--font-mono, monospace);
 }
 
 .summary-preview,
 .light-result {
-  margin: 12px 0 0;
+  margin: 8px 0 0;
   white-space: pre-wrap;
   word-break: break-word;
-  font-size: 13px;
+  font-size: 0.75rem;
   line-height: 1.6;
-  color: #1f2937;
+  color: var(--text-secondary);
+}
+
+.summary-item {
+  padding: 0.75rem 0;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.summary-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.summary-item strong {
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  font-family: var(--font-mono, monospace);
 }
 
 .section-title {

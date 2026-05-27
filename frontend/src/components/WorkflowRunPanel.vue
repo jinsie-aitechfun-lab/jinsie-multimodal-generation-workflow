@@ -658,13 +658,15 @@ function getTopicManualMismatchWarning(): string {
         </label>
 
         <label class="field">
-          <span>Video Provider</span>
-          <input
+          <span>视频模式</span>
+          <select
             :value="formState.videoProvider"
             class="input"
-            type="text"
-            @input="updateFormState('videoProvider', ($event.target as HTMLInputElement).value)"
-          />
+            @change="updateFormState('videoProvider', ($event.target as HTMLSelectElement).value)"
+          >
+            <option value="mock">绘本视频模式</option>
+            <option value="storybook">分镜播放模式</option>
+          </select>
         </label>
 
         <label class="field">
