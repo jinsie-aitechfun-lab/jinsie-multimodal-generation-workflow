@@ -203,7 +203,7 @@ class RunnerImagePromptsSupport:
                         "shot_id": shot_id,
                         "scene_id": scene_id,
                         "scene_title": scene_title,
-                        "characters": scene_data.get("characters") or [],
+                        "characters": enriched_scene_characters,
                         "required_character_ids": required_character_ids,
                         "required_character_names": required_character_names,
                         "prompt": prompt,
