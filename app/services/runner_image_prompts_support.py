@@ -350,29 +350,48 @@ class RunnerImagePromptsSupport:
         }
 
     def _build_color_prefix(self, profile: Dict[str, Any]) -> str:
-        """Return a short appearance-anchor string to prepend to every scene prompt.
+        """Return a tight color+identity anchor prepended to every scene prompt.
 
         Diffusion models weight the beginning of the prompt most heavily.
-        Putting the character's fixed color and key descriptor first significantly
-        reduces per-scene color drift (e.g. car changing from red → blue → orange).
-
-        We use the first sentence of visual_identity (up to ~120 chars), falling
-        back to the first 3 must_keep traits if visual_identity is absent.
+        We extract the subject name and any must_keep items that contain a
+        color word, then put "subject, color_trait1, color_trait2" first.
+        This is more reliable than truncating visual_identity which often
+        buries the color word past 120 characters.
         """
         if not profile:
             return ""
 
-        identity = str(profile.get("visual_identity") or "").strip()
-        if identity:
-            # Take only the first sentence to keep the prefix concise
-            first_sentence = identity.split(".")[0].strip()
-            if len(first_sentence) > 10:
-                return first_sentence[:120]
+        COLOR_WORDS = {
+            "red", "blue", "green", "yellow", "orange", "purple", "pink",
+            "white", "black", "gray", "grey", "brown", "gold", "silver",
+            "cream", "teal", "cyan", "magenta", "violet", "indigo",
+            "红", "蓝", "绿", "黄", "橙", "紫", "粉", "白", "黑", "灰", "棕", "金",
+        }
 
-        must_keep = profile.get("must_keep")
-        if isinstance(must_keep, list):
-            key_traits = [str(t).strip() for t in must_keep[:3] if str(t).strip()]
-            if key_traits:
-                return ", ".join(key_traits)
+        subject = str(profile.get("subject") or "").strip()
+        must_keep = profile.get("must_keep") or []
+        if not isinstance(must_keep, list):
+            must_keep = []
 
-        return ""
+        # Pick must_keep entries that mention a color word (max 3)
+        color_traits: List[str] = []
+        for trait in must_keep:
+            t = str(trait).strip()
+            if not t:
+                continue
+            lower = t.lower()
+            if any(c in lower for c in COLOR_WORDS) and t not in color_traits:
+                color_traits.append(t)
+            if len(color_traits) >= 3:
+                break
+
+        # Fallback: use first full sentence of visual_identity (no truncation)
+        if not color_traits:
+            identity = str(profile.get("visual_identity") or "").strip()
+            if identity:
+                first_sentence = identity.split(".")[0].strip()
+                if len(first_sentence) > 10:
+                    return first_sentence
+
+        parts = [p for p in [subject] + color_traits if p]
+        return ", ".join(parts) if parts else ""

@@ -395,10 +395,18 @@ const STORAGE_KEY_SESSION = 'jinsie_session_id'
 const STORAGE_KEY_VIDEO_URL = 'jinsie_last_video_url'
 const STORAGE_KEY_DEV = 'jinsie_dev_mode'
 const STORAGE_KEY_WORKFLOW = 'jinsie_workflow_id'
+const STORAGE_KEY_PAYLOAD = 'jinsie_workflow_payload'
+const STORAGE_KEY_FORM = 'jinsie_workflow_form'
 
 watch(activeTab, (tab) => {
   localStorage.setItem(STORAGE_KEY_TAB, tab)
 })
+
+watch(workflowForm, (form) => {
+  try {
+    localStorage.setItem(STORAGE_KEY_FORM, JSON.stringify(form))
+  } catch { /* ignore quota errors */ }
+}, { deep: true })
 
 watch(devMode, (enabled) => {
   localStorage.setItem(STORAGE_KEY_DEV, enabled ? '1' : '0')
@@ -425,11 +433,26 @@ onMounted(() => {
     devMode.value = localStorage.getItem(STORAGE_KEY_DEV) === '1'
   }
 
-  const savedTab = localStorage.getItem(STORAGE_KEY_TAB) as ViewTab | null
-  if (savedTab && ['run', 'review', 'assets'].includes(savedTab)) {
-    activeTab.value = savedTab
-  } else if (savedTab === 'debug' && devMode.value) {
-    activeTab.value = 'debug'
+  // Distinguish page reload (F5/Cmd+R) from fresh navigation (typing URL / new tab).
+  // Only restore the last tab and workflow state on reload — a fresh open starts clean.
+  const navEntry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined
+  const isReload = navEntry ? navEntry.type === 'reload' : false
+
+  if (isReload) {
+    const savedTab = localStorage.getItem(STORAGE_KEY_TAB) as ViewTab | null
+    if (savedTab && ['run', 'review', 'assets'].includes(savedTab)) {
+      activeTab.value = savedTab
+    } else if (savedTab === 'debug' && devMode.value) {
+      activeTab.value = 'debug'
+    }
+  }
+
+  const savedFormStr = localStorage.getItem(STORAGE_KEY_FORM)
+  if (savedFormStr) {
+    try {
+      const savedForm = JSON.parse(savedFormStr)
+      workflowForm.value = { ...DEFAULT_WORKFLOW_FORM, ...savedForm }
+    } catch { /* ignore malformed */ }
   }
 
   const savedSessionId = localStorage.getItem(STORAGE_KEY_SESSION)
@@ -439,11 +462,23 @@ onMounted(() => {
 
   const savedVideoUrl = localStorage.getItem(STORAGE_KEY_VIDEO_URL)
   if (savedVideoUrl) {
-    finalVideoUrl.value = savedVideoUrl
+    // Only push to the recent-videos list — do NOT restore finalVideoUrl.value here.
+    // finalVideoUrl is only set by applyWorkflowResponse so it always matches the
+    // current workflow response, never bleeds in from a previous completed run.
     pushRecentFinalVideoUrl(savedVideoUrl)
   }
 
-  const savedWorkflowId = localStorage.getItem(STORAGE_KEY_WORKFLOW)
+  // Restore payload so refresh-scene API calls have the original workflow_input
+  const savedPayloadStr = localStorage.getItem(STORAGE_KEY_PAYLOAD)
+  if (savedPayloadStr) {
+    try {
+      currentWorkflowPayload.value = JSON.parse(savedPayloadStr) as WorkflowRunPayload
+    } catch {
+      // ignore malformed payload
+    }
+  }
+
+  const savedWorkflowId = isReload ? localStorage.getItem(STORAGE_KEY_WORKFLOW) : null
   if (savedWorkflowId) {
     const base = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() || 'http://127.0.0.1:8004'
     fetch(`${base}/v1/workflow/results/${savedWorkflowId}`)
@@ -466,7 +501,9 @@ onMounted(() => {
                 workflowStatusData.value = statusData
                 activeTab.value = 'review'
                 waitForAsyncWorkflowOutputs(savedWorkflowId).then(asyncData => {
-                  if (asyncData) applyWorkflowResponse(asyncData)
+                  if (asyncData) {
+                    applyWorkflowResponse(asyncData)
+                  }
                 }).catch(() => {}).finally(() => { loading.value = false })
               }
             })
@@ -993,6 +1030,22 @@ function buildReviewPlaceholdersFromStoryboard(data: WorkflowRunResponse): Revie
   const scenes = Array.isArray(scenesValue) ? scenesValue : []
 
   const imageReview = data.outputs?.image_review as Record<string, unknown> | undefined
+  const imageAssets = data.outputs?.image_assets as Record<string, unknown> | undefined
+
+  // Only build placeholder "waiting" cards when images are actually pending or
+  // already partially generated. If the run had no image generation step at all,
+  // skip the placeholders — they'd be permanently stuck with no way to resolve.
+  const imagesDeferredToRefresh =
+    String(imageAssets?.status || '') === 'pending' &&
+    String(imageAssets?.reason || '') === 'deferred_to_refresh'
+  const hasSelectedAssets =
+    Array.isArray(imageReview?.selected_assets) &&
+    (imageReview?.selected_assets as unknown[]).length > 0
+
+  if (!imagesDeferredToRefresh && !hasSelectedAssets) {
+    return []
+  }
+
   const selectedAssetsValue = imageReview?.selected_assets
   const selectedAssets = Array.isArray(selectedAssetsValue) ? selectedAssetsValue : []
 
@@ -1871,6 +1924,7 @@ async function runWorkflow() {
     steps: Array.from(stepsSet).map((name) => ({ name })),
   }
   currentWorkflowPayload.value = payload as WorkflowRunPayload
+  localStorage.setItem(STORAGE_KEY_PAYLOAD, JSON.stringify(payload))
 
   // ✅ 点击 Run 立刻给 UI 反馈（跨 tab 都能感知）
   loading.value = true
@@ -2066,6 +2120,16 @@ async function runWorkflow() {
           </section>
 
           <!-- 有内容才显示选图和结果；没内容但在跑时，只显示 FinalVideoPanel 占位 -->
+
+          <!-- Deferred banner: images pending but not yet generated (restored session or fresh run) -->
+          <div
+            v-if="reviewWaitingState === 'deferred_pending' && !refreshingImageReview"
+            class="deferred-generate-banner"
+          >
+            <span>候选图尚未生成</span>
+            <button class="deferred-generate-btn" @click="refreshImageReview()">立即生成候选图</button>
+          </div>
+
           <template v-if="hasReviewContent">
             <InteractiveImageReview
               :items="imageReviewItems"
@@ -2938,6 +3002,34 @@ h1 {
   font-size: 14px;
   opacity: 0.7;
   margin-top: 8px;
+}
+
+.deferred-generate-banner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 20px;
+  background: #fff8e1;
+  border: 1px solid #ffe082;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 14px;
+  color: #795548;
+}
+
+.deferred-generate-btn {
+  padding: 8px 18px;
+  background: #ff9800;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.deferred-generate-btn:hover {
+  background: #f57c00;
 }
 @keyframes final-video-loading {
   0% { transform: translateX(-120%); }

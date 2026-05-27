@@ -83,6 +83,23 @@ def _workflow_outputs_path(workflow_id: str) -> Path:
     return _workflow_dir(workflow_id) / "outputs.json"
 
 
+def _patch_workflow_outputs(workflow_id: str, patch: dict) -> None:
+    """Merge patch fields into the stored outputs.json for a workflow run."""
+    path = _workflow_outputs_path(workflow_id)
+    if not path.exists():
+        return
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        outputs = data.get("outputs") or {}
+        outputs.update(patch)
+        data["outputs"] = outputs
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"[patch_workflow_outputs] failed to patch {workflow_id}: {e}")
+
+
 def _write_workflow_status(
     workflow_id: str,
     status: str,
@@ -326,6 +343,14 @@ def refresh_image_review_scene(req: ImageReviewRefreshSceneRequest):
             video_provider=req.video_provider,
         )
         print("[image-review] refresh-scene completed", req.run_id, req.scene_id)
+
+        # Persist updated image_review + image_assets back to outputs.json so that
+        # page refresh loads the real generated state instead of the frozen pending state.
+        _patch_workflow_outputs(req.workflow_id, {
+            "image_review": result["image_review"],
+            "image_assets": result["image_assets"],
+        })
+
         return ImageReviewRefreshSceneResponse(
             workflow_id=result["workflow_id"],
             session_id=result.get("session_id"),
