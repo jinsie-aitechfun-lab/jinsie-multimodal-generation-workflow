@@ -394,6 +394,7 @@ const STORAGE_KEY_TAB = 'jinsie_active_tab'
 const STORAGE_KEY_SESSION = 'jinsie_session_id'
 const STORAGE_KEY_VIDEO_URL = 'jinsie_last_video_url'
 const STORAGE_KEY_DEV = 'jinsie_dev_mode'
+const STORAGE_KEY_WORKFLOW = 'jinsie_workflow_id'
 
 watch(activeTab, (tab) => {
   localStorage.setItem(STORAGE_KEY_TAB, tab)
@@ -440,6 +441,19 @@ onMounted(() => {
   if (savedVideoUrl) {
     finalVideoUrl.value = savedVideoUrl
     pushRecentFinalVideoUrl(savedVideoUrl)
+  }
+
+  const savedWorkflowId = localStorage.getItem(STORAGE_KEY_WORKFLOW)
+  if (savedWorkflowId) {
+    const base = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() || 'http://127.0.0.1:8004'
+    fetch(`${base}/v1/workflow/results/${savedWorkflowId}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data && (data.outputs || data.steps)) {
+          applyWorkflowResponse(data)
+        }
+      })
+      .catch(() => {/* silently ignore — server may not be up yet */})
   }
 })
 
@@ -943,6 +957,10 @@ function applyWorkflowResponse(data: WorkflowRunResponse) {
   const sessionId = data.session_id || workflowForm.value.sessionId
   if (sessionId) {
     localStorage.setItem(STORAGE_KEY_SESSION, sessionId)
+  }
+  const workflowId = data.workflow_id
+  if (workflowId) {
+    localStorage.setItem(STORAGE_KEY_WORKFLOW, workflowId)
   }
 }
 

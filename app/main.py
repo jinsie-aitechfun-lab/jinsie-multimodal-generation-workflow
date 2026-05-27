@@ -193,6 +193,19 @@ def get_workflow_status(workflow_id: str):
     raise HTTPException(status_code=404, detail=f"workflow not found: {workflow_id}")
 
 
+@app.get("/v1/workflow/results/{workflow_id}")
+def get_workflow_results(workflow_id: str):
+    outputs_path = _workflow_outputs_path(workflow_id)
+    if not outputs_path.exists():
+        raise HTTPException(status_code=404, detail=f"workflow results not found: {workflow_id}")
+    try:
+        with open(outputs_path, "r", encoding="utf-8") as f:
+            outputs = json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        raise HTTPException(status_code=500, detail=f"failed to read workflow results: {e}")
+    return outputs
+
+
 @app.post("/v1/image-review/select", response_model=ImageReviewSelectResponse)
 def select_image_review_asset(req: ImageReviewSelectRequest):
     print("[image-review] selection request received", req.workflow_id, req.scene_id)
