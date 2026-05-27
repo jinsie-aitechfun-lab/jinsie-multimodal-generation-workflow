@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch} from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import InteractiveImageReview from './components/InteractiveImageReview.vue'
 import WorkflowResultsPanel from './components/WorkflowResultsPanel.vue'
 import WorkflowRunPanel from './components/WorkflowRunPanel.vue'
@@ -340,6 +340,7 @@ let imageReviewAutoRefreshTimer: number | null = null
 let imageReviewRefreshAbortController: AbortController | null = null
 type ViewTab = 'run' | 'review' | 'assets' | 'debug'
 const activeTab = ref<ViewTab>('run')
+const devMode = ref(false)
 
 const isWorkflowReadyForRender = computed(() => {
   const response = currentWorkflowResponse.value
@@ -387,6 +388,59 @@ watch(
     renderFinalVideoIfReady(currentWorkflowResponse.value)
   }
 )
+
+const STORAGE_KEY_TAB = 'jinsie_active_tab'
+const STORAGE_KEY_SESSION = 'jinsie_session_id'
+const STORAGE_KEY_VIDEO_URL = 'jinsie_last_video_url'
+const STORAGE_KEY_DEV = 'jinsie_dev_mode'
+
+watch(activeTab, (tab) => {
+  localStorage.setItem(STORAGE_KEY_TAB, tab)
+})
+
+watch(devMode, (enabled) => {
+  localStorage.setItem(STORAGE_KEY_DEV, enabled ? '1' : '0')
+  if (!enabled && activeTab.value === 'debug') {
+    activeTab.value = 'run'
+  }
+})
+
+function toggleDevMode() {
+  devMode.value = !devMode.value
+}
+
+const EXAMPLE_TOPICS = ['小兔子和乌龟赛跑', '小狐狸学画画', '小熊猫的第一次冒险']
+
+function setExampleTopic(topic: string) {
+  workflowForm.value = { ...workflowForm.value, topic }
+}
+
+onMounted(() => {
+  const urlParams = new URLSearchParams(window.location.search)
+  if (urlParams.get('dev') === '1') {
+    devMode.value = true
+  } else {
+    devMode.value = localStorage.getItem(STORAGE_KEY_DEV) === '1'
+  }
+
+  const savedTab = localStorage.getItem(STORAGE_KEY_TAB) as ViewTab | null
+  if (savedTab && ['run', 'review', 'assets'].includes(savedTab)) {
+    activeTab.value = savedTab
+  } else if (savedTab === 'debug' && devMode.value) {
+    activeTab.value = 'debug'
+  }
+
+  const savedSessionId = localStorage.getItem(STORAGE_KEY_SESSION)
+  if (savedSessionId) {
+    workflowForm.value.sessionId = savedSessionId
+  }
+
+  const savedVideoUrl = localStorage.getItem(STORAGE_KEY_VIDEO_URL)
+  if (savedVideoUrl) {
+    finalVideoUrl.value = savedVideoUrl
+    pushRecentFinalVideoUrl(savedVideoUrl)
+  }
+})
 
 const apiBaseUrl =
   (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() ||
@@ -478,6 +532,32 @@ const hasDebugContent = computed(() => {
       resultText.value
   )
 })
+
+const runDiagnosticsJson = computed(() => {
+  const resp = currentWorkflowResponse.value
+  const imageAssets = resp?.outputs?.image_assets as Record<string, unknown> | undefined
+  return JSON.stringify(
+    {
+      run_id: resp?.run_id || '—',
+      session_id: resp?.session_id || '—',
+      provider: imageAssets?.provider || '—',
+      status: resp?.status || '—',
+      story: storyDiagnostics.value,
+      steps: stepSummaries.value.map((s) => ({ name: s.name, status: s.status })),
+      error: errorMessage.value || null,
+    },
+    null,
+    2
+  )
+})
+
+const diagCopied = ref(false)
+function copyDiagnosticsJson() {
+  navigator.clipboard.writeText(runDiagnosticsJson.value).then(() => {
+    diagCopied.value = true
+    setTimeout(() => { diagCopied.value = false }, 1500)
+  }).catch(() => {})
+}
 
 const workflowIsProcessing = computed(() => {
   const response = currentWorkflowResponse.value
@@ -845,6 +925,7 @@ function applyWorkflowResponse(data: WorkflowRunResponse) {
   finalVideoUrl.value = extractFinalVideoUrl(data)
   if (finalVideoUrl.value) {
     pushRecentFinalVideoUrl(finalVideoUrl.value)
+    localStorage.setItem(STORAGE_KEY_VIDEO_URL, finalVideoUrl.value)
   }
   extractMockAudioState(data)
   stepSummaries.value = buildStepSummaries(data)
@@ -853,6 +934,11 @@ function applyWorkflowResponse(data: WorkflowRunResponse) {
   resultText.value = stringifyPretty(data)
   currentWorkflowResponse.value = data
   syncReviewPlaceholders(data)
+
+  const sessionId = data.session_id || workflowForm.value.sessionId
+  if (sessionId) {
+    localStorage.setItem(STORAGE_KEY_SESSION, sessionId)
+  }
 }
 
 function buildReviewPlaceholdersFromStoryboard(data: WorkflowRunResponse): ReviewPlaceholderItem[] {
@@ -1800,11 +1886,21 @@ async function runWorkflow() {
         </button>
 
         <button
+          v-if="devMode"
           class="tab-btn"
           :class="{ active: activeTab === 'debug' }"
           @click="activeTab = 'debug'"
         >
           Debug
+        </button>
+
+        <button
+          class="tab-btn dev-mode-toggle"
+          :class="{ active: devMode }"
+          :title="devMode ? '关闭开发者模式' : '开启开发者模式'"
+          @click="toggleDevMode"
+        >
+          ⚙
         </button>
       </div>
       <section v-if="activeTab === 'run'">
@@ -1826,6 +1922,15 @@ async function runWorkflow() {
             <div class="recent-videos-empty-title">还没有生成过视频</div>
             <div class="recent-videos-empty-desc">
               在下方选择配音模式与参数，然后点击 <strong>Run Workflow</strong> 生成第一条视频。
+            </div>
+            <div class="example-topics-row">
+              <span class="example-topics-label">试试：</span>
+              <button
+                v-for="topic in EXAMPLE_TOPICS"
+                :key="topic"
+                class="example-topic-btn"
+                @click="setExampleTopic(topic)"
+              >{{ topic }}</button>
             </div>
           </div>
         </section>
@@ -2005,6 +2110,37 @@ async function runWorkflow() {
         </p>
 
         <template v-else>
+          <section class="summary-panel diag-header-panel">
+            <div class="diag-header-row">
+              <h2 class="section-title">Run Diagnostics</h2>
+              <button class="copy-diag-btn" @click="copyDiagnosticsJson">
+                {{ diagCopied ? '✓ Copied' : 'Copy JSON' }}
+              </button>
+            </div>
+            <div class="diagnostics-grid">
+              <div class="diagnostics-item">
+                <span class="diagnostics-label">run_id</span>
+                <strong>{{ currentWorkflowResponse?.run_id || '—' }}</strong>
+              </div>
+              <div class="diagnostics-item">
+                <span class="diagnostics-label">session_id</span>
+                <strong>{{ currentWorkflowResponse?.session_id || '—' }}</strong>
+              </div>
+              <div class="diagnostics-item">
+                <span class="diagnostics-label">Provider</span>
+                <strong>{{ (currentWorkflowResponse?.outputs?.image_assets as any)?.provider || '—' }}</strong>
+              </div>
+              <div class="diagnostics-item">
+                <span class="diagnostics-label">Status</span>
+                <strong>{{ currentWorkflowResponse?.status || '—' }}</strong>
+              </div>
+              <div v-if="errorMessage" class="diagnostics-item diagnostics-item--error">
+                <span class="diagnostics-label">Error</span>
+                <strong>{{ errorMessage }}</strong>
+              </div>
+            </div>
+          </section>
+
           <section v-if="storyDiagnostics" class="summary-panel">
             <h2 class="section-title">Story Diagnostics</h2>
 
@@ -2140,6 +2276,36 @@ h1 {
   color: #111827;
 }
 
+.example-topics-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.example-topics-label {
+  font-size: 13px;
+  color: #9ca3af;
+}
+
+.example-topic-btn {
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  color: #374151;
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.example-topic-btn:hover {
+  border-color: #6366f1;
+  color: #6366f1;
+  background: #f5f3ff;
+}
+
 .tab-btn {
   border: 1px solid #d1d5db;
   background: #ffffff;
@@ -2155,6 +2321,55 @@ h1 {
   background: #111827;
   color: #ffffff;
   border-color: #111827;
+}
+
+.dev-mode-toggle {
+  margin-left: auto;
+  font-size: 16px;
+  padding: 10px 12px;
+  color: #9ca3af;
+  border-color: #e5e7eb;
+}
+
+.dev-mode-toggle.active {
+  background: #f5f3ff;
+  color: #6366f1;
+  border-color: #6366f1;
+}
+
+.diag-header-panel {
+  margin-top: 0;
+}
+
+.diag-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.diag-header-row .section-title {
+  margin: 0;
+}
+
+.copy-diag-btn {
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #374151;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.copy-diag-btn:hover {
+  border-color: #6366f1;
+  color: #6366f1;
+}
+
+.diagnostics-item--error strong {
+  color: #dc2626;
 }
 
 .hint {
