@@ -301,7 +301,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
     v-if="renderEntries.length > 0 || showWaitingCard"
     class="result-panel"
   >
-    <h2 class="section-title">Interactive Image Review</h2>
+    <h2 class="section-title">画面审核</h2>
 
     <div v-if="progressText" class="review-progress">
       <div class="review-progress-head">
@@ -462,7 +462,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                   target="_blank"
                   rel="noreferrer"
                 >
-                  Open original
+                  查看原图
                 </a>
 
                 <button
@@ -472,7 +472,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                   :title="'用 Cinematic 档重新生成更高质量候选'"
                   @click="onEnhanceScene(entry.sceneId)"
                 >
-                  ✦ Enhance
+                  ✦ 增强画质
                 </button>
               </div>
             </div>
@@ -482,7 +482,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
             <div class="candidate-header">
               <span class="preview-title">候选图</span>
               <span class="candidate-count">
-                {{ (entry.item.candidate_asset_refs || []).length || 2 }} candidates
+                {{ (entry.item.candidate_asset_refs || []).length || 2 }} 张候选
               </span>
             </div>
 
@@ -709,7 +709,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
           <div class="detail-block detail-block-tight">
             <div class="candidate-header">
               <span class="preview-title">候选图</span>
-              <span class="candidate-count">2 candidates</span>
+              <span class="candidate-count">2 张候选</span>
             </div>
 
             <div class="review-candidate-grid">
@@ -947,18 +947,25 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 .review-scene-card {
   padding: 14px;
   border-radius: 16px;
-  background: rgba(255,255,255,0.04);
+  background: linear-gradient(160deg, rgba(14,22,46,0.80) 0%, rgba(10,17,38,0.75) 100%);
   border: 1px solid rgba(255,255,255,0.08);
-  transition: border-color 0.2s;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.06);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.review-scene-card:hover {
+  border-color: rgba(0,196,255,0.18);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.30), 0 0 0 1px rgba(0,196,255,0.06);
 }
 
 .review-scene-card-placeholder {
-  background: rgba(0,181,240,0.04);
-  border-color: rgba(0,181,240,0.12);
+  background: linear-gradient(160deg, rgba(8,16,40,0.85) 0%, rgba(10,20,48,0.80) 100%);
+  border-color: rgba(0,196,255,0.14);
 }
 
 .review-scene-card-refreshing {
-  border-color: rgba(0,181,240,0.25);
+  border-color: rgba(0,196,255,0.30);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.30), 0 0 20px rgba(0,196,255,0.08);
 }
 
 .review-scene-card-failed {
@@ -999,8 +1006,8 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   align-items: stretch;
   padding: 10px;
   border-radius: 14px;
-  background: rgba(0,0,0,0.20);
-  border: 1px solid rgba(255,255,255,0.07);
+  background: rgba(6,12,28,0.60);
+  border: 1px solid rgba(0,196,255,0.08);
 }
 
 .preview-card-selected,
@@ -1202,14 +1209,15 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 }
 
 .asset-select-card:hover:not(:disabled) {
-  border-color: rgba(0,181,240,0.30);
-  box-shadow: 0 4px 16px rgba(0,181,240,0.12);
+  border-color: rgba(0,196,255,0.35);
+  box-shadow: 0 4px 20px rgba(0,196,255,0.14), 0 0 0 1px rgba(0,196,255,0.08);
   transform: translateY(-1px);
 }
 
 .asset-select-card.active {
   border-color: var(--arc-400);
-  box-shadow: 0 0 0 2px rgba(0,181,240,0.15), 0 0 16px rgba(0,181,240,0.15);
+  box-shadow: 0 0 0 2px rgba(0,196,255,0.20), 0 0 24px rgba(0,196,255,0.18);
+  background: rgba(0,196,255,0.05);
 }
 
 .asset-select-card:disabled {
@@ -1234,11 +1242,12 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   font-family: var(--font-mono, monospace);
 }
 
+/* ── Dark placeholder artwork ── */
 .placeholder-card {
   position: relative;
   width: 100%;
   height: 100%;
-  background: linear-gradient(180deg, #eef2f6 0%, #e5eaef 100%);
+  background: linear-gradient(160deg, #060e24 0%, #0b1732 100%);
 }
 
 .placeholder-art {
@@ -1249,42 +1258,29 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 }
 
 .placeholder-badge {
-  position: absolute;
-  top: 46%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 3;
-  padding: 0;
-  background: transparent;
-  color: rgba(100, 116, 139, 0.92);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  white-space: nowrap;
-  border-radius: 0;
-  box-shadow: none;
+  display: none;
 }
+
 .placeholder-canvas {
   position: absolute;
-  inset: 16px 14px 14px 14px;
-  border-radius: 12px;
+  inset: 14px 12px 12px 12px;
+  border-radius: 10px;
   overflow: hidden;
-  background: #f3f5f7;
-  border: 1px solid #d7dee5;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  background: #07102a;
+  border: 1px solid rgba(0,196,255,0.10);
 }
 
 .placeholder-sky {
   position: absolute;
   inset: 0 0 38% 0;
-  background: linear-gradient(180deg, #e9edf1 0%, #dde4ea 100%);
+  background: linear-gradient(180deg, #0a1c42 0%, #081530 100%);
 }
 
 .placeholder-cloud {
   position: absolute;
   height: 10px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.55);
+  background: rgba(0,196,255,0.07);
 }
 
 .placeholder-cloud::before,
@@ -1292,7 +1288,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   content: '';
   position: absolute;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.55);
+  background: rgba(0,196,255,0.07);
 }
 
 .placeholder-cloud-left {
@@ -1345,14 +1341,14 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   left: -6%;
   width: 76%;
   height: 24%;
-  background: #cfd6dd;
+  background: #0e2248;
 }
 
 .placeholder-hill-front {
   right: -8%;
   width: 84%;
   height: 30%;
-  background: #bcc6cf;
+  background: #091a38;
 }
 
 .placeholder-water {
@@ -1361,7 +1357,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   right: 0;
   bottom: 0;
   height: 24%;
-  background: linear-gradient(180deg, #b8c2cb 0%, #aeb9c3 100%);
+  background: linear-gradient(180deg, #0c2252 0%, #081a3c 100%);
 }
 
 .placeholder-sun {
@@ -1371,15 +1367,15 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: #c7d0d8;
-  box-shadow: 0 0 0 6px rgba(199, 208, 216, 0.26);
+  background: rgba(0,196,255,0.18);
+  box-shadow: 0 0 0 6px rgba(0,196,255,0.06), 0 0 20px rgba(0,196,255,0.15);
 }
 
 .placeholder-tree {
   position: absolute;
   bottom: 18%;
-  width: 6px;
-  background: #97a5b2;
+  width: 5px;
+  background: #0d2040;
   border-radius: 999px;
 }
 
@@ -1391,7 +1387,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: #c9d1d8;
+  background: #0d2040;
   transform: translateX(-50%);
 }
 
@@ -1410,9 +1406,9 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   left: 14px;
   right: 14px;
   bottom: 10px;
-  height: 8px;
+  height: 6px;
   border-radius: 999px;
-  background: #d8dfe6;
+  background: rgba(0,196,255,0.08);
 }
 .shimmer-active::after {
   content: '';
@@ -1420,9 +1416,9 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   inset: 0;
   background: linear-gradient(
     110deg,
-    rgba(255, 255, 255, 0) 18%,
-    rgba(255, 255, 255, 0.58) 46%,
-    rgba(255, 255, 255, 0) 74%
+    rgba(0,196,255,0) 18%,
+    rgba(0,196,255,0.12) 46%,
+    rgba(0,196,255,0) 74%
   );
   transform: translateX(-120%);
   animation: reviewShimmer 1.6s linear infinite;

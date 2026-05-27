@@ -4,6 +4,8 @@
     <div class="studio-bg-layers" aria-hidden="true">
       <div class="studio-bg-radial studio-bg-radial--arc" />
       <div class="studio-bg-radial studio-bg-radial--prism" />
+      <div class="studio-bg-radial studio-bg-radial--rose" />
+      <div class="studio-bg-radial studio-bg-radial--deep" />
       <div class="studio-bg-grid" />
     </div>
 
@@ -94,28 +96,43 @@ defineEmits<{
 .studio-bg-radial {
   position: absolute;
   border-radius: 50%;
-  filter: blur(120px);
-  opacity: 0.18;
 }
 .studio-bg-radial--arc {
-  width: 800px; height: 600px;
-  top: -200px; left: -100px;
-  background: radial-gradient(ellipse, rgba(0,181,240,0.60) 0%, transparent 70%);
+  width: 1400px; height: 900px;
+  top: -350px; left: -250px;
+  background: radial-gradient(ellipse, rgba(0,196,255,0.36) 0%, rgba(0,100,220,0.12) 50%, transparent 70%);
+  filter: blur(90px);
   animation: float 10s ease-in-out infinite;
 }
 .studio-bg-radial--prism {
-  width: 700px; height: 500px;
-  bottom: -100px; right: -150px;
-  background: radial-gradient(ellipse, rgba(139,92,246,0.55) 0%, transparent 70%);
+  width: 1100px; height: 800px;
+  bottom: -200px; right: -200px;
+  background: radial-gradient(ellipse, rgba(157,110,248,0.32) 0%, rgba(100,40,220,0.10) 50%, transparent 70%);
+  filter: blur(100px);
   animation: float 13s ease-in-out infinite reverse;
+}
+.studio-bg-radial--rose {
+  width: 700px; height: 500px;
+  top: 35%; left: 35%;
+  background: radial-gradient(ellipse, rgba(236,72,153,0.14) 0%, transparent 65%);
+  filter: blur(120px);
+  animation: float 18s ease-in-out infinite;
+}
+.studio-bg-radial--deep {
+  width: 1000px; height: 500px;
+  bottom: -100px; left: 50%;
+  transform: translateX(-50%);
+  background: radial-gradient(ellipse, rgba(0,60,200,0.22) 0%, transparent 65%);
+  filter: blur(80px);
 }
 .studio-bg-grid {
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgba(0,181,240,0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0,181,240,0.04) 1px, transparent 1px);
-  background-size: 48px 48px;
+    linear-gradient(rgba(0,196,255,0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,196,255,0.055) 1px, transparent 1px);
+  background-size: 52px 52px;
+  mask-image: radial-gradient(ellipse 80% 80% at 50% 50%, black 30%, transparent 100%);
 }
 
 /* ── Shell ── */
@@ -132,14 +149,33 @@ defineEmits<{
   position: sticky;
   top: 0;
   z-index: 50;
-  border-bottom: 1px solid rgba(0,181,240,0.10);
-  background: rgba(6,11,26,0.88);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  background: linear-gradient(180deg, rgba(10,16,36,0.96) 0%, rgba(8,12,28,0.92) 100%);
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
   border-radius: 0 !important;
   flex-shrink: 0;
+  border: none !important;
+  border-bottom: 1px solid transparent !important;
+  box-shadow:
+    0 1px 0 0 rgba(0,196,255,0.15),
+    0 4px 32px rgba(0,0,0,0.40);
 }
-.studio-header::before { display: none; } /* override gradient-border pseudoelement */
+.studio-header::before { display: none; }
+.studio-header::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(0,196,255,0.50) 25%,
+    rgba(157,110,248,0.50) 75%,
+    transparent 100%
+  );
+  pointer-events: none;
+}
 
 .studio-header__inner {
   display: flex;
@@ -193,7 +229,7 @@ defineEmits<{
 .studio-tabs {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: 0.125rem;
   flex: 1;
   justify-content: center;
 }

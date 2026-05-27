@@ -2320,21 +2320,28 @@ async function runWorkflow() {
   align-items: center;
   gap: 0.5rem;
   padding: 0.875rem 1.25rem 0.75rem;
-  border-bottom: 1px solid rgba(0,181,240,0.10);
+  border-bottom: 1px solid rgba(0,196,255,0.12);
+  background: linear-gradient(90deg, rgba(0,196,255,0.04) 0%, transparent 60%);
 }
 
 .review-section-icon {
-  color: var(--arc-400);
-  font-size: 0.75rem;
+  background: linear-gradient(135deg, var(--arc-400), var(--prism-400));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  font-size: 0.875rem;
   line-height: 1;
 }
 
 .review-section-title {
   font-size: 0.875rem;
   font-weight: 700;
-  color: var(--text-primary);
+  background: linear-gradient(90deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.75) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
   flex: 1;
-  letter-spacing: 0.01em;
+  letter-spacing: 0.02em;
 }
 
 .review-render-btn {
