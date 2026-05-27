@@ -36,6 +36,7 @@ class RunnerSingleSceneImageSupport:
         has_turtle = any(
             keyword in family_text for keyword in ["turtle", "tortoise", "乌龟", "海龟", "龟"]
         )
+        has_tadpole = any(keyword in family_text for keyword in ["tadpole", "蝌蚪"])
 
         negatives: List[str] = [
             "hybrid rabbit turtle creature",
@@ -54,6 +55,16 @@ class RunnerSingleSceneImageSupport:
             "malformed animal anatomy",
             "unclear character species",
         ]
+
+        if has_tadpole:
+            negatives += [
+                "adult frog",
+                "frog with four legs",
+                "fully grown frog",
+                "frog body",
+                "amphibian with limbs",
+                "no tail frog",
+            ]
 
         for character in characters:
             if not isinstance(character, dict):

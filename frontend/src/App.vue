@@ -201,7 +201,7 @@ const DEFAULT_WORKFLOW_FORM: any = {
   topic: '写一个关于小猫冒险的故事',
   audience: 'children',
   tone: 'warm',
-  visualStyle: 'storybook',
+  visualStyle: 'cute chibi anime',
   characterStyle: 'animal',
   voiceStyle: 'warm_female',
   voiceoverEnabled: true,

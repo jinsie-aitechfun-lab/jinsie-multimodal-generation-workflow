@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
+import json
+import urllib.request as urllib_request
+from typing import Any, Dict, List, Optional
 
 
 class RunnerStoryboardSupport:
@@ -37,7 +39,6 @@ class RunnerStoryboardSupport:
         scenes: List[Dict[str, Any]] = []
         for index, blueprint in enumerate(blueprints, start=1):
             narration = paragraphs[index - 1] if index <= len(paragraphs) else ""
-
             scenes.append(
                 {
                     "scene_id": f"scene_{index:02d}",
@@ -51,11 +52,154 @@ class RunnerStoryboardSupport:
                 }
             )
 
+        # Enrich visual_description per scene using LLM based on actual narration
+        llm_descriptions = self._generate_scene_visual_descriptions(ctx, scenes, outputs)
+        for scene in scenes:
+            sid = scene["scene_id"]
+            if sid in llm_descriptions:
+                scene["visual_description"] = llm_descriptions[sid]
+
         return {
             "scene_count": scene_count,
             "total_duration_sec": total_duration_sec,
             "scenes": scenes,
         }
+
+    def _generate_scene_visual_descriptions(
+        self,
+        ctx: Any,
+        scenes: List[Dict[str, Any]],
+        outputs: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, str]:
+        """Call LLM once to generate story-specific visual descriptions for all scenes.
+
+        Returns a dict of scene_id -> visual_description.
+        Falls back silently to empty dict (caller keeps blueprint description) on any error.
+        """
+        runner = self._runner
+        try:
+            api_key = runner._llm_api_key()
+            model = runner._story_model_name()
+            if not api_key or not model:
+                return {}
+        except Exception:
+            return {}
+
+        topic = str(getattr(ctx.input, "topic", "") or "").strip()
+        visual_style = str(getattr(ctx.input, "visual_style", "") or "storybook").strip()
+
+        try:
+            manifest_items = runner._character_manifest_support.character_manifest_items(
+                outputs or {}
+            )
+        except Exception:
+            manifest_items = []
+
+        character_lines: List[str] = []
+        for item in manifest_items or []:
+            name = str(item.get("display_name") or item.get("species") or "").strip()
+            visual_id = str(item.get("visual_identity") or item.get("visual_traits") or "").strip()
+            if name:
+                character_lines.append(f"- {name}: {visual_id}" if visual_id else f"- {name}")
+
+        scene_lines: List[str] = []
+        for scene in scenes:
+            sid = scene["scene_id"]
+            title = str(scene.get("scene_title") or "").strip()
+            narration = str(scene.get("narration") or "").strip()
+            scene_lines.append(f'{sid} [{title}]: {narration or "(no narration)"}')
+
+        # Distinct lighting palette per scene position keeps colors varied
+        lighting_hints = [
+            "golden morning sunlight, warm yellow tones",
+            "bright noon sunlight, vivid green tones",
+            "soft afternoon diffused light, blue-sky tones",
+            "warm sunset glow, orange-red tones",
+            "twilight dusk, blue-purple gradient tones",
+            "soft moonlight or cozy indoor lamp, dreamy pastel tones",
+        ]
+
+        scene_instructions: List[str] = []
+        for i, scene in enumerate(scenes):
+            sid = scene["scene_id"]
+            hint = lighting_hints[i % len(lighting_hints)]
+            scene_instructions.append(f'- {sid}: use lighting palette "{hint}"')
+
+        system_prompt = (
+            "You are a visual art director for a children's animated picture book. "
+            "Your job is to write concise image generation prompts in English. "
+            "Each prompt must describe a vivid, distinct illustration scene."
+        )
+
+        user_prompt = (
+            f"Story topic: {topic}\n"
+            f"Art style: {visual_style} illustration, cute chibi anime, soft warm colors\n"
+            f"Characters:\n" + ("\n".join(character_lines) or "- (infer from topic)") + "\n\n"
+            f"Lighting requirements per scene (MUST follow):\n"
+            + "\n".join(scene_instructions) + "\n\n"
+            f"Scenes (scene_id [title]: narration):\n"
+            + "\n".join(scene_lines) + "\n\n"
+            "For each scene write a visual_description (2-3 sentences in English) that:\n"
+            "1. START with the character's SPECIFIC PHYSICAL ACTION derived from the narration.\n"
+            "   Use strong motion verbs: sprinting, leaping, tumbling, celebrating, crouching, panting, waving, etc.\n"
+            "   NEVER start with environment. NEVER describe characters as just 'standing' or 'sitting' unless the narration explicitly says so.\n"
+            "   Example: 'The rabbit dashes forward with powerful leaps, ears streaming behind, while the turtle plods steadily on the dusty track.'\n"
+            "2. Then describe the SPECIFIC environment/location matching the narration.\n"
+            "3. End with the required lighting palette for that scene.\n"
+            "4. Each scene must be visually DISTINCT from all others — different action, location, and color.\n\n"
+            "Return ONLY valid JSON, no markdown:\n"
+            '{"scenes": [{"scene_id": "scene_01", "visual_description": "..."}, ...]}'
+        )
+
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": 0.7,
+            "max_tokens": 1200,
+        }
+
+        try:
+            req = urllib_request.Request(
+                url=f"{runner._llm_api_base_url().rstrip('/')}/chat/completions",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                method="POST",
+            )
+            with urllib_request.urlopen(req, timeout=runner._story_timeout_seconds()) as resp:
+                raw = resp.read()
+
+            data = json.loads(raw)
+            content = (
+                (data.get("choices") or [{}])[0]
+                .get("message", {})
+                .get("content", "")
+                .strip()
+            )
+
+            # Strip markdown code fences if present
+            if content.startswith("```"):
+                content = content.split("```")[1]
+                if content.startswith("json"):
+                    content = content[4:]
+            content = content.strip()
+
+            result = json.loads(content)
+            descriptions: Dict[str, str] = {}
+            for item in result.get("scenes") or []:
+                sid = str(item.get("scene_id") or "").strip()
+                desc = str(item.get("visual_description") or "").strip()
+                if sid and desc:
+                    descriptions[sid] = desc
+            return descriptions
+
+        except Exception:
+            return {}
 
     def split_story_for_scenes(self, text: str, scene_count: int) -> List[str]:
         normalized = " ".join(str(text or "").split()).strip()

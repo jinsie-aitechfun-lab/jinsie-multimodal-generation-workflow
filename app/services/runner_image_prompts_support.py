@@ -31,15 +31,18 @@ class RunnerImagePromptsSupport:
         storyboard = outputs.get("storyboard") or {}
         scenes = storyboard.get("scenes") or []
 
+        image_size = __import__("os").getenv(
+            "SILICONFLOW_IMAGE_SIZE", "1280x720"
+        ).strip()
+        framing = "vertical 9:16 framing" if image_size.startswith("720") else "horizontal 16:9 framing"
         global_style_anchor = (
             f"{ctx.input.visual_style} illustration, "
             f"{ctx.input.tone} mood, "
             "children's storybook art, "
             "soft pastel palette, "
-            "warm gentle lighting, "
             "clean composition, "
             "consistent character design, "
-            "vertical 9:16 framing"
+            f"{framing}"
         )
 
         character_anchor = runner._character_consistency_anchor(ctx, outputs)
@@ -138,6 +141,9 @@ class RunnerImagePromptsSupport:
                 negative_block = runner._scene_characters.scene_character_negative_block(
                     outputs, scene_data
                 )
+                compact_trait_block = runner._scene_characters.scene_character_compact_trait_block(
+                    outputs, scene_data
+                )
 
                 clean_visual_description = clean_image_prompt_text(visual_description)
 
@@ -162,13 +168,13 @@ class RunnerImagePromptsSupport:
                 is_multi_character_scene = len(required_character_names) >= 2
                 prompt_parts = [
                     global_style_anchor,
+                    shot_anchor,
                     character_anchor,
                     policy_blocks.get("visual_profile_block"),
                     policy_blocks.get("character_visual_profiles_block"),
                     character_block,
                     scene_required_presence_block,
                     policy_blocks.get("character_separation_block"),
-                    shot_anchor,
                     policy_blocks.get("scene_action_block"),
                     story_anchor,
                     policy_blocks.get("subject_negative_block"),
@@ -177,11 +183,12 @@ class RunnerImagePromptsSupport:
                 if is_multi_character_scene:
                     prompt_parts = [
                         global_style_anchor,
+                        compact_trait_block,
+                        shot_anchor,
                         scene_required_presence_block,
                         character_block,
                         policy_blocks.get("character_visual_profiles_block"),
                         policy_blocks.get("character_separation_block"),
-                        shot_anchor,
                         policy_blocks.get("scene_action_block"),
                         story_anchor,
                         negative_block,
@@ -196,7 +203,7 @@ class RunnerImagePromptsSupport:
                         "shot_id": shot_id,
                         "scene_id": scene_id,
                         "scene_title": scene_title,
-                        "characters": scene_data.get("characters") or [],
+                        "characters": enriched_scene_characters,
                         "required_character_ids": required_character_ids,
                         "required_character_names": required_character_names,
                         "prompt": prompt,
@@ -249,6 +256,9 @@ class RunnerImagePromptsSupport:
             negative_block = runner._scene_characters.scene_character_negative_block(
                 outputs, scene
             )
+            compact_trait_block = runner._scene_characters.scene_character_compact_trait_block(
+                outputs, scene
+            )
 
             clean_visual_description = clean_image_prompt_text(visual_description)
 
@@ -273,13 +283,13 @@ class RunnerImagePromptsSupport:
             is_multi_character_scene = len(required_character_names) >= 2
             prompt_parts = [
                 global_style_anchor,
+                scene_anchor,
                 character_anchor,
                 policy_blocks.get("visual_profile_block"),
                 policy_blocks.get("character_visual_profiles_block"),
                 character_block,
                 scene_required_presence_block,
                 policy_blocks.get("character_separation_block"),
-                scene_anchor,
                 policy_blocks.get("scene_action_block"),
                 story_anchor,
                 policy_blocks.get("subject_negative_block"),
@@ -288,11 +298,12 @@ class RunnerImagePromptsSupport:
             if is_multi_character_scene:
                 prompt_parts = [
                     global_style_anchor,
+                    compact_trait_block,
+                    scene_anchor,
                     scene_required_presence_block,
                     character_block,
                     policy_blocks.get("character_visual_profiles_block"),
                     policy_blocks.get("character_separation_block"),
-                    scene_anchor,
                     policy_blocks.get("scene_action_block"),
                     story_anchor,
                     negative_block,

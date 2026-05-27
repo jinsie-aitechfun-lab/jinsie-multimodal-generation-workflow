@@ -2,6 +2,12 @@ import json
 import time
 from pathlib import Path
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 from fastapi import FastAPI, HTTPException
 from fastapi import Body
 from fastapi.middleware.cors import CORSMiddleware
@@ -168,8 +174,14 @@ def run_workflow(req: dict = Body(...)):
 def get_workflow_status(workflow_id: str):
     status_path = _workflow_status_path(workflow_id)
     if status_path.exists():
-        with open(status_path, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(status_path, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+            if content:
+                return json.loads(content)
+        except (json.JSONDecodeError, OSError):
+            pass
+        return {"workflow_id": workflow_id, "status": "processing"}
 
     if _workflow_outputs_path(workflow_id).exists():
         return {

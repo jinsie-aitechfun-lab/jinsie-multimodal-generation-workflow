@@ -94,6 +94,53 @@ class RunnerSceneCharactersSupport:
 
         return constraints
 
+    def scene_character_compact_trait_block(
+        self,
+        outputs: Dict[str, Any],
+        scene: Dict[str, Any],
+    ) -> str:
+        """Compact per-character trait assertion placed early in the positive prompt.
+
+        Returns one entry per character: "NAME: [visual identity], MUST NOT HAVE: [cross-char traits]"
+        Only non-empty for multi-character scenes — placing it early (position 2) lets Kolors
+        see the trait separations before its latent diffusion process locks in shared features.
+        """
+        enriched = self.enriched_scene_characters_from_manifest(outputs, scene)
+        if len(enriched) < 2:
+            return ""
+
+        lines: List[str] = []
+        for char in enriched:
+            if not isinstance(char, dict):
+                continue
+
+            label = self._character_label(char)
+            if not label:
+                continue
+
+            visual_identity = str(char.get("visual_identity") or "").strip()
+            first_sentence = visual_identity.split(".")[0].strip() if visual_identity else ""
+
+            cross_forbidden = self._cross_character_forbidden_traits(char, enriched)
+            not_items = [
+                t[3:].strip() if t.startswith("no ") else t.strip()
+                for t in cross_forbidden[:5]
+                if str(t).strip()
+            ]
+
+            parts: List[str] = [label]
+            if first_sentence:
+                parts.append(first_sentence)
+            if not_items:
+                parts.append(f"MUST NOT HAVE: {', '.join(not_items)}")
+
+            lines.append("; ".join(parts))
+
+        if not lines:
+            return ""
+
+        return "character trait lock: " + " | ".join(lines)
+
     def enriched_scene_characters_from_manifest(
         self,
         outputs: Dict[str, Any],
