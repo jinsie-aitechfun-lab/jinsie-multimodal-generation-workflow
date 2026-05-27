@@ -652,6 +652,7 @@ class WorkflowRunner:
         speaker: str,
         voice_style: str,
         output_path: Path,
+        speed: Optional[float] = None,
     ) -> Dict[str, Any]:
         import http.client
         import ssl
@@ -669,6 +670,8 @@ class WorkflowRunner:
             "input": text,
             "response_format": "mp3",
         }
+        if speed is not None:
+            payload["speed"] = round(max(0.25, min(4.0, float(speed))), 2)
 
         req = urllib_request.Request(
             url=f"{self._tts_api_base_url()}/audio/speech",
