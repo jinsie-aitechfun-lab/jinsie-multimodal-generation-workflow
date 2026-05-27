@@ -409,7 +409,9 @@ class WorkflowRunner:
             f"Constraints:\n"
             f"- The plot must meaningfully reflect the topic (not a generic template).\n"
             f"- Generate enough story content for the selected duration.\n"
-            f"- Provide a complete structure: beginning, development, problem or discovery, action, resolution, and warm ending.\n"
+            f"- Provide a complete structure: beginning, development, problem or discovery, action, and a concrete story-specific resolution.\n"
+            f"- The ending must describe what SPECIFICALLY happens at the end of THIS story — a concrete action, reunion, achievement, or moment unique to the characters and topic.\n"
+            f"- Do NOT use generic warmth formulas such as '心里暖暖的', '收获了勇气和成长', '明白了XX的道理', '带来美好的收获', or any variation of those phrases.\n"
             f"- Do not repeat sentences or adjacent ideas.\n"
             f"- Do not include scene numbers, bullet points, markdown, JSON, or section headings.\n"
             f"- Do not include the selected duration, seconds, target length, or phrases such as 60秒 / 有6秒 in the story.\n"
@@ -425,7 +427,7 @@ class WorkflowRunner:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            "temperature": 0.8,
+            "temperature": 0.95,
             "max_tokens": 1400,
         }
 
