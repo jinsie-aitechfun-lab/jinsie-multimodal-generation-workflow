@@ -149,7 +149,7 @@ class ApiImageGeneratorAdapter:
         }
 
         if run_id:
-            payload["seed"] = (_derive_run_seed(run_id) + scene_index) % 10_000_000_000
+            payload["seed"] = (_derive_run_seed(run_id) + scene_index * 1000) % 10_000_000_000
 
         if not is_flux and negative_prompt:
             payload["negative_prompt"] = negative_prompt

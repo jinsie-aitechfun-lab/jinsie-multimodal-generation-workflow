@@ -57,8 +57,9 @@ class RunnerSceneBlueprintsSupport:
                 {
                     "scene_title": "故事开场",
                     "visual_description": (
-                        f"{visual_label}风格画面，晨光柔和，主角{main_character_display}和朋友{secondary_character_display}第一次一起出场，"
-                        f"整体氛围{tone_label}、轻盈而有期待感。"
+                        f"{visual_label}风格画面，清晨金色阳光斜射，薄雾弥漫，"
+                        f"主角{main_character_display}和朋友{secondary_character_display}在宽阔的起点第一次一起出场，"
+                        f"远近景层次丰富，色调明亮金黄，氛围{tone_label}而充满期待。"
                     ),
                     "shot_type": "wide",
                     "transition": "fade",
@@ -66,8 +67,9 @@ class RunnerSceneBlueprintsSupport:
                 {
                     "scene_title": "遇到问题",
                     "visual_description": (
-                        f"{visual_label}风格画面，{main_character_display}停下脚步思考，"
-                        f"{secondary_character_display}陪在一旁一起观察环境变化，画面强调困惑与转折。"
+                        f"{visual_label}风格画面，正午明亮直射光，阴影清晰，"
+                        f"{main_character_display}在郁郁葱葱的自然环境中停下脚步，"
+                        f"{secondary_character_display}陪在一旁观察，近景绿意环绕，色调清新翠绿，强调困惑与转折。"
                     ),
                     "shot_type": "medium",
                     "transition": "cut",
@@ -75,8 +77,9 @@ class RunnerSceneBlueprintsSupport:
                 {
                     "scene_title": "行动推进",
                     "visual_description": (
-                        f"{visual_label}风格画面，{main_character_display}与{secondary_character_display}一起尝试解决问题，"
-                        f"动作更明确，节奏变得积极，画面更有前进感。"
+                        f"{visual_label}风格画面，午后柔和漫射光，云朵飘动，"
+                        f"{main_character_display}与{secondary_character_display}在开阔场景中并肩前行，"
+                        f"中景俯视视角，天空蓝白色调，画面充满动感。"
                     ),
                     "shot_type": "medium",
                     "transition": "dissolve",
@@ -84,8 +87,9 @@ class RunnerSceneBlueprintsSupport:
                 {
                     "scene_title": "温暖收束",
                     "visual_description": (
-                        f"{visual_label}风格画面，{main_character_display}和{secondary_character_display}完成旅程，表情放松，"
-                        f"画面回到温暖明亮的氛围，用来承接结尾情绪。"
+                        f"{visual_label}风格画面，夕阳橙红暖光洒落，光晕明显，"
+                        f"{main_character_display}和{secondary_character_display}在温馨场所完成旅程，"
+                        f"近景双人构图，橙红暖黄色调，氛围温柔满足。"
                     ),
                     "shot_type": "close-up",
                     "transition": "fade",
@@ -93,8 +97,9 @@ class RunnerSceneBlueprintsSupport:
                 {
                     "scene_title": "回味结尾",
                     "visual_description": (
-                        f"{visual_label}风格画面，{main_character_display}和{secondary_character_display}回头望向来时的路，"
-                        f"环境安静舒展，用于强化余韵与成长感。"
+                        f"{visual_label}风格画面，黄昏蓝紫渐变天空，繁星初现，"
+                        f"{main_character_display}和{secondary_character_display}在高处回望来时的路，"
+                        f"远景广角构图，蓝紫冷暖过渡色调，空间感强，余韵悠长。"
                     ),
                     "shot_type": "wide",
                     "transition": "fade",
@@ -102,8 +107,9 @@ class RunnerSceneBlueprintsSupport:
                 {
                     "scene_title": "片尾定格",
                     "visual_description": (
-                        f"{visual_label}风格画面，{main_character_display}和{secondary_character_display}站在新的起点上，"
-                        f"适合作为片尾定格镜头，氛围柔和完整。"
+                        f"{visual_label}风格画面，柔和月光或温暖室内灯光，"
+                        f"{main_character_display}和{secondary_character_display}站在新的起点，背景虚化柔美，"
+                        f"特写双人肖像，色调柔和梦幻，适合片尾定格。"
                     ),
                     "shot_type": "close-up",
                     "transition": "fade",
@@ -115,8 +121,9 @@ class RunnerSceneBlueprintsSupport:
             {
                 "scene_title": "故事开场",
                 "visual_description": (
-                    f"{visual_label}风格画面，晨光柔和，主角{main_character_display}第一次出场，"
-                    f"整体氛围{tone_label}、轻盈而有期待感。"
+                    f"{visual_label}风格画面，清晨金色阳光斜射，薄雾弥漫，"
+                    f"主角{main_character_display}在宽阔的起点环境第一次出场，"
+                    f"远近景层次丰富，整体色调明亮金黄，氛围{tone_label}而充满期待。"
                 ),
                 "shot_type": "wide",
                 "transition": "fade",
@@ -124,8 +131,9 @@ class RunnerSceneBlueprintsSupport:
             {
                 "scene_title": "遇到问题",
                 "visual_description": (
-                    f"{visual_label}风格画面，主角{main_character_display}停下脚步思考，"
-                    f"周围环境出现小小变化，画面强调困惑与转折。"
+                    f"{visual_label}风格画面，正午明亮直射光，阴影清晰，"
+                    f"主角{main_character_display}在郁郁葱葱的自然环境中停下脚步，"
+                    f"近景特写，绿意环绕，画面色调清新翠绿，强调困惑与转折。"
                 ),
                 "shot_type": "medium",
                 "transition": "cut",
@@ -133,8 +141,9 @@ class RunnerSceneBlueprintsSupport:
             {
                 "scene_title": "行动推进",
                 "visual_description": (
-                    f"{visual_label}风格画面，主角{main_character_display}主动尝试解决问题，"
-                    f"动作更明确，节奏变得积极，画面更有前进感。"
+                    f"{visual_label}风格画面，午后柔和漫射光，云朵飘动，"
+                    f"主角{main_character_display}在开阔的场景中奋力前行，"
+                    f"中景俯视视角，天空蓝白色调为主，画面充满动感与前进感。"
                 ),
                 "shot_type": "medium",
                 "transition": "dissolve",
@@ -142,8 +151,9 @@ class RunnerSceneBlueprintsSupport:
             {
                 "scene_title": "温暖收束",
                 "visual_description": (
-                    f"{visual_label}风格画面，主角{main_character_display}完成旅程，表情放松，"
-                    f"画面回到温暖明亮的氛围，用来承接结尾情绪。"
+                    f"{visual_label}风格画面，夕阳橙红暖光洒落，光晕明显，"
+                    f"主角{main_character_display}在温馨的场所完成旅程，表情放松，"
+                    f"近景肖像构图，橙红暖黄色调，整体氛围温柔而满足。"
                 ),
                 "shot_type": "close-up",
                 "transition": "fade",
@@ -151,8 +161,9 @@ class RunnerSceneBlueprintsSupport:
             {
                 "scene_title": "回味结尾",
                 "visual_description": (
-                    f"{visual_label}风格画面，主角{main_character_display}回头望向来时的路，"
-                    f"环境安静舒展，用于强化余韵与成长感。"
+                    f"{visual_label}风格画面，黄昏蓝紫渐变天空，繁星初现，"
+                    f"主角{main_character_display}在高处或开阔处回望来时的路，"
+                    f"远景广角构图，蓝紫冷暖过渡色调，空间感强，余韵悠长。"
                 ),
                 "shot_type": "wide",
                 "transition": "fade",
@@ -160,8 +171,9 @@ class RunnerSceneBlueprintsSupport:
             {
                 "scene_title": "片尾定格",
                 "visual_description": (
-                    f"{visual_label}风格画面，主角{main_character_display}站在新的起点上，"
-                    f"适合作为片尾定格镜头，氛围柔和完整。"
+                    f"{visual_label}风格画面，柔和月光或温暖室内灯光，"
+                    f"主角{main_character_display}站在新的起点，背景虚化柔美，"
+                    f"特写肖像镜头，色调柔和梦幻，适合片尾定格。"
                 ),
                 "shot_type": "close-up",
                 "transition": "fade",
