@@ -35,6 +35,7 @@ export type WorkflowRunFormState = {
   secondaryCharacterForbiddenTraits: string
 
   renderMode: 'auto' | 'manual'
+  qualityTier: 'fast' | 'quality' | 'cinematic'
 }
 
 type StepOption = { label: string; value: StepName }
@@ -413,6 +414,40 @@ function getTopicManualMismatchWarning(): string {
                 @change="updateFormState('renderMode', 'manual')"
               />
               Manual
+            </label>
+          </div>
+
+          <div class="row">
+            <div class="row-label">Image Quality</div>
+
+            <label class="radio" title="15 steps — fast, lower detail">
+              <input
+                type="radio"
+                value="fast"
+                :checked="formState.qualityTier === 'fast'"
+                @change="updateFormState('qualityTier', 'fast')"
+              />
+              Fast
+            </label>
+
+            <label class="radio" title="25 steps — balanced quality">
+              <input
+                type="radio"
+                value="quality"
+                :checked="formState.qualityTier === 'quality'"
+                @change="updateFormState('qualityTier', 'quality')"
+              />
+              Quality
+            </label>
+
+            <label class="radio" title="40 steps — high detail, slower">
+              <input
+                type="radio"
+                value="cinematic"
+                :checked="formState.qualityTier === 'cinematic'"
+                @change="updateFormState('qualityTier', 'cinematic')"
+              />
+              Cinematic
             </label>
           </div>
 

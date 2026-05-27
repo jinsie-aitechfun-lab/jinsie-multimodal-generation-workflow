@@ -61,6 +61,13 @@ class PillowStorybookAdapter:
         return self._runner._build_scene_png(ctx, scene, scene_index)
 
 
+_QUALITY_TIER_PARAMS: dict[str, dict[str, Any]] = {
+    "fast":     {"num_inference_steps": 15, "guidance_scale": 6.5},
+    "quality":  {"num_inference_steps": 25, "guidance_scale": 7.5},
+    "cinematic": {"num_inference_steps": 40, "guidance_scale": 8.0},
+}
+
+
 class ApiImageGeneratorAdapter:
     def __init__(self, runner: Any) -> None:
         self._runner = runner
@@ -81,6 +88,7 @@ class ApiImageGeneratorAdapter:
             scene_index=int(task.prompt_metadata.get("scene_index") or 1),
             negative_prompt=str(task.prompt_metadata.get("negative_prompt") or ""),
             img2img_reference_path=task.prompt_metadata.get("img2img_reference_path"),
+            quality_tier=str(task.prompt_metadata.get("quality_tier") or "quality"),
         )
 
     def _generate_api_image_bytes(
@@ -91,6 +99,7 @@ class ApiImageGeneratorAdapter:
         scene: dict[str, Any],
         scene_index: int,
         negative_prompt: str = "",
+        quality_tier: str = "quality",
         img2img_reference_path: Optional[Any] = None,
     ) -> bytes:
         if self._runner._force_image_rate_limit():
@@ -115,8 +124,14 @@ class ApiImageGeneratorAdapter:
 
         is_flux = "flux" in model.lower()
 
+        # Env-var overrides take priority; quality_tier provides the default when they're unset.
+        tier_params = _QUALITY_TIER_PARAMS.get(
+            str(quality_tier or "quality").strip().lower(),
+            _QUALITY_TIER_PARAMS["quality"],
+        )
+
         num_inference_steps_raw = os.getenv("SILICONFLOW_IMAGE_STEPS", "").strip()
-        guidance_scale_raw = os.getenv("SILICONFLOW_IMAGE_GUIDANCE", "7.5").strip()
+        guidance_scale_raw = os.getenv("SILICONFLOW_IMAGE_GUIDANCE", "").strip()
 
         try:
             num_inference_steps = int(num_inference_steps_raw) if num_inference_steps_raw else None
@@ -124,9 +139,15 @@ class ApiImageGeneratorAdapter:
             num_inference_steps = None
 
         try:
-            guidance_scale = float(guidance_scale_raw)
+            guidance_scale = float(guidance_scale_raw) if guidance_scale_raw else None
         except ValueError:
-            guidance_scale = 7.5
+            guidance_scale = None
+
+        # Fall back to tier params when env vars are not set.
+        if num_inference_steps is None:
+            num_inference_steps = tier_params["num_inference_steps"]
+        if guidance_scale is None:
+            guidance_scale = tier_params["guidance_scale"]
 
         # FLUX.1 does not support negative_prompt; Kolors and others do
         if not is_flux:
@@ -156,12 +177,12 @@ class ApiImageGeneratorAdapter:
 
         if "kolors" in model.lower():
             payload["batch_size"] = 1
-            payload["num_inference_steps"] = num_inference_steps if num_inference_steps is not None else 20
+            payload["num_inference_steps"] = num_inference_steps
             payload["guidance_scale"] = guidance_scale
         elif is_flux:
-            # FLUX.1-schnell: 4 steps optimal; FLUX.1-dev: 25-50 steps
+            # FLUX.1-schnell: 4 steps optimal; FLUX.1-dev: 25-50 steps. Tier params override both.
             default_steps = 4 if "schnell" in model.lower() else 28
-            payload["num_inference_steps"] = num_inference_steps if num_inference_steps is not None else default_steps
+            payload["num_inference_steps"] = num_inference_steps if num_inference_steps != tier_params["num_inference_steps"] else default_steps
 
         if _img2img_enabled() and img2img_reference_path is not None:
             ref_path = Path(img2img_reference_path)

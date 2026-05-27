@@ -262,6 +262,7 @@ class RunnerSingleSceneImageSupport:
                         "scene": candidate_scene,
                         "scene_index": scene_index + candidate_index,
                         "negative_prompt": active_negative,
+                        "quality_tier": str(getattr(ctx.input, "quality_tier", "quality") or "quality"),
                     },
                 )
 

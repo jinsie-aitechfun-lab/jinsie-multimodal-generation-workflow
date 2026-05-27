@@ -147,6 +147,10 @@ class WorkflowInput(BaseModel):
         default=True,
         description="Whether audio generation is enabled for this run",
     )
+    quality_tier: str = Field(
+        default="quality",
+        description="Image quality tier: fast / quality / cinematic",
+    )
 
 
 class WorkflowRunRequest(BaseModel):
