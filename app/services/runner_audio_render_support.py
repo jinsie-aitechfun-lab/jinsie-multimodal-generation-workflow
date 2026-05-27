@@ -328,11 +328,57 @@ class RunnerAudioRenderSupport:
                         duration_sec = actual_duration_sec
                         duration_source = "ffprobe"
 
+                    # Duration retry: if actual audio is shorter than 70% of the
+                    # character-count estimate, re-generate at a slower speed so
+                    # the TTS fills the scene slot. Clamp speed to [0.75, 0.95].
+                    duration_retry_meta: Dict[str, Any] = {}
+                    if (
+                        actual_duration_sec is not None
+                        and actual_duration_sec < duration_estimate_sec * 0.70
+                        and duration_estimate_sec > 0
+                    ):
+                        ratio = actual_duration_sec / duration_estimate_sec
+                        # Target speed that would yield ~estimate duration
+                        retry_speed = max(0.75, min(0.95, ratio))
+                        try:
+                            retry_result = self._runner._generate_real_tts_audio(
+                                text=text,
+                                speaker=speaker,
+                                voice_style=voice_style,
+                                output_path=output_path,
+                                speed=retry_speed,
+                            )
+                            retry_duration = self._runner._probe_audio_duration_seconds(
+                                output_path
+                            )
+                            if retry_duration is not None and retry_duration > actual_duration_sec:
+                                duration_sec = retry_duration
+                                duration_source = "ffprobe_retry"
+                                duration_retry_meta = {
+                                    "duration_retry": True,
+                                    "retry_speed": retry_speed,
+                                    "original_duration_sec": actual_duration_sec,
+                                    "retry_duration_sec": retry_duration,
+                                    "retry_output_bytes": retry_result.get("output_bytes"),
+                                }
+                            else:
+                                # Retry didn't help — restore original file
+                                self._runner._generate_real_tts_audio(
+                                    text=text,
+                                    speaker=speaker,
+                                    voice_style=voice_style,
+                                    output_path=output_path,
+                                )
+                                duration_retry_meta = {"duration_retry": False, "retry_speed": retry_speed}
+                        except Exception:
+                            duration_retry_meta = {"duration_retry": False, "retry_error": True}
+
                     asset_metadata = {
                         "tts_model": tts_result.get("model"),
                         "tts_voice": tts_result.get("voice"),
                         "output_bytes": tts_result.get("output_bytes"),
                         "duration_source": duration_source,
+                        **duration_retry_meta,
                     }
                     real_generation_count += 1
                 except Exception as e:
