@@ -103,6 +103,73 @@ class RunnerAudioRenderSupport:
         except Exception:
             return None
 
+    def _compress_segment_narration(self, text: str, target_sec: float) -> Optional[str]:
+        """Ask LLM to lightly compress an over-long narration segment.
+
+        Returns compressed text (shorter than input) or None on failure/no gain.
+        """
+        runner = self._runner
+        try:
+            api_key = runner._llm_api_key()
+            model = runner._story_model_name()
+            if not api_key or not model:
+                return None
+        except Exception:
+            return None
+
+        current_chars = len(text.strip())
+        target_chars = max(1, int(target_sec * 8))
+
+        payload = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a children's story editor. "
+                        "Lightly compress the given Chinese narration to be more concise. "
+                        "Keep the same tone, characters, and core plot meaning. "
+                        "Return only the compressed Chinese text, no labels or markdown."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Compress this narration slightly "
+                        f"(current: {current_chars} chars, target: ~{target_chars} chars):\n"
+                        f"{text}"
+                    ),
+                },
+            ],
+            "temperature": 0.3,
+            "max_tokens": 200,
+        }
+
+        try:
+            req = urllib_request.Request(
+                url=f"{runner._llm_api_base_url().rstrip('/')}/chat/completions",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                method="POST",
+            )
+            with urllib_request.urlopen(req, timeout=15) as resp:
+                raw = resp.read()
+            data = json.loads(raw)
+            content = (
+                ((data.get("choices") or [{}])[0])
+                .get("message", {})
+                .get("content", "")
+                .strip()
+            )
+            if content and len(content) < current_chars:
+                return content
+            return None
+        except Exception:
+            return None
+
     def run_dialogue_script(self, ctx: Any, outputs: Dict[str, Any]) -> Dict[str, Any]:
         sentence_shots = outputs.get("sentence_shots") or {}
         shot_items = sentence_shots.get("items") or []
@@ -487,6 +554,94 @@ class RunnerAudioRenderSupport:
                                     "duration_retry": False,
                                     "retry_error": True,
                                     "llm_expand_attempted": expanded_text is not None,
+                                }
+
+                    elif (
+                        actual_duration_sec is not None
+                        and actual_duration_sec > duration_estimate_sec * 1.30
+                        and duration_estimate_sec > 0
+                    ):
+                        # Too long: first try LLM compression, then fall back to
+                        # faster TTS speed if compression didn't help enough.
+                        compressed_text = self._compress_segment_narration(
+                            text, duration_estimate_sec
+                        )
+                        llm_compress_succeeded = False
+                        if compressed_text:
+                            try:
+                                self._runner._generate_real_tts_audio(
+                                    text=compressed_text,
+                                    speaker=speaker,
+                                    voice_style=voice_style,
+                                    output_path=output_path,
+                                )
+                                llm_compress_duration = self._runner._probe_audio_duration_seconds(
+                                    output_path
+                                )
+                                if (
+                                    llm_compress_duration is not None
+                                    and llm_compress_duration < actual_duration_sec
+                                ):
+                                    duration_sec = llm_compress_duration
+                                    duration_source = "ffprobe_llm_compress"
+                                    duration_retry_meta = {
+                                        "duration_retry": True,
+                                        "retry_mode": "llm_compress",
+                                        "original_duration_sec": actual_duration_sec,
+                                        "retry_duration_sec": llm_compress_duration,
+                                        "compressed_text": compressed_text,
+                                    }
+                                    llm_compress_succeeded = True
+                            except Exception:
+                                pass
+
+                        if not llm_compress_succeeded:
+                            # LLM compression unavailable or didn't help — speed up TTS.
+                            ratio = actual_duration_sec / duration_estimate_sec
+                            retry_speed = min(1.25, max(1.05, ratio))
+                            try:
+                                retry_result = self._runner._generate_real_tts_audio(
+                                    text=text,
+                                    speaker=speaker,
+                                    voice_style=voice_style,
+                                    output_path=output_path,
+                                    speed=retry_speed,
+                                )
+                                speed_retry_duration = self._runner._probe_audio_duration_seconds(
+                                    output_path
+                                )
+                                if (
+                                    speed_retry_duration is not None
+                                    and speed_retry_duration < actual_duration_sec
+                                ):
+                                    duration_sec = speed_retry_duration
+                                    duration_source = "ffprobe_speed_retry"
+                                    duration_retry_meta = {
+                                        "duration_retry": True,
+                                        "retry_mode": "speed_increase",
+                                        "retry_speed": retry_speed,
+                                        "original_duration_sec": actual_duration_sec,
+                                        "retry_duration_sec": speed_retry_duration,
+                                        "retry_output_bytes": retry_result.get("output_bytes"),
+                                        "llm_compress_attempted": compressed_text is not None,
+                                    }
+                                else:
+                                    self._runner._generate_real_tts_audio(
+                                        text=text,
+                                        speaker=speaker,
+                                        voice_style=voice_style,
+                                        output_path=output_path,
+                                    )
+                                    duration_retry_meta = {
+                                        "duration_retry": False,
+                                        "retry_speed": retry_speed,
+                                        "llm_compress_attempted": compressed_text is not None,
+                                    }
+                            except Exception:
+                                duration_retry_meta = {
+                                    "duration_retry": False,
+                                    "retry_error": True,
+                                    "llm_compress_attempted": compressed_text is not None,
                                 }
 
                     asset_metadata = {
