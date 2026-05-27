@@ -447,9 +447,32 @@ onMounted(() => {
   if (savedWorkflowId) {
     const base = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() || 'http://127.0.0.1:8004'
     fetch(`${base}/v1/workflow/results/${savedWorkflowId}`)
-      .then(r => r.ok ? r.json() : null)
+      .then(r => {
+        if (r.status === 404) return { __notFound: true } as any
+        return r.ok ? r.json() : null
+      })
       .then(data => {
-        if (data && (data.outputs || data.steps)) {
+        if (!data) return
+        if (data.__notFound) {
+          // Workflow completed data not on disk yet — it may still be running.
+          // Check status and reconnect if so.
+          return fetch(`${base}/v1/workflow/status/${savedWorkflowId}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(statusData => {
+              const status = String(statusData?.status || '').trim().toLowerCase()
+              if (status === 'processing') {
+                // Reconnect: show processing UI and resume polling
+                loading.value = true
+                workflowStatusData.value = statusData
+                activeTab.value = 'review'
+                waitForAsyncWorkflowOutputs(savedWorkflowId).then(asyncData => {
+                  if (asyncData) applyWorkflowResponse(asyncData)
+                }).catch(() => {}).finally(() => { loading.value = false })
+              }
+            })
+            .catch(() => {})
+        }
+        if (data.outputs || data.steps) {
           applyWorkflowResponse(data)
         }
       })
