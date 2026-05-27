@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import subprocess
+import urllib.request as urllib_request
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -33,6 +35,73 @@ class RunnerAudioRenderSupport:
             return "character"
 
         return voice_mode
+
+    def _expand_segment_narration(self, text: str, target_sec: float) -> Optional[str]:
+        """Ask LLM to lightly expand a short narration segment.
+
+        Returns expanded text (longer than input) or None on failure/no gain.
+        """
+        runner = self._runner
+        try:
+            api_key = runner._llm_api_key()
+            model = runner._story_model_name()
+            if not api_key or not model:
+                return None
+        except Exception:
+            return None
+
+        current_chars = len(text.strip())
+        target_chars = max(current_chars + 8, int(target_sec * 8))
+
+        payload = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a children's story editor. "
+                        "Lightly expand the given Chinese narration with vivid descriptive detail. "
+                        "Keep the same tone, characters, and plot meaning. "
+                        "Return only the expanded Chinese text, no labels or markdown."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Expand this narration slightly "
+                        f"(current: {current_chars} chars, target: ~{target_chars} chars):\n"
+                        f"{text}"
+                    ),
+                },
+            ],
+            "temperature": 0.5,
+            "max_tokens": 200,
+        }
+
+        try:
+            req = urllib_request.Request(
+                url=f"{runner._llm_api_base_url().rstrip('/')}/chat/completions",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                method="POST",
+            )
+            with urllib_request.urlopen(req, timeout=15) as resp:
+                raw = resp.read()
+            data = json.loads(raw)
+            content = (
+                ((data.get("choices") or [{}])[0])
+                .get("message", {})
+                .get("content", "")
+                .strip()
+            )
+            if content and len(content) > current_chars:
+                return content
+            return None
+        except Exception:
+            return None
 
     def run_dialogue_script(self, ctx: Any, outputs: Dict[str, Any]) -> Dict[str, Any]:
         sentence_shots = outputs.get("sentence_shots") or {}
@@ -329,49 +398,96 @@ class RunnerAudioRenderSupport:
                         duration_source = "ffprobe"
 
                     # Duration retry: if actual audio is shorter than 70% of the
-                    # character-count estimate, re-generate at a slower speed so
-                    # the TTS fills the scene slot. Clamp speed to [0.75, 0.95].
+                    # character-count estimate, first try LLM narration expansion,
+                    # then fall back to slower TTS speed if expansion didn't help.
                     duration_retry_meta: Dict[str, Any] = {}
                     if (
                         actual_duration_sec is not None
                         and actual_duration_sec < duration_estimate_sec * 0.70
                         and duration_estimate_sec > 0
                     ):
-                        ratio = actual_duration_sec / duration_estimate_sec
-                        # Target speed that would yield ~estimate duration
-                        retry_speed = max(0.75, min(0.95, ratio))
-                        try:
-                            retry_result = self._runner._generate_real_tts_audio(
-                                text=text,
-                                speaker=speaker,
-                                voice_style=voice_style,
-                                output_path=output_path,
-                                speed=retry_speed,
-                            )
-                            retry_duration = self._runner._probe_audio_duration_seconds(
-                                output_path
-                            )
-                            if retry_duration is not None and retry_duration > actual_duration_sec:
-                                duration_sec = retry_duration
-                                duration_source = "ffprobe_retry"
-                                duration_retry_meta = {
-                                    "duration_retry": True,
-                                    "retry_speed": retry_speed,
-                                    "original_duration_sec": actual_duration_sec,
-                                    "retry_duration_sec": retry_duration,
-                                    "retry_output_bytes": retry_result.get("output_bytes"),
-                                }
-                            else:
-                                # Retry didn't help — restore original file
+                        expanded_text = self._expand_segment_narration(
+                            text, duration_estimate_sec
+                        )
+                        llm_retry_succeeded = False
+                        if expanded_text:
+                            try:
                                 self._runner._generate_real_tts_audio(
-                                    text=text,
+                                    text=expanded_text,
                                     speaker=speaker,
                                     voice_style=voice_style,
                                     output_path=output_path,
                                 )
-                                duration_retry_meta = {"duration_retry": False, "retry_speed": retry_speed}
-                        except Exception:
-                            duration_retry_meta = {"duration_retry": False, "retry_error": True}
+                                llm_retry_duration = self._runner._probe_audio_duration_seconds(
+                                    output_path
+                                )
+                                if (
+                                    llm_retry_duration is not None
+                                    and llm_retry_duration > actual_duration_sec
+                                ):
+                                    duration_sec = llm_retry_duration
+                                    duration_source = "ffprobe_llm_expand"
+                                    duration_retry_meta = {
+                                        "duration_retry": True,
+                                        "retry_mode": "llm_expand",
+                                        "original_duration_sec": actual_duration_sec,
+                                        "retry_duration_sec": llm_retry_duration,
+                                        "expanded_text": expanded_text,
+                                    }
+                                    llm_retry_succeeded = True
+                            except Exception:
+                                pass
+
+                        if not llm_retry_succeeded:
+                            # LLM expansion unavailable or didn't help — fall back
+                            # to regenerating at a slower TTS speed.
+                            ratio = actual_duration_sec / duration_estimate_sec
+                            retry_speed = max(0.75, min(0.95, ratio))
+                            try:
+                                retry_result = self._runner._generate_real_tts_audio(
+                                    text=text,
+                                    speaker=speaker,
+                                    voice_style=voice_style,
+                                    output_path=output_path,
+                                    speed=retry_speed,
+                                )
+                                speed_retry_duration = self._runner._probe_audio_duration_seconds(
+                                    output_path
+                                )
+                                if (
+                                    speed_retry_duration is not None
+                                    and speed_retry_duration > actual_duration_sec
+                                ):
+                                    duration_sec = speed_retry_duration
+                                    duration_source = "ffprobe_speed_retry"
+                                    duration_retry_meta = {
+                                        "duration_retry": True,
+                                        "retry_mode": "speed_reduce",
+                                        "retry_speed": retry_speed,
+                                        "original_duration_sec": actual_duration_sec,
+                                        "retry_duration_sec": speed_retry_duration,
+                                        "retry_output_bytes": retry_result.get("output_bytes"),
+                                        "llm_expand_attempted": expanded_text is not None,
+                                    }
+                                else:
+                                    # Speed retry also didn't help — restore original
+                                    self._runner._generate_real_tts_audio(
+                                        text=text,
+                                        speaker=speaker,
+                                        voice_style=voice_style,
+                                        output_path=output_path,
+                                    )
+                                    duration_retry_meta = {
+                                        "duration_retry": False,
+                                        "retry_speed": retry_speed,
+                                        "llm_expand_attempted": expanded_text is not None,
+                                    }
+                            except Exception:
+                                duration_retry_meta = {
+                                    "duration_retry": False,
+                                    "retry_error": True,
+                                    "llm_expand_attempted": expanded_text is not None,
+                                }
 
                     asset_metadata = {
                         "tts_model": tts_result.get("model"),
