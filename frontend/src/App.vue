@@ -445,19 +445,29 @@ onMounted(() => {
     } else if (savedTab === 'debug' && devMode.value) {
       activeTab.value = 'debug'
     }
-  }
 
-  const savedFormStr = localStorage.getItem(STORAGE_KEY_FORM)
-  if (savedFormStr) {
-    try {
-      const savedForm = JSON.parse(savedFormStr)
-      workflowForm.value = { ...DEFAULT_WORKFLOW_FORM, ...savedForm }
-    } catch { /* ignore malformed */ }
-  }
+    const savedFormStr = localStorage.getItem(STORAGE_KEY_FORM)
+    if (savedFormStr) {
+      try {
+        const savedForm = JSON.parse(savedFormStr)
+        workflowForm.value = { ...DEFAULT_WORKFLOW_FORM, ...savedForm }
+      } catch { /* ignore malformed */ }
+    }
 
-  const savedSessionId = localStorage.getItem(STORAGE_KEY_SESSION)
-  if (savedSessionId) {
-    workflowForm.value.sessionId = savedSessionId
+    const savedSessionId = localStorage.getItem(STORAGE_KEY_SESSION)
+    if (savedSessionId) {
+      workflowForm.value.sessionId = savedSessionId
+    }
+
+    // Restore payload so refresh-scene API calls have the original workflow_input
+    const savedPayloadStr = localStorage.getItem(STORAGE_KEY_PAYLOAD)
+    if (savedPayloadStr) {
+      try {
+        currentWorkflowPayload.value = JSON.parse(savedPayloadStr) as WorkflowRunPayload
+      } catch {
+        // ignore malformed payload
+      }
+    }
   }
 
   const savedVideoUrl = localStorage.getItem(STORAGE_KEY_VIDEO_URL)
@@ -466,16 +476,6 @@ onMounted(() => {
     // finalVideoUrl is only set by applyWorkflowResponse so it always matches the
     // current workflow response, never bleeds in from a previous completed run.
     pushRecentFinalVideoUrl(savedVideoUrl)
-  }
-
-  // Restore payload so refresh-scene API calls have the original workflow_input
-  const savedPayloadStr = localStorage.getItem(STORAGE_KEY_PAYLOAD)
-  if (savedPayloadStr) {
-    try {
-      currentWorkflowPayload.value = JSON.parse(savedPayloadStr) as WorkflowRunPayload
-    } catch {
-      // ignore malformed payload
-    }
   }
 
   const savedWorkflowId = isReload ? localStorage.getItem(STORAGE_KEY_WORKFLOW) : null
