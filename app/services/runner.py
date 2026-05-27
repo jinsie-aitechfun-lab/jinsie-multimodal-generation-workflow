@@ -335,6 +335,48 @@ class WorkflowRunner:
     def _llm_api_key(self) -> str:
         return (os.getenv("OPENAI_API_KEY") or os.getenv("LLM_API_KEY") or "").strip()
 
+    def _llm_fallback_api_base_url(self) -> str:
+        return (os.getenv("LLM_FALLBACK_BASE_URL") or "").strip().rstrip("/")
+
+    def _llm_fallback_api_key(self) -> str:
+        return (os.getenv("LLM_FALLBACK_API_KEY") or "").strip()
+
+    def _llm_fallback_model_name(self) -> str:
+        return (
+            (os.getenv("LLM_FALLBACK_MODEL") or "").strip()
+            or self._story_model_name()
+        )
+
+    def _call_llm_chat(
+        self,
+        *,
+        api_base_url: str,
+        api_key: str,
+        payload: Dict[str, Any],
+        timeout: int,
+    ) -> str:
+        """Send one OpenAI-compatible chat/completions request; return raw content string."""
+        req = urllib_request.Request(
+            url=f"{api_base_url.rstrip('/')}/chat/completions",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        with urllib_request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read()
+        if not raw:
+            raise RuntimeError("LLM response is empty")
+        data = json.loads(raw.decode("utf-8", errors="ignore"))
+        content = (
+            (((data.get("choices") or [{}])[0]).get("message") or {}).get("content") or ""
+        ).strip()
+        if not content:
+            raise RuntimeError("LLM content is empty")
+        return content
+
     def _story_provider_name(self) -> str:
         return (os.getenv("STORY_PROVIDER") or DEFAULT_STORY_PROVIDER).strip()
 
@@ -356,7 +398,7 @@ class WorkflowRunner:
 
     def _generate_story_with_llm(
         self, ctx: StepContext, outputs: Dict[str, Any]
-    ) -> Dict[str, str]:
+    ) -> Dict[str, Any]:
         api_key = self._llm_api_key()
         if not api_key:
             raise RuntimeError("LLM api key is missing (OPENAI_API_KEY/LLM_API_KEY)")
@@ -431,30 +473,35 @@ class WorkflowRunner:
             "max_tokens": 1400,
         }
 
-        req = urllib_request.Request(
-            url=f"{self._llm_api_base_url().rstrip('/')}/chat/completions",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            method="POST",
-        )
+        timeout = self._story_timeout_seconds()
+        provider_used = "primary"
+        fallback_reason: Optional[str] = None
 
-        with urllib_request.urlopen(req, timeout=self._story_timeout_seconds()) as resp:
-            raw = resp.read()
+        try:
+            content = self._call_llm_chat(
+                api_base_url=self._llm_api_base_url(),
+                api_key=api_key,
+                payload=payload,
+                timeout=timeout,
+            )
+        except Exception as primary_err:
+            fallback_url = self._llm_fallback_api_base_url()
+            fallback_key = self._llm_fallback_api_key()
+            if not fallback_url or not fallback_key:
+                raise
 
-        if not raw:
-            raise RuntimeError("LLM response is empty")
+            fallback_model = self._llm_fallback_model_name()
+            fallback_payload = dict(payload)
+            fallback_payload["model"] = fallback_model
 
-        data = json.loads(raw.decode("utf-8", errors="ignore"))
-        content = (
-            (((data.get("choices") or [{}])[0]).get("message") or {}).get("content")
-            or ""
-        ).strip()
-
-        if not content:
-            raise RuntimeError("LLM content is empty")
+            content = self._call_llm_chat(
+                api_base_url=fallback_url,
+                api_key=fallback_key,
+                payload=fallback_payload,
+                timeout=timeout,
+            )
+            provider_used = "fallback"
+            fallback_reason = f"{type(primary_err).__name__}: {primary_err}"
 
         title = f"{topic}的故事"
         summary = f"一个围绕“{topic}”展开的短篇故事，整体气质{tone_label}，适合做成{audience_label}向内容。"
@@ -462,11 +509,15 @@ class WorkflowRunner:
         parsed = parse_story_payload(content, topic=topic)
         text = parsed["text"] if parsed and parsed.get("text") else content
 
-        return {
+        result: Dict[str, Any] = {
             "title": title.strip(),
             "summary": summary.strip(),
             "text": text.strip(),
+            "provider_used": provider_used,
         }
+        if fallback_reason:
+            result["fallback_reason"] = fallback_reason
+        return result
 
     def _tts_api_key(self) -> str:
         tts_key = os.getenv("TTS_API_KEY", "").strip()

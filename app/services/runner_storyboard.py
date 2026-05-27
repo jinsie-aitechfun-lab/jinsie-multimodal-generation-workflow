@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import urllib.request as urllib_request
 from typing import Any, Dict, List, Optional
 
 
@@ -161,42 +160,45 @@ class RunnerStoryboardSupport:
             "max_tokens": 1200,
         }
 
-        try:
-            req = urllib_request.Request(
-                url=f"{runner._llm_api_base_url().rstrip('/')}/chat/completions",
-                data=json.dumps(payload).encode("utf-8"),
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                method="POST",
-            )
-            with urllib_request.urlopen(req, timeout=runner._story_timeout_seconds()) as resp:
-                raw = resp.read()
-
-            data = json.loads(raw)
-            content = (
-                (data.get("choices") or [{}])[0]
-                .get("message", {})
-                .get("content", "")
-                .strip()
-            )
-
-            # Strip markdown code fences if present
+        def _parse_descriptions(raw_content: str) -> Dict[str, str]:
+            content = raw_content
             if content.startswith("```"):
                 content = content.split("```")[1]
                 if content.startswith("json"):
                     content = content[4:]
             content = content.strip()
-
             result = json.loads(content)
-            descriptions: Dict[str, str] = {}
+            out: Dict[str, str] = {}
             for item in result.get("scenes") or []:
                 sid = str(item.get("scene_id") or "").strip()
                 desc = str(item.get("visual_description") or "").strip()
                 if sid and desc:
-                    descriptions[sid] = desc
-            return descriptions
+                    out[sid] = desc
+            return out
+
+        try:
+            timeout = runner._story_timeout_seconds()
+            try:
+                content = runner._call_llm_chat(
+                    api_base_url=runner._llm_api_base_url(),
+                    api_key=api_key,
+                    payload=payload,
+                    timeout=timeout,
+                )
+            except Exception:
+                fallback_url = runner._llm_fallback_api_base_url()
+                fallback_key = runner._llm_fallback_api_key()
+                if not fallback_url or not fallback_key:
+                    raise
+                fallback_payload = dict(payload)
+                fallback_payload["model"] = runner._llm_fallback_model_name()
+                content = runner._call_llm_chat(
+                    api_base_url=fallback_url,
+                    api_key=fallback_key,
+                    payload=fallback_payload,
+                    timeout=timeout,
+                )
+            return _parse_descriptions(content)
 
         except Exception:
             return {}

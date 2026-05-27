@@ -81,6 +81,7 @@ const emit = defineEmits<{
   ): void
   (e: 'refresh-review'): void
   (e: 'retry-scene', sceneId: string): void
+  (e: 'enhance-scene', sceneId: string): void
   (e: 'cancel-refresh'): void
 }>()
 
@@ -152,6 +153,10 @@ function onRefreshReview() {
 
 function onRetryScene(sceneId: string) {
   emit('retry-scene', sceneId)
+}
+
+function onEnhanceScene(sceneId: string) {
+  emit('enhance-scene', sceneId)
 }
 
 function onCancelRefresh() {
@@ -459,6 +464,16 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                 >
                   Open original
                 </a>
+
+                <button
+                  type="button"
+                  class="enhance-scene-button"
+                  :disabled="loading || selectingSceneId === entry.sceneId"
+                  :title="'用 Cinematic 档重新生成更高质量候选'"
+                  @click="onEnhanceScene(entry.sceneId)"
+                >
+                  ✦ Enhance
+                </button>
               </div>
             </div>
           </div>
@@ -1110,6 +1125,29 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 }
 
 .retry-scene-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.enhance-scene-button {
+  width: fit-content;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+  color: #4338ca;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 6px;
+}
+
+.enhance-scene-button:hover:not(:disabled) {
+  background: #e0e7ff;
+}
+
+.enhance-scene-button:disabled {
   cursor: not-allowed;
   opacity: 0.65;
 }

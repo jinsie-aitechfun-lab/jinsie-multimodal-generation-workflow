@@ -226,6 +226,7 @@ const DEFAULT_WORKFLOW_FORM: any = {
   secondaryCharacterForbiddenTraits: '',
   renderMode: 'auto',
   audioEnabled: true,
+  qualityTier: 'quality',
 }
 
 const STEP_OPTIONS: Array<{ label: string; value: StepName }> = [
@@ -515,6 +516,10 @@ const storyDiagnostics = computed(() => {
     generationSource:
       typeof storyRecord.generation_source === 'string'
         ? storyRecord.generation_source
+        : '—',
+    providerUsed:
+      typeof storyRecord.provider_used === 'string'
+        ? storyRecord.provider_used
         : '—',
     fallbackReason:
       typeof storyRecord.fallback_reason === 'string' &&
@@ -1275,7 +1280,7 @@ function handleManualRender() {
   renderFinalVideoIfReady(currentWorkflowResponse.value)
 }
 
-async function refreshImageReviewScene(sceneId: string, signal?: AbortSignal) {
+async function refreshImageReviewScene(sceneId: string, signal?: AbortSignal, qualityTierOverride?: string) {
   if (!currentWorkflowResponse.value || !currentWorkflowPayload.value) {
     return
   }
@@ -1299,7 +1304,9 @@ async function refreshImageReviewScene(sceneId: string, signal?: AbortSignal) {
     run_id: currentWorkflowResponse.value.run_id || '',
     scene_id: sceneId,
     storyboard,
-    workflow_input: currentWorkflowPayload.value.input,
+    workflow_input: qualityTierOverride
+      ? { ...currentWorkflowPayload.value.input, quality_tier: qualityTierOverride }
+      : currentWorkflowPayload.value.input,
     image_review: imageReview && typeof imageReview === 'object' ? imageReview : {},
     character_manifest:
       outputs.character_manifest && typeof outputs.character_manifest === 'object'
@@ -1394,6 +1401,31 @@ async function retryImageReviewScene(sceneId: string) {
 
     const message = error instanceof Error ? error.message : '候选图场景重试失败'
     markPlaceholderState(sceneId, 'failed', message)
+    errorMessage.value = message
+  } finally {
+    sceneRefreshingId.value = ''
+    imageReviewRefreshAbortController = null
+  }
+}
+
+async function enhanceImageReviewScene(sceneId: string) {
+  if (!sceneId || refreshingImageReview.value || sceneRefreshingId.value) {
+    return
+  }
+
+  errorMessage.value = ''
+  imageReviewRefreshAbortController = new AbortController()
+
+  try {
+    await refreshImageReviewScene(sceneId, imageReviewRefreshAbortController.signal, 'cinematic')
+    if (workflowForm.value.renderMode === 'auto' && currentWorkflowResponse.value) {
+      void renderFinalVideoIfReady(currentWorkflowResponse.value)
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      return
+    }
+    const message = error instanceof Error ? error.message : '场景增强失败'
     errorMessage.value = message
   } finally {
     sceneRefreshingId.value = ''
@@ -1745,6 +1777,7 @@ async function runWorkflow() {
     output_mode: form.outputMode,
     render_mode: form.renderMode,
     audio_enabled: form.audioEnabled,
+    quality_tier: form.qualityTier || 'quality',
   }
 
   if (form.voiceMode === 'multi') {
@@ -2004,6 +2037,7 @@ async function runWorkflow() {
               :can-cancel="refreshingImageReview"
               @select-asset="({ sceneId, assetRef }) => selectImageAsset(sceneId, assetRef)"
               @retry-scene="retryImageReviewScene"
+              @enhance-scene="enhanceImageReviewScene"
               @cancel-refresh="cancelImageReviewRefresh"
             />
             <WorkflowResultsPanel
@@ -2152,6 +2186,12 @@ async function runWorkflow() {
               <div class="diagnostics-item">
                 <span class="diagnostics-label">Source</span>
                 <strong>{{ storyDiagnostics.generationSource }}</strong>
+              </div>
+              <div class="diagnostics-item">
+                <span class="diagnostics-label">LLM provider</span>
+                <strong :class="storyDiagnostics.providerUsed === 'fallback' ? 'warn-text' : ''">
+                  {{ storyDiagnostics.providerUsed }}
+                </strong>
               </div>
               <div class="diagnostics-item">
                 <span class="diagnostics-label">Fallback reason</span>
@@ -2370,6 +2410,10 @@ h1 {
 
 .diagnostics-item--error strong {
   color: #dc2626;
+}
+
+.warn-text {
+  color: #d97706;
 }
 
 .hint {
