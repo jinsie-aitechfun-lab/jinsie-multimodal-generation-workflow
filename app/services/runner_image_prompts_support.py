@@ -165,8 +165,15 @@ class RunnerImagePromptsSupport:
                 if not character_visual_profile:
                     character_visual_profile = policy_blocks.get("profile") or {}
 
+                # Extract the first sentence of visual_identity as a color/appearance
+                # prefix to place at the very start of the prompt — diffusion models
+                # weight the beginning of the prompt most heavily, so pinning the
+                # character's fixed color here significantly improves consistency.
+                color_prefix = self._build_color_prefix(character_visual_profile)
+
                 is_multi_character_scene = len(required_character_names) >= 2
                 prompt_parts = [
+                    color_prefix,
                     global_style_anchor,
                     shot_anchor,
                     character_anchor,
@@ -182,6 +189,7 @@ class RunnerImagePromptsSupport:
                 ]
                 if is_multi_character_scene:
                     prompt_parts = [
+                        color_prefix,
                         global_style_anchor,
                         compact_trait_block,
                         shot_anchor,
@@ -280,8 +288,11 @@ class RunnerImagePromptsSupport:
             if not character_visual_profile:
                 character_visual_profile = policy_blocks.get("profile") or {}
 
+            color_prefix = self._build_color_prefix(character_visual_profile)
+
             is_multi_character_scene = len(required_character_names) >= 2
             prompt_parts = [
+                color_prefix,
                 global_style_anchor,
                 scene_anchor,
                 character_anchor,
@@ -297,6 +308,7 @@ class RunnerImagePromptsSupport:
             ]
             if is_multi_character_scene:
                 prompt_parts = [
+                    color_prefix,
                     global_style_anchor,
                     compact_trait_block,
                     scene_anchor,
@@ -336,3 +348,31 @@ class RunnerImagePromptsSupport:
             "character_anchor": character_anchor_metadata,
             "prompts": prompts,
         }
+
+    def _build_color_prefix(self, profile: Dict[str, Any]) -> str:
+        """Return a short appearance-anchor string to prepend to every scene prompt.
+
+        Diffusion models weight the beginning of the prompt most heavily.
+        Putting the character's fixed color and key descriptor first significantly
+        reduces per-scene color drift (e.g. car changing from red → blue → orange).
+
+        We use the first sentence of visual_identity (up to ~120 chars), falling
+        back to the first 3 must_keep traits if visual_identity is absent.
+        """
+        if not profile:
+            return ""
+
+        identity = str(profile.get("visual_identity") or "").strip()
+        if identity:
+            # Take only the first sentence to keep the prefix concise
+            first_sentence = identity.split(".")[0].strip()
+            if len(first_sentence) > 10:
+                return first_sentence[:120]
+
+        must_keep = profile.get("must_keep")
+        if isinstance(must_keep, list):
+            key_traits = [str(t).strip() for t in must_keep[:3] if str(t).strip()]
+            if key_traits:
+                return ", ".join(key_traits)
+
+        return ""
