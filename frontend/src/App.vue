@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { enterCards, tabTransition } from './composables/useStudioAnimations'
+import { computed, onMounted, ref, watch } from 'vue'
 import StudioLayout from './components/studio/StudioLayout.vue'
 import StudioProgress from './components/studio/StudioProgress.vue'
 import StudioCreatePanel from './components/studio/StudioCreatePanel.vue'
@@ -422,10 +421,7 @@ const STORAGE_KEY_FORM = 'jinsie_workflow_form'
 
 watch(activeTab, (tab) => {
   localStorage.setItem(STORAGE_KEY_TAB, tab)
-  nextTick(() => {
-    tabTransition(document.querySelector<HTMLElement>('.studio-tab-content'))
-    enterCards('.studio-tab-content .glass-card')
-  })
+  // Animation is handled inside StudioLayout's watch on modelValue
 })
 
 watch(workflowForm, (form) => {
