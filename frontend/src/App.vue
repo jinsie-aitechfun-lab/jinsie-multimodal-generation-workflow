@@ -526,7 +526,8 @@ const canSubmit = computed(() => {
   return (
     workflowForm.value.topic.trim().length > 0 &&
     selectedSteps.value.length > 0 &&
-    !loading.value
+    !loading.value &&
+    !refreshingImageReview.value
   )
 })
 
