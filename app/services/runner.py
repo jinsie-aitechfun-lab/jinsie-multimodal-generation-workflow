@@ -474,7 +474,7 @@ class WorkflowRunner:
         }
 
         timeout = self._story_timeout_seconds()
-        provider_used = “primary”
+        provider_used = "primary"
         fallback_reason: Optional[str] = None
 
         try:
@@ -492,7 +492,7 @@ class WorkflowRunner:
 
             fallback_model = self._llm_fallback_model_name()
             fallback_payload = dict(payload)
-            fallback_payload[“model”] = fallback_model
+            fallback_payload["model"] = fallback_model
 
             content = self._call_llm_chat(
                 api_base_url=fallback_url,
@@ -500,23 +500,23 @@ class WorkflowRunner:
                 payload=fallback_payload,
                 timeout=timeout,
             )
-            provider_used = “fallback”
-            fallback_reason = f”{type(primary_err).__name__}: {primary_err}”
+            provider_used = "fallback"
+            fallback_reason = f"{type(primary_err).__name__}: {primary_err}"
 
-        title = f”{topic}的故事”
-        summary = f”一个围绕”{topic}”展开的短篇故事，整体气质{tone_label}，适合做成{audience_label}向内容。”
+        title = f"{topic}的故事"
+        summary = f"一个围绕“{topic}”展开的短篇故事，整体气质{tone_label}，适合做成{audience_label}向内容。"
 
         parsed = parse_story_payload(content, topic=topic)
-        text = parsed[“text”] if parsed and parsed.get(“text”) else content
+        text = parsed["text"] if parsed and parsed.get("text") else content
 
         result: Dict[str, Any] = {
-            “title”: title.strip(),
-            “summary”: summary.strip(),
-            “text”: text.strip(),
-            “provider_used”: provider_used,
+            "title": title.strip(),
+            "summary": summary.strip(),
+            "text": text.strip(),
+            "provider_used": provider_used,
         }
         if fallback_reason:
-            result[“fallback_reason”] = fallback_reason
+            result["fallback_reason"] = fallback_reason
         return result
 
     def _tts_api_key(self) -> str:
