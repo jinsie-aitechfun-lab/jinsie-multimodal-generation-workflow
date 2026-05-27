@@ -333,8 +333,17 @@ class RunnerAudioRenderSupport:
                     # speed. Content (text) is never changed here — only TTS rate.
                     # Story-level text expansion/compression happens earlier in
                     # run_story() via story_retry_policy before images are generated.
+                    #
+                    # Skip speed adjustment when the story came from template_fallback.
+                    # Template text is pre-calibrated to the target duration, so
+                    # adjusting speed here would only compound the calibration and
+                    # produce a shorter video than intended.
+                    story_generation_source = str(
+                        (outputs.get("story") or {}).get("generation_source") or ""
+                    )
+                    speed_adjustment_allowed = story_generation_source != "template_fallback"
                     duration_retry_meta: Dict[str, Any] = {}
-                    if actual_duration_sec is not None and duration_estimate_sec > 0:
+                    if actual_duration_sec is not None and duration_estimate_sec > 0 and speed_adjustment_allowed:
                         retry_speed: Optional[float] = None
                         if actual_duration_sec < duration_estimate_sec * 0.70:
                             # Too short: slow down to fill the scene slot

@@ -156,10 +156,38 @@ class RunnerStorySupport:
                         fallback_reason = None
                         invalid_reasons = []
                     else:
-                        fallback_reason = "retry_failed:" + ",".join(
-                            repaired_invalid_reasons
+                        # Repair still left some issues. Decide whether the text is
+                        # salvageable (minor length/topic drift) or truly broken
+                        # (empty, garbled, or structured output). Salvageable text
+                        # goes out as llm_degraded — audio speed-adjustment handles
+                        # minor duration drift. Truly broken text falls to template.
+                        hard_failure_reasons = {
+                            "empty_text",
+                            "quality_issues",
+                            "structured_output",
+                            "blocked_tokens",
+                        }
+                        is_salvageable = (
+                            bool(repaired_cleaned_text)
+                            and not hard_failure_reasons.intersection(
+                                set(repaired_invalid_reasons)
+                            )
                         )
-                        llm_story = None
+                        if is_salvageable:
+                            llm_story = retry_story
+                            title = retry_story.get("title", "") or title
+                            summary = retry_story.get("summary", "") or summary
+                            story_text = repaired_cleaned_text
+                            generation_source = "llm_degraded"
+                            fallback_reason = "degraded:" + ",".join(
+                                repaired_invalid_reasons
+                            )
+                            invalid_reasons = []
+                        else:
+                            fallback_reason = "retry_failed:" + ",".join(
+                                repaired_invalid_reasons
+                            )
+                            llm_story = None
             elif retry_error:
                 fallback_reason = retry_error
                 llm_story = None
