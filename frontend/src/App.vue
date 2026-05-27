@@ -385,6 +385,10 @@ watch(
     if (!ready) return
     if (workflowForm.value.renderMode !== 'auto') return
     if (!currentWorkflowResponse.value) return
+    // Don't re-render if the video was already generated (e.g. after page reload).
+    // outputs.json now persists final_video after render, so this guard handles
+    // both the in-memory URL and the persisted status check inside renderFinalVideoIfReady.
+    if (finalVideoUrl.value) return
 
     renderFinalVideoIfReady(currentWorkflowResponse.value)
   }

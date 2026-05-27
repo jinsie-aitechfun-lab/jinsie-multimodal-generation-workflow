@@ -271,6 +271,11 @@ def render_final_video(req: FinalVideoRenderRequest):
             subtitles=req.subtitles,
         )
         print("[final-video] render completed", req.run_id)
+        # Persist final_video back to outputs.json so that page refresh can
+        # detect the already-generated video and skip re-rendering.
+        _patch_workflow_outputs(req.workflow_id, {
+            "final_video": result["final_video"],
+        })
         return FinalVideoRenderResponse(
             workflow_id=result["workflow_id"],
             session_id=result.get("session_id"),
