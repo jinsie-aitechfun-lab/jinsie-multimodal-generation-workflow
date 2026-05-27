@@ -328,50 +328,69 @@ class RunnerAudioRenderSupport:
                         duration_sec = actual_duration_sec
                         duration_source = "ffprobe"
 
-                    # Duration retry: if actual audio is shorter than 70% of the
-                    # character-count estimate, re-generate at a slower speed so
-                    # the TTS fills the scene slot. Clamp speed to [0.75, 0.95].
+                    # Speed adjustment: if actual duration deviates significantly
+                    # from the char-count estimate, re-generate at an adjusted
+                    # speed. Content (text) is never changed here — only TTS rate.
+                    # Story-level text expansion/compression happens earlier in
+                    # run_story() via story_retry_policy before images are generated.
                     duration_retry_meta: Dict[str, Any] = {}
-                    if (
-                        actual_duration_sec is not None
-                        and actual_duration_sec < duration_estimate_sec * 0.70
-                        and duration_estimate_sec > 0
-                    ):
-                        ratio = actual_duration_sec / duration_estimate_sec
-                        # Target speed that would yield ~estimate duration
-                        retry_speed = max(0.75, min(0.95, ratio))
-                        try:
-                            retry_result = self._runner._generate_real_tts_audio(
-                                text=text,
-                                speaker=speaker,
-                                voice_style=voice_style,
-                                output_path=output_path,
-                                speed=retry_speed,
-                            )
-                            retry_duration = self._runner._probe_audio_duration_seconds(
-                                output_path
-                            )
-                            if retry_duration is not None and retry_duration > actual_duration_sec:
-                                duration_sec = retry_duration
-                                duration_source = "ffprobe_retry"
-                                duration_retry_meta = {
-                                    "duration_retry": True,
-                                    "retry_speed": retry_speed,
-                                    "original_duration_sec": actual_duration_sec,
-                                    "retry_duration_sec": retry_duration,
-                                    "retry_output_bytes": retry_result.get("output_bytes"),
-                                }
-                            else:
-                                # Retry didn't help — restore original file
-                                self._runner._generate_real_tts_audio(
+                    if actual_duration_sec is not None and duration_estimate_sec > 0:
+                        retry_speed: Optional[float] = None
+                        if actual_duration_sec < duration_estimate_sec * 0.70:
+                            # Too short: slow down to fill the scene slot
+                            ratio = actual_duration_sec / duration_estimate_sec
+                            retry_speed = max(0.75, min(0.95, ratio))
+                        elif actual_duration_sec > duration_estimate_sec * 1.30:
+                            # Too long: speed up to fit the scene slot
+                            ratio = actual_duration_sec / duration_estimate_sec
+                            retry_speed = min(1.25, max(1.05, ratio))
+
+                        if retry_speed is not None:
+                            try:
+                                retry_result = self._runner._generate_real_tts_audio(
                                     text=text,
                                     speaker=speaker,
                                     voice_style=voice_style,
                                     output_path=output_path,
+                                    speed=retry_speed,
                                 )
-                                duration_retry_meta = {"duration_retry": False, "retry_speed": retry_speed}
-                        except Exception:
-                            duration_retry_meta = {"duration_retry": False, "retry_error": True}
+                                retry_duration = self._runner._probe_audio_duration_seconds(
+                                    output_path
+                                )
+                                improved = (
+                                    retry_duration is not None
+                                    and (
+                                        (retry_speed < 1.0 and retry_duration > actual_duration_sec)
+                                        or (retry_speed > 1.0 and retry_duration < actual_duration_sec)
+                                    )
+                                )
+                                if improved:
+                                    duration_sec = retry_duration
+                                    duration_source = "ffprobe_speed_retry"
+                                    duration_retry_meta = {
+                                        "duration_retry": True,
+                                        "retry_speed": retry_speed,
+                                        "original_duration_sec": actual_duration_sec,
+                                        "retry_duration_sec": retry_duration,
+                                        "retry_output_bytes": retry_result.get("output_bytes"),
+                                    }
+                                else:
+                                    # Speed retry didn't improve — restore original
+                                    self._runner._generate_real_tts_audio(
+                                        text=text,
+                                        speaker=speaker,
+                                        voice_style=voice_style,
+                                        output_path=output_path,
+                                    )
+                                    duration_retry_meta = {
+                                        "duration_retry": False,
+                                        "retry_speed": retry_speed,
+                                    }
+                            except Exception:
+                                duration_retry_meta = {
+                                    "duration_retry": False,
+                                    "retry_error": True,
+                                }
 
                     asset_metadata = {
                         "tts_model": tts_result.get("model"),
