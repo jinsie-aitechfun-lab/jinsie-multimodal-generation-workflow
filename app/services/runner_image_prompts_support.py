@@ -141,6 +141,9 @@ class RunnerImagePromptsSupport:
                 negative_block = runner._scene_characters.scene_character_negative_block(
                     outputs, scene_data
                 )
+                compact_trait_block = runner._scene_characters.scene_character_compact_trait_block(
+                    outputs, scene_data
+                )
 
                 clean_visual_description = clean_image_prompt_text(visual_description)
 
@@ -180,6 +183,7 @@ class RunnerImagePromptsSupport:
                 if is_multi_character_scene:
                     prompt_parts = [
                         global_style_anchor,
+                        compact_trait_block,
                         shot_anchor,
                         scene_required_presence_block,
                         character_block,
@@ -252,6 +256,9 @@ class RunnerImagePromptsSupport:
             negative_block = runner._scene_characters.scene_character_negative_block(
                 outputs, scene
             )
+            compact_trait_block = runner._scene_characters.scene_character_compact_trait_block(
+                outputs, scene
+            )
 
             clean_visual_description = clean_image_prompt_text(visual_description)
 
@@ -291,6 +298,7 @@ class RunnerImagePromptsSupport:
             if is_multi_character_scene:
                 prompt_parts = [
                     global_style_anchor,
+                    compact_trait_block,
                     scene_anchor,
                     scene_required_presence_block,
                     character_block,
