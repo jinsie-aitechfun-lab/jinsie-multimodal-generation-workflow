@@ -38,11 +38,9 @@ class RunnerImagePromptsSupport:
         global_style_anchor = (
             f"{ctx.input.visual_style} illustration, "
             f"{ctx.input.tone} mood, "
-            "2D hand-painted children's picture book art, "
+            "children's storybook art, "
             "soft pastel palette, "
             "warm gentle lighting, "
-            "painterly brushstroke texture, "
-            "NOT 3D render, NOT photorealistic, NOT CGI, "
             "clean composition, "
             "consistent character design, "
             f"{framing}"

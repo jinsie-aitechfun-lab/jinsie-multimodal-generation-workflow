@@ -113,36 +113,34 @@ class ApiImageGeneratorAdapter:
         if not image_size:
             image_size = "1280x720"
 
-        default_negative_prompt = os.getenv(
-            "SILICONFLOW_IMAGE_NEGATIVE_PROMPT",
-            (
-                "low quality, blurry, distorted anatomy, broken composition, "
-                "extra limbs, duplicated subject, unreadable details"
-            ),
-        ).strip()
-        style_negative = (
-            "3D render, CGI, photorealistic, realistic photography, "
-            "computer graphics, digital 3D, plastic texture, "
-            "sharp hard edges, studio lighting"
-        )
-        negative_prompt = self._merge_negative_prompt(
-            default_negative_prompt,
-            style_negative,
-            negative_prompt,
-        )
+        is_flux = "flux" in model.lower()
 
-        num_inference_steps_raw = os.getenv("SILICONFLOW_IMAGE_STEPS", "20").strip()
+        num_inference_steps_raw = os.getenv("SILICONFLOW_IMAGE_STEPS", "").strip()
         guidance_scale_raw = os.getenv("SILICONFLOW_IMAGE_GUIDANCE", "7.5").strip()
 
         try:
-            num_inference_steps = int(num_inference_steps_raw)
+            num_inference_steps = int(num_inference_steps_raw) if num_inference_steps_raw else None
         except ValueError:
-            num_inference_steps = 20
+            num_inference_steps = None
 
         try:
             guidance_scale = float(guidance_scale_raw)
         except ValueError:
             guidance_scale = 7.5
+
+        # FLUX.1 does not support negative_prompt; Kolors and others do
+        if not is_flux:
+            default_negative_prompt = os.getenv(
+                "SILICONFLOW_IMAGE_NEGATIVE_PROMPT",
+                (
+                    "low quality, blurry, distorted anatomy, broken composition, "
+                    "extra limbs, duplicated subject, unreadable details"
+                ),
+            ).strip()
+            negative_prompt = self._merge_negative_prompt(
+                default_negative_prompt,
+                negative_prompt,
+            )
 
         payload: dict[str, Any] = {
             "model": model,
@@ -153,13 +151,17 @@ class ApiImageGeneratorAdapter:
         if run_id:
             payload["seed"] = (_derive_run_seed(run_id) + scene_index) % 10_000_000_000
 
-        if negative_prompt:
+        if not is_flux and negative_prompt:
             payload["negative_prompt"] = negative_prompt
 
         if "kolors" in model.lower():
             payload["batch_size"] = 1
-            payload["num_inference_steps"] = num_inference_steps
+            payload["num_inference_steps"] = num_inference_steps if num_inference_steps is not None else 20
             payload["guidance_scale"] = guidance_scale
+        elif is_flux:
+            # FLUX.1-schnell: 4 steps optimal; FLUX.1-dev: 25-50 steps
+            default_steps = 4 if "schnell" in model.lower() else 28
+            payload["num_inference_steps"] = num_inference_steps if num_inference_steps is not None else default_steps
 
         if _img2img_enabled() and img2img_reference_path is not None:
             ref_path = Path(img2img_reference_path)
