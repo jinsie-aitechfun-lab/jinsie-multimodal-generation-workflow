@@ -140,10 +140,13 @@ class RunnerStoryboardSupport:
             f"Scenes (scene_id [title]: narration):\n"
             + "\n".join(scene_lines) + "\n\n"
             "For each scene write a visual_description (2-3 sentences in English) that:\n"
-            "1. Describes a SPECIFIC environment/location matching the narration (forest path, sunny meadow, cozy home, mountain road, riverside, etc.)\n"
-            "2. Uses the required lighting palette for that scene\n"
-            "3. Describes the character's action and expression\n"
-            "4. Is visually DISTINCT from all other scenes\n\n"
+            "1. START with the character's SPECIFIC PHYSICAL ACTION derived from the narration.\n"
+            "   Use strong motion verbs: sprinting, leaping, tumbling, celebrating, crouching, panting, waving, etc.\n"
+            "   NEVER start with environment. NEVER describe characters as just 'standing' or 'sitting' unless the narration explicitly says so.\n"
+            "   Example: 'The rabbit dashes forward with powerful leaps, ears streaming behind, while the turtle plods steadily on the dusty track.'\n"
+            "2. Then describe the SPECIFIC environment/location matching the narration.\n"
+            "3. End with the required lighting palette for that scene.\n"
+            "4. Each scene must be visually DISTINCT from all others — different action, location, and color.\n\n"
             "Return ONLY valid JSON, no markdown:\n"
             '{"scenes": [{"scene_id": "scene_01", "visual_description": "..."}, ...]}'
         )
