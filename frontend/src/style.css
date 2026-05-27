@@ -4,41 +4,41 @@
 
 /* ─── Design Tokens ───────────────────────────────────────────── */
 :root {
-  /* Deep space palette */
-  --bg-void:        #03050f;
-  --bg-deep:        #060b1a;
-  --bg-surface:     #0d1228;
-  --bg-elevated:    #111730;
-  --bg-float:       #161d3a;
+  /* Midnight blue palette — vivid but not oppressive */
+  --bg-void:        #080e20;
+  --bg-deep:        #0c1428;
+  --bg-surface:     #111b35;
+  --bg-elevated:    #172240;
+  --bg-float:       #1d2b50;
 
-  /* Cold accent */
-  --arc-400:        #00b5f0;
-  --arc-300:        #38cdff;
-  --arc-200:        #85e1ff;
+  /* Cold accent — slightly more saturated */
+  --arc-400:        #00c4ff;
+  --arc-300:        #45d5ff;
+  --arc-200:        #99e9ff;
 
-  /* Violet */
-  --prism-400:      #a78bfa;
-  --prism-500:      #8b5cf6;
+  /* Violet — brighter */
+  --prism-400:      #b89dfc;
+  --prism-500:      #9d6ef8;
 
   /* Semantic */
-  --text-primary:   rgba(255,255,255,0.92);
-  --text-secondary: rgba(255,255,255,0.55);
-  --text-muted:     rgba(255,255,255,0.30);
-  --border-subtle:  rgba(255,255,255,0.06);
-  --border-glass:   rgba(255,255,255,0.10);
-  --border-arc:     rgba(0,181,240,0.30);
+  --text-primary:   rgba(255,255,255,0.94);
+  --text-secondary: rgba(255,255,255,0.65);
+  --text-muted:     rgba(255,255,255,0.40);
+  --border-subtle:  rgba(255,255,255,0.08);
+  --border-glass:   rgba(255,255,255,0.13);
+  --border-arc:     rgba(0,196,255,0.35);
 
-  /* Glass morphism */
-  --glass-bg:       rgba(13,18,40,0.72);
-  --glass-bg-light: rgba(22,29,58,0.60);
-  --glass-blur:     20px;
-  --glass-border:   rgba(255,255,255,0.08);
+  /* Glass morphism — lighter tint */
+  --glass-bg:       rgba(17,27,53,0.78);
+  --glass-bg-light: rgba(29,43,80,0.68);
+  --glass-blur:     24px;
+  --glass-border:   rgba(255,255,255,0.11);
 
-  /* Glow values */
-  --glow-arc:       0 0 24px rgba(0,181,240,0.30), 0 0 48px rgba(0,181,240,0.12);
-  --glow-prism:     0 0 24px rgba(139,92,246,0.30), 0 0 48px rgba(139,92,246,0.12);
-  --shadow-float:   0 24px 64px rgba(0,0,0,0.72), 0 0 0 1px rgba(0,181,240,0.06);
-  --shadow-glass:   0 8px 32px rgba(0,0,0,0.48), inset 0 1px 0 rgba(255,255,255,0.06);
+  /* Glow values — more vibrant */
+  --glow-arc:       0 0 20px rgba(0,196,255,0.45), 0 0 48px rgba(0,196,255,0.18);
+  --glow-prism:     0 0 20px rgba(157,110,248,0.45), 0 0 48px rgba(157,110,248,0.18);
+  --shadow-float:   0 24px 64px rgba(0,0,0,0.65), 0 0 0 1px rgba(0,196,255,0.08);
+  --shadow-glass:   0 8px 32px rgba(0,0,0,0.40), inset 0 1px 0 rgba(255,255,255,0.08);
 
   font-family: Inter, 'SF Pro Display', system-ui, sans-serif;
   font-size: 15px;
@@ -120,7 +120,7 @@ body {
 
   /* Studio input */
   .studio-input {
-    background: rgba(6,11,26,0.80);
+    background: rgba(10,18,38,0.80);
     backdrop-filter: blur(8px);
     border: 1px solid rgba(255,255,255,0.08);
     border-radius: 0.625rem;
@@ -283,8 +283,8 @@ body {
   100% { transform: translateY(500%); }
 }
 @keyframes pulseGlow {
-  0%,100% { box-shadow: 0 0 20px rgba(0,181,240,0.20); }
-  50%      { box-shadow: 0 0 40px rgba(0,181,240,0.50), 0 0 60px rgba(139,92,246,0.20); }
+  0%,100% { box-shadow: 0 0 20px rgba(0,196,255,0.25); }
+  50%      { box-shadow: 0 0 40px rgba(0,196,255,0.60), 0 0 60px rgba(157,110,248,0.25); }
 }
 @keyframes float {
   0%,100% { transform: translateY(0); }
@@ -297,4 +297,15 @@ body {
 @keyframes fadeIn {
   from { opacity:0; }
   to   { opacity:1; }
+}
+
+/* ─── Utility animation classes ──────────────────────────────── */
+.animate-fade-in {
+  animation: fadeIn 0.35s ease both;
+}
+.animate-slide-up {
+  animation: slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both;
+}
+.animate-float {
+  animation: float 4s ease-in-out infinite;
 }

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { enterCards, tabTransition } from './composables/useStudioAnimations'
 import StudioLayout from './components/studio/StudioLayout.vue'
 import StudioProgress from './components/studio/StudioProgress.vue'
 import StudioCreatePanel from './components/studio/StudioCreatePanel.vue'
@@ -421,6 +422,10 @@ const STORAGE_KEY_FORM = 'jinsie_workflow_form'
 
 watch(activeTab, (tab) => {
   localStorage.setItem(STORAGE_KEY_TAB, tab)
+  nextTick(() => {
+    tabTransition(document.querySelector<HTMLElement>('.studio-tab-content'))
+    enterCards('.studio-tab-content .glass-card')
+  })
 })
 
 watch(workflowForm, (form) => {
@@ -2031,6 +2036,7 @@ async function runWorkflow() {
         :label="workflowIsProcessing ? workflowRunStatusMessage : reviewRefreshProgress.text"
       />
     </template>
+    <div class="studio-tab-content">
     <section v-if="activeTab === 'run'" class="studio-home-grid">
       <StudioCreatePanel :loading="loading">
         <WorkflowRunPanel
@@ -2278,6 +2284,7 @@ async function runWorkflow() {
           </div>
         </template>
     </section>
+    </div>
   </StudioLayout>
 </template>
 

@@ -315,17 +315,7 @@ function getTopicManualMismatchWarning(): string {
 
 <template>
   <section class="workflow-run-panel">
-    <label class="label" for="session-id">Session ID</label>
-    <input
-      id="session-id"
-      :value="formState.sessionId"
-      class="input"
-      type="text"
-      placeholder="请输入会话标识，例如 demo-session-001"
-      @input="updateFormState('sessionId', ($event.target as HTMLInputElement).value)"
-    />
-
-    <label class="label" for="topic">Topic</label>
+    <label class="label" for="topic">故事主题</label>
     <textarea
       id="topic"
       :value="formState.topic"
@@ -336,11 +326,11 @@ function getTopicManualMismatchWarning(): string {
     />
 
     <section class="config-panel">
-      <h2 class="section-title">Generation Config</h2>
+      <h2 class="section-title">生成配置</h2>
 
       <div class="config-grid">
         <label class="field">
-          <span>Audience</span>
+          <span>受众群体</span>
           <input
             :value="formState.audience"
             class="input"
@@ -350,7 +340,7 @@ function getTopicManualMismatchWarning(): string {
         </label>
 
         <label class="field">
-          <span>Tone</span>
+          <span>故事风格</span>
           <input
             :value="formState.tone"
             class="input"
@@ -360,7 +350,7 @@ function getTopicManualMismatchWarning(): string {
         </label>
 
         <label class="field">
-          <span>Visual Style</span>
+          <span>视觉风格</span>
           <input
             :value="formState.visualStyle"
             class="input"
@@ -370,7 +360,7 @@ function getTopicManualMismatchWarning(): string {
         </label>
 
         <label class="field">
-          <span>Character Style</span>
+          <span>角色风格</span>
           <input
             :value="formState.characterStyle"
             class="input"
@@ -380,7 +370,7 @@ function getTopicManualMismatchWarning(): string {
         </label>
 
         <label class="field">
-          <span>Voice Style</span>
+          <span>配音风格</span>
           <input
             :value="formState.voiceStyle"
             class="input"
@@ -391,10 +381,10 @@ function getTopicManualMismatchWarning(): string {
 
         <!-- ===== Render & Audio controls (UI-only layout) ===== -->
         <div class="render-audio-block">
-          <div class="block-title">Render & Audio</div>
+          <div class="block-title">渲染 & 音频</div>
 
           <div class="row">
-            <div class="row-label">Render Mode</div>
+            <div class="row-label">渲染模式</div>
 
             <label class="radio">
               <input
@@ -403,7 +393,7 @@ function getTopicManualMismatchWarning(): string {
                 :checked="formState.renderMode === 'auto'"
                 @change="updateFormState('renderMode', 'auto')"
               />
-              Auto
+              自动
             </label>
 
             <label class="radio">
@@ -413,41 +403,41 @@ function getTopicManualMismatchWarning(): string {
                 :checked="formState.renderMode === 'manual'"
                 @change="updateFormState('renderMode', 'manual')"
               />
-              Manual
+              手动
             </label>
           </div>
 
           <div class="row">
-            <div class="row-label">Image Quality</div>
+            <div class="row-label">画面质量</div>
 
-            <label class="radio" title="15 steps — fast, lower detail">
+            <label class="radio" title="15 steps — 快速，细节较少">
               <input
                 type="radio"
                 value="fast"
                 :checked="formState.qualityTier === 'fast'"
                 @change="updateFormState('qualityTier', 'fast')"
               />
-              Fast
+              快速
             </label>
 
-            <label class="radio" title="25 steps — balanced quality">
+            <label class="radio" title="25 steps — 均衡质量">
               <input
                 type="radio"
                 value="quality"
                 :checked="formState.qualityTier === 'quality'"
                 @change="updateFormState('qualityTier', 'quality')"
               />
-              Quality
+              均衡
             </label>
 
-            <label class="radio" title="40 steps — high detail, slower">
+            <label class="radio" title="40 steps — 高细节，较慢">
               <input
                 type="radio"
                 value="cinematic"
                 :checked="formState.qualityTier === 'cinematic'"
                 @change="updateFormState('qualityTier', 'cinematic')"
               />
-              Cinematic
+              电影级
             </label>
           </div>
 
@@ -467,9 +457,9 @@ function getTopicManualMismatchWarning(): string {
                   }
                 "
               />
-              <span>Enable Audio</span>
+              <span>启用配音</span>
             </label>
-            <span class="hint">Audio is the master switch.</span>
+            <span class="hint">配音总开关。</span>
           </div>
 
           <div class="row">
@@ -487,16 +477,14 @@ function getTopicManualMismatchWarning(): string {
                   })
                 "
               />
-              <span>Enable Voiceover</span>
+              <span>启用旁白</span>
             </label>
-            <span v-if="!formState.audioEnabled" class="hint"
-              >Turn on Audio to enable voiceover.</span
-            >
+            <span v-if="!formState.audioEnabled" class="hint">请先开启配音。</span>
           </div>
         </div>
 
         <label class="field">
-          <span>Voice Mode</span>
+          <span>配音模式</span>
 
           <select
             :value="formState.voiceMode"
@@ -509,7 +497,7 @@ function getTopicManualMismatchWarning(): string {
           </select>
 
           <div class="quickStart">
-            <div class="quickStartTitle">Quick Start · 快捷模板</div>
+            <div class="quickStartTitle">快捷模板</div>
             <p v-if="getTopicManualMismatchWarning()" class="warn">
               ⚠️ {{ getTopicManualMismatchWarning() }}
             </p>
@@ -543,7 +531,7 @@ function getTopicManualMismatchWarning(): string {
             </div>
 
             <details class="advancedBox">
-              <summary class="advancedSummary">Advanced · 调试</summary>
+              <summary class="advancedSummary">高级 · 调试</summary>
               <div class="advancedBody">
                 <button
                   type="button"
@@ -560,11 +548,7 @@ function getTopicManualMismatchWarning(): string {
 
         <label class="field">
           <span>
-            {{
-              formState.voiceMode === 'single'
-                ? 'Narrator Voice · 单人旁白'
-                : 'Narrator Voice · 旁白'
-            }}
+            旁白配音
           </span>
           <input
             :value="formState.narratorVoiceStyle"
@@ -578,7 +562,7 @@ function getTopicManualMismatchWarning(): string {
 
         <template v-if="formState.voiceMode === 'multi'">
           <label class="field">
-            <span>Mother Voice · 妈妈配音</span>
+            <span>妈妈配音</span>
             <input
               :value="formState.motherVoiceStyle"
               class="input"
@@ -590,7 +574,7 @@ function getTopicManualMismatchWarning(): string {
           </label>
 
           <label class="field">
-            <span>Child Voice · 宝宝配音</span>
+            <span>宝宝配音</span>
             <input
               :value="formState.childVoiceStyle"
               class="input"
@@ -604,7 +588,7 @@ function getTopicManualMismatchWarning(): string {
 
         <template v-if="formState.voiceMode === 'character'">
           <label class="field">
-            <span>Main Character Voice · 主角色配音</span>
+            <span>主角配音</span>
             <input
               :value="formState.childVoiceStyle"
               class="input"
@@ -616,7 +600,7 @@ function getTopicManualMismatchWarning(): string {
           </label>
 
           <label class="field">
-            <span>Secondary Character Voice · 次角色配音</span>
+            <span>配角配音</span>
             <input
               :value="formState.motherVoiceStyle"
               class="input"
@@ -629,7 +613,7 @@ function getTopicManualMismatchWarning(): string {
         </template>
 
         <label class="field">
-          <span>Duration · 视频时长（秒，60–180）</span>
+          <span>视频时长（秒）</span>
           <input
             :value="formState.durationSec"
             class="input"
@@ -648,7 +632,7 @@ function getTopicManualMismatchWarning(): string {
         </label>
 
         <label class="field">
-          <span>Language</span>
+          <span>语言</span>
           <input
             :value="formState.language"
             class="input"
@@ -670,7 +654,7 @@ function getTopicManualMismatchWarning(): string {
         </label>
 
         <label class="field">
-          <span>Output Mode</span>
+          <span>输出模式</span>
           <input
             :value="formState.outputMode"
             class="input"
@@ -690,13 +674,13 @@ function getTopicManualMismatchWarning(): string {
               )
             "
           />
-          <span>Enable Subtitles</span>
+          <span>启用字幕</span>
         </label>
       </div>
     </section>
 
     <section v-if="formState.voiceMode === 'character'" class="config-panel">
-      <h2 class="section-title">Character Finalization</h2>
+      <h2 class="section-title">角色设置</h2>
 
       <label class="checkbox-field">
         <input
@@ -709,12 +693,12 @@ function getTopicManualMismatchWarning(): string {
             )
           "
         />
-        <span>Enable Structured Characters</span>
+        <span>启用角色精控</span>
       </label>
 
       <div v-if="formState.structuredCharactersEnabled" class="config-grid">
         <label class="field">
-          <span>Primary Character Display Name</span>
+          <span>主角名称</span>
           <input
             :value="formState.primaryCharacterDisplayName"
             class="input"
@@ -729,7 +713,7 @@ function getTopicManualMismatchWarning(): string {
         </label>
 
         <label class="field">
-          <span>Primary Character Species</span>
+          <span>主角物种</span>
           <input
             :value="formState.primaryCharacterSpecies"
             class="input"
@@ -744,7 +728,7 @@ function getTopicManualMismatchWarning(): string {
         </label>
 
         <label class="field">
-          <span>Primary Visual Traits</span>
+          <span>主角外观特征</span>
           <textarea
             :value="formState.primaryCharacterVisualTraits"
             class="textarea"
@@ -760,7 +744,7 @@ function getTopicManualMismatchWarning(): string {
         </label>
 
         <label class="field">
-          <span>Primary Forbidden Traits</span>
+          <span>主角禁用特征</span>
           <textarea
             :value="formState.primaryCharacterForbiddenTraits"
             class="textarea"
@@ -776,7 +760,7 @@ function getTopicManualMismatchWarning(): string {
         </label>
 
         <label class="field">
-          <span>Secondary Character Display Name</span>
+          <span>配角名称</span>
           <input
             :value="formState.secondaryCharacterDisplayName"
             class="input"
@@ -791,7 +775,7 @@ function getTopicManualMismatchWarning(): string {
         </label>
 
         <label class="field">
-          <span>Secondary Character Species</span>
+          <span>配角物种</span>
           <input
             :value="formState.secondaryCharacterSpecies"
             class="input"
@@ -806,7 +790,7 @@ function getTopicManualMismatchWarning(): string {
         </label>
 
         <label class="field">
-          <span>Secondary Visual Traits</span>
+          <span>配角外观特征</span>
           <textarea
             :value="formState.secondaryCharacterVisualTraits"
             class="textarea"
@@ -822,7 +806,7 @@ function getTopicManualMismatchWarning(): string {
         </label>
 
         <label class="field">
-          <span>Secondary Forbidden Traits</span>
+          <span>配角禁用特征</span>
           <textarea
             :value="formState.secondaryCharacterForbiddenTraits"
             class="textarea"
@@ -840,7 +824,7 @@ function getTopicManualMismatchWarning(): string {
     </section>
 
     <section class="steps-panel">
-      <h2 class="section-title">Workflow Steps</h2>
+      <h2 class="section-title">工作步骤</h2>
       <div class="steps-grid">
         <label v-for="step in stepOptions" :key="step.value" class="step-option">
           <input
@@ -864,7 +848,7 @@ function getTopicManualMismatchWarning(): string {
 
     <div class="stickyCtaBar">
       <button class="btn stickyCtaBtn" :disabled="!canSubmit" @click="emit('run')">
-        {{ loading ? '请求中...' : 'Run Workflow' }}
+        {{ loading ? '生成中…' : '开始创作' }}
       </button>
     </div>
   </section>
