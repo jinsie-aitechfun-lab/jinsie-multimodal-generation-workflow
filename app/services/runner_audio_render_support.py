@@ -283,7 +283,12 @@ class RunnerAudioRenderSupport:
             shot_id = line.get("shot_id")
 
             char_count = max(1, len(text))
-            duration_estimate_sec = max(2, min(12, char_count // 8))
+            # Chinese children's story TTS narrates at ~5 chars/sec (slower,
+            # clearer pronunciation). The story plan calibrates: 280 chars/60s,
+            # 650/120s, 960/180s → 4.7–5.4 chars/sec. Using 5.0 as the
+            # estimate so the ±30% speed-retry threshold is not triggered on
+            # normal narration segments and speed adjustment stays a fine-tune.
+            duration_estimate_sec = max(2, min(20, round(char_count / 5)))
             duration_sec = float(duration_estimate_sec)
             duration_source = "estimate"
 
