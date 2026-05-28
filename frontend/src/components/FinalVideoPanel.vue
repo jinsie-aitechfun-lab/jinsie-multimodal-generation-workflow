@@ -39,8 +39,8 @@
         <div class="ph-title">{{ placeholderTitle }}</div>
         <div class="ph-desc">{{ placeholderDesc }}</div>
 
-        <!-- Progress bar: only show when NOT delegated to the global sticky bar -->
-        <div v-if="!refreshingImages" class="ph-progress">
+        <!-- Internal bar: only when global sticky bar is NOT covering the same progress -->
+        <div v-if="showInternalProgress" class="ph-progress">
           <div class="ph-bar" :class="{ indeterminate }">
             <div
               class="ph-bar-fill"
@@ -55,7 +55,7 @@
             <span>{{ progressLabel }}</span>
           </div>
         </div>
-        <!-- When global bar is active, just show a minimal status chip -->
+        <!-- Global bar is active → just a pulsing status chip -->
         <div v-else class="ph-status-chip">
           <span class="ph-status-dot"/>
           {{ progressLabel }}
@@ -129,6 +129,14 @@ const audioItemCount = computed(() => {
 
 const finalStatus = computed(() => asStr(finalVideo.value?.status).toLowerCase())
 const workflowInFlight = computed(() => props.loading && !outputs.value)
+
+// Internal bar only shows when global sticky bar is NOT already covering the progress.
+// Global bar is active during: initial workflow run (workflowInFlight) OR image refresh.
+const showInternalProgress = computed(() => {
+  if (props.refreshingImages) return false
+  if (workflowInFlight.value) return false
+  return true
+})
 const blockingErrorMessage = computed(() => asStr(props.errorMessage).trim())
 const hasBlockingError = computed(() => {
   return Boolean(blockingErrorMessage.value && !props.loading && !props.finalVideoUrl)
