@@ -58,24 +58,42 @@
         <div v-if="statusLabel" class="pp-status-label">{{ statusLabel }}</div>
       </div>
 
-      <!-- Empty -->
-      <div v-else class="pp-empty">
-        <div class="pp-empty-icon" aria-hidden="true">
-          <svg viewBox="0 0 64 64" fill="none" width="52" height="52">
-            <rect x="6" y="14" width="52" height="36" rx="7" stroke="currentColor" stroke-width="1.8" stroke-opacity="0.35"/>
-            <path d="M26 24 L42 32 L26 40 Z" fill="currentColor" fill-opacity="0.30"/>
+      <!-- Has history but nothing selected — prompt user to click a thumbnail -->
+      <div v-else-if="allVideoUrls.length > 0" class="pp-select-hint">
+        <div class="pp-hint-icon">
+          <svg viewBox="0 0 52 52" fill="none" width="44" height="44">
+            <rect x="4" y="10" width="44" height="32" rx="6" stroke="currentColor" stroke-width="1.8" stroke-opacity="0.40"/>
+            <path d="M20 20 L34 26 L20 32 Z" fill="currentColor" fill-opacity="0.35"/>
           </svg>
         </div>
-        <div class="pp-empty-title">视频将在这里播放</div>
-        <div class="pp-empty-desc">创作完成后自动渲染并展示</div>
-        <div v-if="(exampleTopics?.length ?? 0) > 0" class="pp-empty-topics">
-          <span class="pp-empty-topics-label">快速开始：</span>
-          <button
-            v-for="topic in (exampleTopics ?? [])"
-            :key="topic"
-            class="badge badge-arc pp-topic-btn"
-            @click="$emit('set-topic', topic)"
-          >{{ topic }}</button>
+        <div class="pp-hint-title">点击下方缩略图播放</div>
+        <div class="pp-hint-desc">共 {{ allVideoUrls.length }} 个历史视频可查看</div>
+      </div>
+
+      <!-- Fully empty — no videos at all -->
+      <div v-else class="pp-empty">
+        <div class="pp-empty-inner">
+          <div class="pp-empty-icon" aria-hidden="true">
+            <svg viewBox="0 0 64 64" fill="none" width="56" height="56">
+              <rect x="6" y="14" width="52" height="36" rx="7" stroke="currentColor" stroke-width="1.8" stroke-opacity="0.28"/>
+              <path d="M26 24 L42 32 L26 40 Z" fill="currentColor" fill-opacity="0.20"/>
+              <circle cx="16" cy="44" r="2" fill="currentColor" fill-opacity="0.14"/>
+              <circle cx="48" cy="20" r="1.5" fill="currentColor" fill-opacity="0.14"/>
+            </svg>
+          </div>
+          <div class="pp-empty-title">视频将在这里播放</div>
+          <div class="pp-empty-desc">创作完成后自动渲染并展示</div>
+          <div v-if="(exampleTopics?.length ?? 0) > 0" class="pp-empty-topics">
+            <div class="pp-empty-topics-label">快速开始：</div>
+            <div class="pp-empty-topics-row">
+              <button
+                v-for="topic in (exampleTopics ?? [])"
+                :key="topic"
+                class="pp-topic-btn"
+                @click="$emit('set-topic', topic)"
+              >{{ topic }}</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -142,23 +160,21 @@ const allVideoUrls = computed(() => {
 })
 
 // ── Selected video for main player ──
+// Only auto-selects when a new finalVideoUrl arrives (user-triggered generation).
+// History videos are NEVER auto-played — user must explicitly click a thumbnail.
 const selectedUrl = ref<string | null>(null)
 
-// Auto-select: new finalVideoUrl → always show it
 watch(() => props.finalVideoUrl, (url) => {
   if (url) selectedUrl.value = url
 }, { immediate: true })
 
-// Fallback: if nothing selected but we have history, show first
-watch(allVideoUrls, (urls) => {
-  if (!selectedUrl.value && urls.length > 0) selectedUrl.value = urls[0]
-}, { immediate: true })
-
-const displayUrl = computed(() =>
-  selectedUrl.value && allVideoUrls.value.includes(selectedUrl.value)
-    ? selectedUrl.value
-    : allVideoUrls.value[0] ?? null
-)
+const displayUrl = computed(() => {
+  if (selectedUrl.value && allVideoUrls.value.includes(selectedUrl.value)) {
+    return selectedUrl.value
+  }
+  // Only auto-show the current generation result, not historical ones
+  return props.finalVideoUrl ?? null
+})
 
 function selectVideo(url: string) {
   selectedUrl.value = url
@@ -389,61 +405,116 @@ const historyListRef = ref<HTMLElement | null>(null)
   width: 100%;
 }
 
-/* ── Empty state ── */
+/* ── "Select from history" hint ── */
+.pp-select-hint {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.625rem;
+  padding: 2rem 1.5rem;
+  text-align: center;
+  min-height: 180px;
+}
+
+.pp-hint-icon {
+  color: var(--arc-300);
+  opacity: 0.45;
+  margin-bottom: 0.25rem;
+}
+
+.pp-hint-title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.pp-hint-desc {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+/* ── Fully empty state ── */
 .pp-empty {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 2rem 1.25rem;
+  min-height: 240px;
 }
 
-.pp-empty > div {
+.pp-empty-inner {
   text-align: center;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.5rem;
-  padding: 2rem 1rem;
+  gap: 0.625rem;
+  max-width: 320px;
 }
 
 .pp-empty-icon {
-  opacity: 0.25;
-  margin-bottom: 0.25rem;
   color: var(--arc-300);
+  opacity: 0.25;
+  margin-bottom: 0.375rem;
 }
 
 .pp-empty-title {
-  font-size: 1rem;
-  font-weight: 600;
+  font-size: 1.0625rem;
+  font-weight: 700;
   color: var(--text-secondary);
 }
 
 .pp-empty-desc {
   font-size: 0.8125rem;
   color: var(--text-muted);
+  line-height: 1.6;
 }
 
 .pp-empty-topics {
+  margin-top: 1.25rem;
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   align-items: center;
-  gap: 0.5rem;
-  justify-content: center;
-  margin-top: 0.5rem;
+  gap: 0.625rem;
+  width: 100%;
 }
 
 .pp-empty-topics-label {
   font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
   color: var(--text-muted);
+}
+
+.pp-empty-topics-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
 }
 
 .pp-topic-btn {
   cursor: pointer;
-  border: none;
-  background: none;
+  border: 1px solid rgba(245,158,11,0.20);
+  background: rgba(245,158,11,0.06);
+  color: var(--arc-300);
   font-family: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  text-align: left;
+  transition: border-color 0.18s, background 0.18s;
+  width: 100%;
 }
-.pp-topic-btn:hover { filter: brightness(1.2); }
+
+.pp-topic-btn:hover {
+  border-color: rgba(245,158,11,0.45);
+  background: rgba(245,158,11,0.12);
+  color: var(--arc-200);
+}
 
 /* ── History strip ── */
 .pp-history {
