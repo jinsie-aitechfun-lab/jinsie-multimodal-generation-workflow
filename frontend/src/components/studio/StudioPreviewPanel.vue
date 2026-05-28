@@ -8,11 +8,11 @@
       <span v-else-if="displayUrl" class="badge badge-ok"  style="font-size:0.6rem;">已完成</span>
     </div>
 
-    <!-- ── Main player area ── -->
+    <!-- ── Body ── -->
     <div class="pp-body">
 
-      <!-- Current video -->
-      <div v-if="displayUrl" class="pp-main">
+      <!-- ════ A: Current video + history strip below ════ -->
+      <template v-if="displayUrl">
         <div class="pp-player-wrap">
           <video
             :src="displayUrl"
@@ -22,27 +22,43 @@
             :key="displayUrl"
           />
         </div>
-        <!-- Label under the player -->
         <div class="pp-current-label">
           <span v-if="displayUrl === props.finalVideoUrl" class="pp-current-tag">当前生成</span>
           <span v-else class="pp-current-tag pp-current-tag--hist">历史回放</span>
           <span class="pp-current-url">{{ shortUrl(displayUrl) }}</span>
         </div>
-      </div>
-
-      <!-- Render in flight -->
-      <div v-else-if="renderInFlight" class="pp-state pp-state--render">
-        <div class="pp-state-icon">
-          <svg class="pp-state-svg pp-spin" viewBox="0 0 60 60" fill="none">
-            <circle cx="30" cy="30" r="24" stroke="currentColor" stroke-opacity="0.15" stroke-width="4"/>
-            <path d="M30 6 A24 24 0 0 1 54 30" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
-          </svg>
+        <div v-if="allVideoUrls.length > 1" class="pp-history">
+          <div class="pp-history-header">
+            <span class="pp-history-title">历史视频</span>
+            <span class="pp-history-count">{{ allVideoUrls.length }} 个</span>
+          </div>
+          <div class="pp-history-list">
+            <button
+              v-for="(url, idx) in allVideoUrls"
+              :key="url"
+              :class="['pp-thumb', { 'pp-thumb--active': url === displayUrl }]"
+              @click="selectVideo(url)"
+              :title="`视频 ${idx + 1}`"
+            >
+              <video class="pp-thumb-video" :src="url" preload="metadata" :muted="true"/>
+              <div class="pp-thumb-overlay"><span class="pp-thumb-play">▶</span></div>
+              <div class="pp-thumb-index">{{ idx + 1 }}</div>
+            </button>
+          </div>
         </div>
+      </template>
+
+      <!-- ════ B: Render in flight ════ -->
+      <div v-else-if="renderInFlight" class="pp-state">
+        <svg class="pp-state-svg pp-spin" viewBox="0 0 60 60" fill="none">
+          <circle cx="30" cy="30" r="24" stroke="currentColor" stroke-opacity="0.15" stroke-width="4"/>
+          <path d="M30 6 A24 24 0 0 1 54 30" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+        </svg>
         <div class="pp-state-title">视频合成中…</div>
         <div class="pp-state-desc">画面、音频与字幕正在拼接渲染</div>
       </div>
 
-      <!-- Workflow processing -->
+      <!-- ════ C: Workflow processing ════ -->
       <div v-else-if="isProcessing" class="pp-state pp-state--proc">
         <div class="pp-steps">
           <div
@@ -58,70 +74,52 @@
         <div v-if="statusLabel" class="pp-status-label">{{ statusLabel }}</div>
       </div>
 
-      <!-- Has history but nothing selected — prompt user to click a thumbnail -->
-      <div v-else-if="allVideoUrls.length > 0" class="pp-select-hint">
-        <div class="pp-hint-icon">
-          <svg viewBox="0 0 52 52" fill="none" width="44" height="44">
-            <rect x="4" y="10" width="44" height="32" rx="6" stroke="currentColor" stroke-width="1.8" stroke-opacity="0.40"/>
-            <path d="M20 20 L34 26 L20 32 Z" fill="currentColor" fill-opacity="0.35"/>
-          </svg>
+      <!-- ════ D: Has history but no current — history as main content ════ -->
+      <div v-else-if="allVideoUrls.length > 0" class="pp-hist-main">
+        <div class="pp-hist-main-header">
+          <span class="pp-hist-main-title">历史视频</span>
+          <span class="pp-hist-main-count">{{ allVideoUrls.length }} 个</span>
         </div>
-        <div class="pp-hint-title">点击下方缩略图播放</div>
-        <div class="pp-hint-desc">共 {{ allVideoUrls.length }} 个历史视频可查看</div>
-      </div>
-
-      <!-- Fully empty — no videos at all -->
-      <div v-else class="pp-empty">
-        <div class="pp-empty-inner">
-          <div class="pp-empty-icon" aria-hidden="true">
-            <svg viewBox="0 0 64 64" fill="none" width="56" height="56">
-              <rect x="6" y="14" width="52" height="36" rx="7" stroke="currentColor" stroke-width="1.8" stroke-opacity="0.28"/>
-              <path d="M26 24 L42 32 L26 40 Z" fill="currentColor" fill-opacity="0.20"/>
-              <circle cx="16" cy="44" r="2" fill="currentColor" fill-opacity="0.14"/>
-              <circle cx="48" cy="20" r="1.5" fill="currentColor" fill-opacity="0.14"/>
-            </svg>
-          </div>
-          <div class="pp-empty-title">视频将在这里播放</div>
-          <div class="pp-empty-desc">创作完成后自动渲染并展示</div>
-          <div v-if="(exampleTopics?.length ?? 0) > 0" class="pp-empty-topics">
-            <div class="pp-empty-topics-label">快速开始：</div>
-            <div class="pp-empty-topics-row">
-              <button
-                v-for="topic in (exampleTopics ?? [])"
-                :key="topic"
-                class="pp-topic-btn"
-                @click="$emit('set-topic', topic)"
-              >{{ topic }}</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ── History strip (always shown if there are videos) ── -->
-      <div v-if="allVideoUrls.length > 0" class="pp-history">
-        <div class="pp-history-header">
-          <span class="pp-history-title">历史视频</span>
-          <span class="pp-history-count">{{ allVideoUrls.length }} 个</span>
-        </div>
-        <div class="pp-history-list" ref="historyListRef">
+        <div class="pp-hist-main-grid">
           <button
             v-for="(url, idx) in allVideoUrls"
             :key="url"
-            :class="['pp-thumb', { 'pp-thumb--active': url === displayUrl }]"
+            class="pp-hist-card"
             @click="selectVideo(url)"
-            :title="`视频 ${idx + 1}`"
           >
-            <video
-              class="pp-thumb-video"
-              :src="url"
-              preload="metadata"
-              :muted="true"
-            />
-            <div class="pp-thumb-overlay">
-              <span class="pp-thumb-play">▶</span>
+            <div class="pp-hist-card-frame">
+              <video class="pp-hist-card-video" :src="url" preload="metadata" :muted="true"/>
+              <div class="pp-hist-card-overlay">
+                <span class="pp-hist-card-play">▶</span>
+              </div>
             </div>
-            <div class="pp-thumb-index">{{ idx + 1 }}</div>
+            <div class="pp-hist-card-label">视频 {{ idx + 1 }}</div>
           </button>
+        </div>
+      </div>
+
+      <!-- ════ E: Completely empty ════ -->
+      <div v-else class="pp-empty">
+        <div class="pp-empty-icon" aria-hidden="true">
+          <svg viewBox="0 0 64 64" fill="none" width="56" height="56">
+            <rect x="6" y="14" width="52" height="36" rx="7" stroke="currentColor" stroke-width="1.8" stroke-opacity="0.28"/>
+            <path d="M26 24 L42 32 L26 40 Z" fill="currentColor" fill-opacity="0.20"/>
+            <circle cx="16" cy="44" r="2" fill="currentColor" fill-opacity="0.14"/>
+            <circle cx="48" cy="20" r="1.5" fill="currentColor" fill-opacity="0.14"/>
+          </svg>
+        </div>
+        <div class="pp-empty-title">视频将在这里播放</div>
+        <div class="pp-empty-desc">创作完成后自动渲染并展示</div>
+        <div v-if="(exampleTopics?.length ?? 0) > 0" class="pp-empty-topics">
+          <div class="pp-empty-topics-label">快速开始：</div>
+          <div class="pp-empty-topics-row">
+            <button
+              v-for="topic in (exampleTopics ?? [])"
+              :key="topic"
+              class="pp-topic-btn"
+              @click="$emit('set-topic', topic)"
+            >{{ topic }}</button>
+          </div>
         </div>
       </div>
 
@@ -405,53 +403,123 @@ const historyListRef = ref<HTMLElement | null>(null)
   width: 100%;
 }
 
-/* ── "Select from history" hint ── */
-.pp-select-hint {
+/* ══════════════════════════════════════════════════
+   History as MAIN content (when no current video)
+══════════════════════════════════════════════════ */
+.pp-hist-main {
   flex: 1;
   display: flex;
   flex-direction: column;
+  padding: 1.25rem 1.25rem 1.5rem;
+  overflow-y: auto;
+}
+
+.pp-hist-main-header {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 0.625rem;
-  padding: 2rem 1.5rem;
-  text-align: center;
-  min-height: 180px;
+  justify-content: space-between;
+  margin-bottom: 1rem;
 }
 
-.pp-hint-icon {
-  color: var(--arc-300);
-  opacity: 0.45;
-  margin-bottom: 0.25rem;
-}
-
-.pp-hint-title {
-  font-size: 0.9375rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-}
-
-.pp-hint-desc {
-  font-size: 0.8125rem;
+.pp-hist-main-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--text-muted);
 }
+
+.pp-hist-main-count {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(245,158,11,0.10);
+  border: 1px solid rgba(245,158,11,0.18);
+}
+
+.pp-hist-main-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.pp-hist-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  transition: transform 0.18s;
+}
+.pp-hist-card:hover { transform: translateY(-2px); }
+
+.pp-hist-card-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1.5px solid rgba(255,255,255,0.08);
+  background: #000;
+  transition: border-color 0.18s, box-shadow 0.18s;
+}
+
+.pp-hist-card:hover .pp-hist-card-frame {
+  border-color: rgba(245,158,11,0.45);
+  box-shadow: 0 4px 20px rgba(245,158,11,0.18);
+}
+
+.pp-hist-card-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+}
+
+.pp-hist-card-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.35);
+  opacity: 0;
+  transition: opacity 0.18s;
+}
+.pp-hist-card:hover .pp-hist-card-overlay { opacity: 1; }
+
+.pp-hist-card-play {
+  font-size: 26px;
+  color: var(--arc-200);
+  filter: drop-shadow(0 2px 6px rgba(0,0,0,0.7));
+}
+
+.pp-hist-card-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 0 2px;
+}
+
+.pp-hist-card:hover .pp-hist-card-label { color: var(--arc-300); }
 
 /* ── Fully empty state ── */
 .pp-empty {
   flex: 1;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2rem 1.25rem;
-  min-height: 240px;
-}
-
-.pp-empty-inner {
-  text-align: center;
-  display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
+  padding: 2.5rem 1.5rem;
+  min-height: 280px;
+  text-align: center;
   gap: 0.625rem;
-  max-width: 320px;
 }
 
 .pp-empty-icon {
