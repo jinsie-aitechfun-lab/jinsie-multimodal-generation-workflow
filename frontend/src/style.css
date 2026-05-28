@@ -40,6 +40,46 @@
   --shadow-float:   0 24px 64px rgba(0,0,0,0.80), 0 0 0 1px rgba(251,191,36,0.06);
   --shadow-glass:   0 8px 32px rgba(0,0,0,0.55), inset 0 1px 0 rgba(251,191,36,0.06);
 
+  /* Input field tokens (dark themes default) */
+  --input-bg:           rgba(4, 8, 22, 0.55);
+  --input-border:       rgba(255, 255, 255, 0.08);
+  --input-focus-border: rgba(245, 158, 11, 0.50);
+  --input-focus-shadow: 0 0 0 3px rgba(245, 158, 11, 0.10);
+  --input-placeholder:  rgba(255, 255, 255, 0.35);
+
+  /* Nested surface overlay (sub-panels, option cards, inset boxes)
+     Dark themes use a subtle black fill; light theme replaces with a
+     warm pearl tint so it doesn't look grey on white. */
+  --surface-overlay-strong: rgba(0,0,0,0.25);
+  --surface-overlay-mid:    rgba(0,0,0,0.18);
+  --surface-overlay-soft:   rgba(0,0,0,0.12);
+
+  /* Chip button (template selectors etc) */
+  --chip-hover-bg:    rgba(245,158,11,0.09);
+  --chip-active-bg:   rgba(245,158,11,0.15);
+  --chip-active-shadow: 0 0 8px rgba(245,158,11,0.20);
+
+  /* Primary CTA button (开始创作 etc) */
+  --cta-bg:           linear-gradient(135deg, #f59e0b 0%, #fb923c 100%);
+  --cta-fg:           #fff;
+  --cta-border:       rgba(245,158,11,0.50);
+  --cta-shadow:       0 6px 22px rgba(245,158,11,0.45), inset 0 1px 0 rgba(255,255,255,0.20);
+  --cta-shadow-hover: 0 8px 28px rgba(245,158,11,0.60), inset 0 1px 0 rgba(255,255,255,0.25);
+
+
+  /* Page background — themeable via overrides */
+  --page-bg-color:  #09090b;
+  --page-bg-image:
+    radial-gradient(ellipse 65% 50% at 12% 6%,  rgba(245,158,11,0.28) 0%, transparent 52%),
+    radial-gradient(ellipse 60% 50% at 88% 94%, rgba(180,80,10,0.22) 0%, transparent 52%),
+    radial-gradient(ellipse 40% 30% at 55% 48%, rgba(239,68,68,0.07) 0%, transparent 55%);
+  --noise-opacity:  0.028;
+  --noise-blend:    overlay;
+  --scrollbar-color: rgba(245,158,11,0.30);
+  --scrollbar-hover: rgba(245,158,11,0.55);
+  --selection-bg:   rgba(245,158,11,0.28);
+  --selection-fg:   #fff;
+
   font-family: Inter, 'SF Pro Display', system-ui, sans-serif;
   font-size: 15px;
   line-height: 1.5;
@@ -86,21 +126,185 @@
   --shadow-glass:   0 8px 32px rgba(0,0,0,0.55), inset 0 1px 0 rgba(168,85,247,0.06);
 }
 
+/* ═══════════════════════════════════════════════
+   珍珠晨光 · Pearl Dawn — light theme V4
+   Color ratio target:
+     · Pearl/ice white  70%
+     · Champagne gold   15%
+     · Cool blue tint   10%
+     · Warm yellow      ≤5%
+   Earlier versions were too yellow ("土色"). This iteration uses
+   cool pearl whites as base with gold only as accent.
+═══════════════════════════════════════════════ */
+:root[data-theme="pearl"] {
+  color-scheme: light;
+
+  /* Accent — champagne gold + ice blue */
+  --arc-400:        #c89a55;   /* champagne gold — main */
+  --arc-300:        #a87f3a;
+  --arc-200:        #8b6722;
+  --prism-400:      #5b9cce;   /* ice blue */
+  --prism-500:      #3f80b6;
+
+  /* Text */
+  --text-primary:   #2E2A22;
+  --text-secondary: #6F6A5F;
+  --text-muted:     #9E978A;
+
+  /* Cool pearl whites — no yellow undertone */
+  --bg-void:        #FFFFFF;
+  --bg-deep:        #F8F7F2;
+  --bg-surface:     #F3F4F6;
+  --bg-elevated:    #EDEFF2;
+  --bg-float:       #E5E8ED;
+
+  /* Borders + glass — cleaner, less yellow */
+  --border-subtle:  rgba(214, 179, 90, 0.10);
+  --border-glass:   rgba(214, 179, 90, 0.22);
+  --border-arc:     rgba(214, 179, 90, 0.48);
+  --glass-bg:       rgba(255, 255, 255, 0.78);
+  --glass-bg-light: rgba(255, 255, 255, 0.88);
+  --glass-border:   rgba(214, 179, 90, 0.22);
+  --pearl-glass-bg: linear-gradient(
+                      145deg,
+                      rgba(255, 255, 255, 0.88) 0%,
+                      rgba(255, 255, 255, 0.66) 100%
+                    );
+  --pearl-glass-edge: rgba(214, 179, 90, 0.20);
+
+  /* Shadow — neutral cool grey-warm hybrid, not heavy yellow */
+  --glow-arc:       0 0 22px rgba(214, 179, 90, 0.32),
+                    0 0 48px rgba(214, 179, 90, 0.12);
+  --glow-prism:     0 0 22px rgba( 91, 156, 206, 0.30),
+                    0 0 44px rgba( 91, 156, 206, 0.12);
+  --shadow-float:   0 28px 72px rgba( 46,  42, 34, 0.09),
+                    0 10px 26px rgba(142, 197,255, 0.08),
+                    0 3px 8px   rgba( 46,  42, 34, 0.035),
+                    0 0 0 1px   rgba(214, 179, 90, 0.12);
+  --shadow-glass:   0 26px 72px rgba( 46,  42, 34, 0.085),
+                    0 10px 26px rgba(142, 197, 255, 0.075),
+                    0 1px 2px   rgba( 46,  42, 34, 0.04),
+                    0 0 0 1px   rgba(214, 179, 90, 0.10),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.98),
+                    inset 0 0 0 1px rgba(255, 255, 255, 0.40);
+
+  /* Input field — near-pure white, champagne gold edge */
+  --input-bg:           rgba(255, 255, 255, 0.90);
+  --input-border:       rgba(214, 179, 90, 0.22);
+  --input-focus-border: rgba(214, 179, 90, 0.52);
+  --input-focus-shadow: 0 0 0 3px rgba(214, 179, 90, 0.10),
+                        0 0 18px rgba(142, 197, 255, 0.12);
+  --input-placeholder:  rgba(158, 151, 138, 0.75);
+
+  /* Nested surface overlays — cool pearl, not yellow */
+  --surface-overlay-strong: rgba(255, 255, 255, 0.85);
+  --surface-overlay-mid:    rgba(252, 252, 250, 0.72);
+  --surface-overlay-soft:   rgba(250, 251, 253, 0.58);
+
+  /* Chip button — clean white hover, restrained gold for active state */
+  --chip-hover-bg:      rgba(255, 255, 255, 0.85);
+  --chip-active-bg:     linear-gradient(135deg, rgba(248, 232, 198, 0.90) 0%, rgba(240, 218, 170, 0.75) 100%);
+  --chip-active-shadow: 0 2px 12px rgba(214, 179, 90, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.70);
+
+  /* Primary CTA — refined champagne gold, no harsh blue jump */
+  --cta-bg:           linear-gradient(135deg, #d8a861 0%, #c89a55 60%, #b8843e 100%);
+  --cta-fg:           #fff;
+  --cta-border:       rgba(184, 132, 62, 0.42);
+  --cta-shadow:       0 6px 22px rgba(184, 132, 62, 0.35), inset 0 1px 0 rgba(255, 248, 230, 0.60);
+  --cta-shadow-hover: 0 8px 28px rgba(184, 132, 62, 0.48), inset 0 1px 0 rgba(255, 248, 230, 0.75);
+
+
+  /* Page background — clean pearl white + ice mist, gold only as small accent */
+  --page-bg-color:  #fffdf7;
+  --page-bg-image:
+    radial-gradient(circle at 18% 8%,
+                    rgba(246, 222, 166, 0.22) 0%,
+                    transparent 30%),
+    radial-gradient(circle at 82% 78%,
+                    rgba(210, 232, 255, 0.34) 0%,
+                    transparent 38%),
+    radial-gradient(ellipse 58% 44% at 90% 14%,
+                    rgba(190, 215, 235, 0.28) 0%,
+                    transparent 68%),
+    linear-gradient(135deg, #fffdf7 0%, #f7f8fb 46%, #eef6f9 100%);
+  --noise-opacity:  0.006;
+  --noise-blend:    multiply;
+  --scrollbar-color: rgba(200, 154, 85, 0.42);
+  --scrollbar-hover: rgba(200, 154, 85, 0.68);
+  --selection-bg:   rgba(200, 154, 85, 0.28);
+  --selection-fg:   #1c1812;
+}
+
+:root[data-theme="pearl"] .progress-track {
+  height: 1px;
+  background: rgba(135, 155, 175, 0.055);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.64);
+}
+
+:root[data-theme="pearl"] .progress-fill {
+  background: linear-gradient(
+    90deg,
+    rgba(218, 188, 124, 0.30) 0%,
+    rgba(188, 215, 232, 0.38) 100%
+  );
+  box-shadow: 0 0 4px rgba(188, 215, 232, 0.08);
+}
+
+:root[data-theme="pearl"] .glass-card {
+  background: var(--pearl-glass-bg);
+  backdrop-filter: blur(22px) saturate(1.12);
+  -webkit-backdrop-filter: blur(22px) saturate(1.12);
+  border-color: var(--pearl-glass-edge);
+  box-shadow:
+    var(--shadow-glass),
+    inset 0 1px 0 rgba(255, 255, 255, 0.88);
+}
+
+:root[data-theme="pearl"] .studio-input {
+  background: var(--input-bg);
+  border-color: var(--input-border);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.90),
+    0 4px 12px rgba(46,42,34,0.035);
+}
+
+:root[data-theme="pearl"] .studio-input:focus {
+  background: rgba(255,255,255,0.94);
+  border-color: var(--input-focus-border);
+  box-shadow: var(--input-focus-shadow);
+}
+
 /* ─── Base reset ──────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 
 body {
   margin: 0;
-  background-color: #09090b;
-  /* Warm gold gradient pools — fixed so they stay anchored while scrolling */
-  background-image:
-    radial-gradient(ellipse 65% 50% at 12% 6%,  rgba(245,158,11,0.28) 0%, transparent 52%),
-    radial-gradient(ellipse 60% 50% at 88% 94%,  rgba(180,80,10,0.22) 0%, transparent 52%),
-    radial-gradient(ellipse 40% 30% at 55% 48%,  rgba(239,68,68,0.07) 0%, transparent 55%);
+  background-color: var(--page-bg-color);
+  background-image: var(--page-bg-image);
   background-attachment: fixed;
   color: var(--text-primary);
   min-height: 100vh;
   overflow-x: hidden;
+  transition: background-color 0.35s ease, color 0.35s ease;
+}
+
+/* ─── Theme transitions ─────────────────────────────
+   Apply a brief crossfade when the theme changes so colors
+   morph smoothly instead of snapping. Use a class added to
+   :root for ~600ms when the user picks a new theme.
+─────────────────────────────────────────────────────── */
+:root.theme-transitioning,
+:root.theme-transitioning *,
+:root.theme-transitioning *::before,
+:root.theme-transitioning *::after {
+  transition:
+    background-color 0.40s ease,
+    background-image 0.40s ease,
+    border-color     0.40s ease,
+    box-shadow       0.40s ease,
+    color            0.40s ease,
+    fill             0.40s ease,
+    stroke           0.40s ease !important;
 }
 
 /* Noise grain — adds premium texture depth */
@@ -111,18 +315,94 @@ body::before {
   z-index: 9998;
   pointer-events: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
-  opacity: 0.028;
-  mix-blend-mode: overlay;
+  opacity: var(--noise-opacity);
+  mix-blend-mode: var(--noise-blend);
 }
 
 /* Scrollbar */
 ::-webkit-scrollbar              { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track        { background: transparent; }
-::-webkit-scrollbar-thumb        { background: rgba(245,158,11,0.30); border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover  { background: rgba(245,158,11,0.55); }
+::-webkit-scrollbar-thumb        { background: var(--scrollbar-color); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover  { background: var(--scrollbar-hover); }
 
 /* Selection */
-::selection { background: rgba(245,158,11,0.28); color: #fff; }
+::selection { background: var(--selection-bg); color: var(--selection-fg); }
+
+/* ─── Custom form controls — Pearl Dawn ONLY ─────────────────────
+   Dark themes (gold/blue/purple) keep native browser controls with
+   accent-color tinted per theme — unchanged.
+─────────────────────────────────────────────────────────────────── */
+:root[data-theme="pearl"] input[type="radio"],
+:root[data-theme="pearl"] input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex-shrink: 0;
+  background: rgba(255,255,255,0.85);
+  border: 1.5px solid rgba(184, 132, 62, 0.40);
+  cursor: pointer;
+  position: relative;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+:root[data-theme="pearl"] input[type="radio"]    { border-radius: 50%; }
+:root[data-theme="pearl"] input[type="checkbox"] { border-radius: 4px;  }
+
+:root[data-theme="pearl"] input[type="radio"]:hover,
+:root[data-theme="pearl"] input[type="checkbox"]:hover {
+  border-color: rgba(184, 132, 62, 0.65);
+}
+
+:root[data-theme="pearl"] input[type="radio"]:focus-visible,
+:root[data-theme="pearl"] input[type="checkbox"]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(184, 132, 62, 0.20);
+}
+
+/* ── Radio checked: golden dot with glow ── */
+:root[data-theme="pearl"] input[type="radio"]:checked {
+  border-color: #b8843e;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(184, 132, 62, 0.25);
+}
+:root[data-theme="pearl"] input[type="radio"]:checked::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #d8a861, #b8843e);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 6px rgba(184, 132, 62, 0.55), inset 0 1px 0 rgba(255,248,230,0.50);
+}
+
+/* ── Checkbox checked: gold fill + white check ── */
+:root[data-theme="pearl"] input[type="checkbox"]:checked {
+  border-color: #b8843e;
+  background: linear-gradient(135deg, #d8a861, #b8843e);
+  box-shadow: 0 2px 8px rgba(184, 132, 62, 0.30), inset 0 1px 0 rgba(255,248,230,0.55);
+}
+:root[data-theme="pearl"] input[type="checkbox"]:checked::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 9px;
+  height: 5px;
+  border-left: 1.8px solid #fff;
+  border-bottom: 1.8px solid #fff;
+  transform: translate(-50%, -65%) rotate(-45deg);
+}
+
+:root[data-theme="pearl"] input[type="radio"]:disabled,
+:root[data-theme="pearl"] input[type="checkbox"]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 
 /* ─── Utility component classes ───────────────────────────────── */
 @layer components {
@@ -195,21 +475,21 @@ body::before {
 
   /* Studio input */
   .studio-input {
-    background: rgba(4,8,22,0.55);
+    background: var(--input-bg);
     backdrop-filter: blur(8px);
-    border: 1px solid rgba(255,255,255,0.08);
+    border: 1px solid var(--input-border);
     border-radius: 0.625rem;
     color: var(--text-primary);
     padding: 0.625rem 0.875rem;
     width: 100%;
-    transition: border-color 0.2s, box-shadow 0.2s;
+    transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
     font-size: 0.875rem;
     outline: none;
   }
-  .studio-input::placeholder { color: var(--text-muted); }
+  .studio-input::placeholder { color: var(--input-placeholder); }
   .studio-input:focus {
-    border-color: rgba(245,158,11,0.50);
-    box-shadow: 0 0 0 3px rgba(245,158,11,0.10);
+    border-color: var(--input-focus-border);
+    box-shadow: var(--input-focus-shadow);
   }
 
   /* Studio button — primary */

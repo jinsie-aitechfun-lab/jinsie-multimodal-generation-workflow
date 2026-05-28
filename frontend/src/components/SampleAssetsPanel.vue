@@ -344,7 +344,7 @@ function isVideoAsset(path?: string): boolean {
 .samples-metric {
   padding: 14px 16px;
   border-radius: 12px;
-  background: rgba(14,11,5,0.60);
+  background: var(--glass-bg);
   border: 1px solid rgba(245,158,11,0.10);
   text-align: left;
 }
@@ -377,7 +377,7 @@ function isVideoAsset(path?: string): boolean {
 .sample-detail-panel {
   padding: 16px;
   border-radius: 14px;
-  background: rgba(14,11,5,0.60);
+  background: var(--glass-bg);
   border: 1px solid rgba(245,158,11,0.10);
   box-shadow: 0 4px 16px rgba(0,0,0,0.30);
 }
@@ -528,7 +528,7 @@ code {
   padding: 10px 12px;
   border-radius: 10px;
   border: 1px solid rgba(245,158,11,0.10);
-  background: rgba(0,0,0,0.25);
+  background: var(--surface-overlay-strong);
   color: var(--text-secondary);
   font-size: 12px;
   line-height: 1.6;

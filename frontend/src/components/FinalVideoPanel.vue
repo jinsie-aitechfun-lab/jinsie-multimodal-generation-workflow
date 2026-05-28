@@ -221,12 +221,12 @@ const placeholderDesc = computed(() => {
   max-width: 1100px;
   margin: 0 auto;
   border-radius: 18px;
-  background: linear-gradient(160deg, rgba(20,15,5,0.85) 0%, rgba(12,9,3,0.80) 100%);
+  background: var(--glass-bg);
   backdrop-filter: blur(20px) saturate(140%);
   -webkit-backdrop-filter: blur(20px) saturate(140%);
   overflow: hidden;
-  border: 1px solid rgba(245,158,11,0.14);
-  box-shadow: 0 8px 40px rgba(0,0,0,0.50), inset 0 1px 0 rgba(251,191,36,0.06);
+  border: 1px solid var(--border-glass);
+  box-shadow: var(--shadow-glass);
 }
 
 .final-video {
@@ -402,7 +402,7 @@ const placeholderDesc = computed(() => {
 .final-json {
   max-width: 1100px;
   margin: 10px auto 0;
-  background: rgba(0,0,0,0.30);
+  background: var(--surface-overlay-strong);
   border: 1px solid rgba(245,158,11,0.10);
   border-radius: 12px;
   padding: 10px 12px;

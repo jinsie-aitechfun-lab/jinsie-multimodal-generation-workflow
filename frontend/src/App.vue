@@ -2294,10 +2294,13 @@ async function runWorkflow() {
   align-items: start;
 }
 
-/* Right column (preview panel) stays visible while form scrolls */
+/* Right column (preview panel) stays visible while form scrolls.
+   align-self:start + height:auto so panel fits content instead of
+   stretching to viewport — avoids huge whitespace below short content. */
 .studio-home-grid > :nth-child(2) {
   position: sticky;
   top: 1rem;
+  align-self: start;
   max-height: calc(100vh - 2rem);
   display: flex;
   flex-direction: column;
@@ -2346,10 +2349,7 @@ async function runWorkflow() {
 .review-section-title {
   font-size: 0.875rem;
   font-weight: 700;
-  background: linear-gradient(90deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.75) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--text-primary);
   flex: 1;
   letter-spacing: 0.02em;
 }
@@ -2423,7 +2423,7 @@ async function runWorkflow() {
 
 .copy-diag-btn {
   border: 1px solid rgba(245,158,11,0.18);
-  background: rgba(14,11,5,0.60);
+  background: var(--glass-bg);
   color: var(--text-secondary);
   border-radius: 8px;
   padding: 6px 14px;
@@ -2549,7 +2549,7 @@ async function runWorkflow() {
   max-width: 520px;
   border-radius: 10px;
   border: 1px solid rgba(245,158,11,0.10);
-  background: rgba(14,11,5,0.60);
+  background: var(--glass-bg);
   margin-top: 8px;
 }
 
@@ -2586,7 +2586,7 @@ async function runWorkflow() {
   padding: 10px;
   border: 1px solid rgba(245,158,11,0.10);
   border-radius: 10px;
-  background: rgba(10,8,3,0.50);
+  background: var(--glass-bg);
 }
 
 .review-scene-grid {
@@ -2597,7 +2597,7 @@ async function runWorkflow() {
 .review-scene-card {
   padding: 16px;
   border-radius: 14px;
-  background: rgba(14,11,5,0.60);
+  background: var(--glass-bg);
   border: 1px solid rgba(245,158,11,0.10);
 }
 
@@ -2624,7 +2624,7 @@ async function runWorkflow() {
   padding: 12px;
   border-radius: 12px;
   border: 1px solid rgba(245,158,11,0.18);
-  background: rgba(10,8,3,0.50);
+  background: var(--glass-bg);
   cursor: pointer;
   text-align: left;
 }
@@ -2652,7 +2652,7 @@ async function runWorkflow() {
   padding: 12px;
   border-radius: 10px;
   border: 1px solid rgba(245,158,11,0.10);
-  background: rgba(10,8,3,0.50);
+  background: var(--glass-bg);
   color: var(--text-primary);
   font-size: 13px;
   line-height: 1.6;
@@ -2671,7 +2671,7 @@ async function runWorkflow() {
   padding: 14px;
   border: 1px solid rgba(245,158,11,0.10);
   border-radius: 12px;
-  background: rgba(10,8,3,0.50);
+  background: var(--glass-bg);
 }
 
 .mock-audio-label {
@@ -2689,7 +2689,7 @@ async function runWorkflow() {
   border: 1px solid rgba(245,158,11,0.10);
   border-radius: 14px;
   padding: 16px;
-  background: rgba(14,11,5,0.60);
+  background: var(--glass-bg);
 }
 
 .mock-audio-scene-head {
@@ -2716,7 +2716,7 @@ async function runWorkflow() {
   gap: 12px;
   padding: 12px 14px;
   border-radius: 12px;
-  background: rgba(10,8,3,0.50);
+  background: var(--glass-bg);
   border: 1px solid rgba(245,158,11,0.10);
 }
 

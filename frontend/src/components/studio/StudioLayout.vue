@@ -103,19 +103,15 @@
         </button>
       </nav>
 
-      <!-- Footer: theme switcher + slot + dev -->
+      <!-- Footer: header-actions slot + dev toggle -->
       <div class="sb-footer">
         <slot name="header-actions"/>
-        <!-- Theme cycle button -->
-        <button class="sb-theme-btn" @click="cycleTheme" :title="`主题：${THEMES[currentTheme].label} → 点击切换`">
-          <span class="sb-theme-ring">
-            <span class="sb-theme-dot"/>
-          </span>
-          <span class="sb-theme-label">{{ THEMES[currentTheme].short }}</span>
-        </button>
         <button v-if="devMode" class="sb-dev-btn" title="Dev mode" @click="$emit('toggle-dev')">⚙</button>
       </div>
     </aside>
+
+    <!-- Floating theme switcher — fixed to viewport top-right -->
+    <ThemeSwitcher/>
 
     <!-- ═══════════════════════════════════
          CONTENT AREA
@@ -137,6 +133,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { animate } from 'animejs'
+import ThemeSwitcher from './ThemeSwitcher.vue'
+import { useTheme } from '../../composables/useTheme'
 
 const props = defineProps<{
   modelValue: string
@@ -149,44 +147,26 @@ defineEmits<{
   (e: 'toggle-dev'): void
 }>()
 
-// ── Theme system ────────────────────────────────
-type ThemeKey = 'gold' | 'blue' | 'purple'
+// ── Theme (shared composable) ────────────────────
+const { theme: currentTheme, themeMeta } = useTheme()
 
-const THEMES: Record<ThemeKey, { label: string; short: string; a: string; b: string; c: string }> = {
-  gold:   { label: '沉金暗调', short: '金',  a: '245,158,11', b: '249,115,22', c: '251,191,36' },
-  blue:   { label: '极夜蓝调', short: '蓝',  a: '14,165,233', b: '99,102,241', c: '56,189,248' },
-  purple: { label: '暗紫星芒', short: '紫',  a: '168,85,247', b: '244,63,94',  c: '192,132,252' },
-}
-const THEME_ORDER: ThemeKey[] = ['gold', 'blue', 'purple']
-
-const currentTheme = ref<ThemeKey>(
-  (localStorage.getItem('studio_theme') as ThemeKey | null) ?? 'gold'
-)
-
-function applyTheme(t: ThemeKey) {
-  document.documentElement.setAttribute('data-theme', t)
-}
-
-function cycleTheme() {
-  const idx = THEME_ORDER.indexOf(currentTheme.value)
-  currentTheme.value = THEME_ORDER[(idx + 1) % THEME_ORDER.length]
-  localStorage.setItem('studio_theme', currentTheme.value)
-  applyTheme(currentTheme.value)
-}
-
-// Theme-aware accent color helper
+// Accent helpers for inline-styled SVG / dynamic styles
 function tc(opacity: number, variant: 'a' | 'b' | 'c' = 'a'): string {
-  return `rgba(${THEMES[currentTheme.value][variant]},${opacity})`
+  const arr = themeMeta.value.swatches
+  // Convert hex swatch to "r,g,b" for use in rgba()
+  const hex = variant === 'a' ? arr[0] : variant === 'b' ? arr[1] : arr[2]
+  const rgb = hexToRgb(hex)
+  return `rgba(${rgb},${opacity})`
 }
 
-const themeAccentA = computed(() => {
-  const { a } = THEMES[currentTheme.value]
-  return `rgb(${a})`
-})
-const themeAccentB = computed(() => {
-  const { b } = THEMES[currentTheme.value]
-  return `rgb(${b})`
-})
+function hexToRgb(hex: string): string {
+  const m = hex.replace('#', '').match(/.{2}/g)
+  if (!m || m.length < 3) return '255,255,255'
+  return `${parseInt(m[0], 16)},${parseInt(m[1], 16)},${parseInt(m[2], 16)}`
+}
+
+const themeAccentA = computed(() => themeMeta.value.swatches[0])
+const themeAccentB = computed(() => themeMeta.value.swatches[1])
 
 // ── Content animation ────────────────────────────
 const mainRef = ref<HTMLElement | null>(null)
@@ -207,9 +187,6 @@ function animateContentIn() {
 }
 
 onMounted(() => {
-  // Apply saved theme on load
-  applyTheme(currentTheme.value)
-
   animate('.sb-item', {
     opacity: [0, 1],
     translateX: [-10, 0],
@@ -335,11 +312,11 @@ watch(() => props.modelValue, () => {
   padding: 20px 0 16px;
   gap: 0;
 
-  background: rgba(7,5,2,0.88);
+  background: var(--sidebar-bg, rgba(7,5,2,0.88));
   backdrop-filter: blur(28px) saturate(150%);
   -webkit-backdrop-filter: blur(28px) saturate(150%);
   border-right: 1px solid var(--sidebar-border, rgba(245,158,11,0.10));
-  box-shadow: 4px 0 32px rgba(0,0,0,0.55), inset -1px 0 0 var(--sidebar-border, rgba(245,158,11,0.06));
+  box-shadow: var(--sidebar-shadow, 4px 0 32px rgba(0,0,0,0.55)), inset -1px 0 0 var(--sidebar-border, rgba(245,158,11,0.06));
 }
 
 /* ── Brand ── */
@@ -465,51 +442,6 @@ watch(() => props.modelValue, () => {
   border-top: 1px solid var(--sidebar-border, rgba(245,158,11,0.08));
 }
 
-/* Theme cycle button */
-.sb-theme-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  width: 56px;
-  padding: 8px 4px;
-  border-radius: 12px;
-  border: 1px solid var(--sidebar-border, rgba(245,158,11,0.14));
-  background: transparent;
-  cursor: pointer;
-  font-family: inherit;
-  transition: background 0.2s, border-color 0.2s;
-}
-.sb-theme-btn:hover {
-  background: var(--item-hover-bg, rgba(245,158,11,0.08));
-  border-color: var(--item-active-border, rgba(245,158,11,0.30));
-}
-
-.sb-theme-ring {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px; height: 22px;
-  border-radius: 50%;
-  border: 1.5px solid var(--accent-a, rgba(245,158,11,0.60));
-  box-shadow: 0 0 8px var(--accent-a, rgba(245,158,11,0.30));
-}
-
-.sb-theme-dot {
-  display: block;
-  width: 10px; height: 10px;
-  border-radius: 50%;
-  background: var(--accent-a-solid, #f59e0b);
-  box-shadow: 0 0 6px var(--accent-a, rgba(245,158,11,0.70));
-}
-
-.sb-theme-label {
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  color: rgba(255,255,255,0.40);
-}
-
 .sb-dev-btn {
   width: 36px; height: 36px;
   border-radius: 10px;
@@ -539,23 +471,24 @@ watch(() => props.modelValue, () => {
   z-index: 1;
 }
 
-/* Progress bar — sticky top strip with glass background */
+/* Progress bar wrapper — transparent so it disappears when child is hidden.
+   Visual (bg/border/padding) lives in .studio-progress inside StudioProgress
+   component, which uses v-if="visible". */
 .s-progress {
   position: sticky;
   top: 0;
   z-index: 40;
-  padding: 0.45rem 1.75rem 0.35rem;
-  background: rgba(9,7,3,0.82);
-  backdrop-filter: blur(24px) saturate(150%);
-  -webkit-backdrop-filter: blur(24px) saturate(150%);
-  border-bottom: 1px solid var(--sidebar-border, rgba(245,158,11,0.10));
+  background: transparent;
   flex-shrink: 0;
 }
 
 /* Main content */
 .s-main {
   flex: 1;
-  padding: 1.5rem 1.75rem;
+  /* Tighter left padding so cards sit closer to the sidebar.
+     Pearl theme's lighter bg makes any whitespace look bigger; this
+     also subtly tightens dark themes (1.75rem → 1.25rem). */
+  padding: 1.5rem 1.5rem 1.5rem 1.25rem;
   max-width: 1440px;
   width: 100%;
   box-sizing: border-box;
@@ -713,6 +646,117 @@ watch(() => props.modelValue, () => {
   --pt-glow-a: rgba(192,132,252,0.95);
   --pt-glow-b: rgba(233,213,255,0.95);
   --pt-glow-c: rgba(233,213,255,1);
+}
+
+/* ═══════════════════════════════════════════════
+   珍珠晨光 · Pearl Dawn (light theme)
+═══════════════════════════════════════════════ */
+.s-root[data-theme="pearl"] {
+  --accent-a:           rgba(200,154,85,0.72);
+  --accent-c:           rgba(233,203,131,0.80);
+  --accent-a-solid:     #c89a55;
+  --brand-glow:         rgba(200,154,85,0.50);
+
+  /* Bright white pearl sidebar */
+  --sidebar-bg:         rgba(255,255,255,0.88);
+  --sidebar-border:     rgba(200,154,85,0.18);
+  --sidebar-shadow:     4px 0 28px rgba(100,90,60,0.10);
+
+  --item-hover-bg:      rgba(200,154,85,0.10);
+  --item-hover-border:  rgba(200,154,85,0.28);
+  --item-active-bg:     rgba(255,238,200,0.55);
+  --item-active-border: rgba(200,154,85,0.55);
+  --item-glow:          rgba(200,154,85,0.22);
+
+  /* Aurora orbs — cool pearl-dominant, gold only as small warm accent */
+  --orb-a1: rgba(230,210,160,0.32);   /* champagne whisper */
+  --orb-a2: rgba(200,180,140,0.10);
+  --orb-b1: rgba(155,195,225,0.55);   /* ice blue (dominant) */
+  --orb-b2: rgba(100,160,210,0.20);
+  --orb-c1: rgba(220,230,238,0.30);   /* pearl white centre */
+
+  --dot-color:  rgba(200,154,85,0.16);
+  --dc-color:   rgba(200,154,85,0.85);
+  --pt-a:       #c89a55;
+  --pt-b:       #e9cb83;
+  --pt-c:       #d6b06a;
+  --pt-glow-a:  rgba(200,154,85,0.80);
+  --pt-glow-b:  rgba(233,203,131,0.80);
+  --pt-glow-c:  rgba(200,154,85,0.95);
+}
+
+/* Sidebar nav items — dark icons/labels on white pearl */
+.s-root[data-theme="pearl"] .sb-icon                                { color: rgba(60,66,76,0.55); }
+.s-root[data-theme="pearl"] .sb-item:hover:not(.is-active) .sb-icon { color: rgba(60,66,76,0.85); }
+.s-root[data-theme="pearl"] .sb-label                               { color: rgba(60,66,76,0.55); }
+.s-root[data-theme="pearl"] .sb-item:hover:not(.is-active) .sb-label{ color: rgba(60,66,76,0.85); }
+.s-root[data-theme="pearl"] .sb-item.is-active .sb-icon,
+.s-root[data-theme="pearl"] .sb-item.is-active .sb-label            { color: #8b6722; }
+.s-root[data-theme="pearl"] .sb-dev-btn                             { color: rgba(60,66,76,0.55); background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.08); }
+.s-root[data-theme="pearl"] .sb-dev-btn:hover                       { color: rgba(60,66,76,0.85); background: rgba(0,0,0,0.07); }
+
+/* Soft white highlight on active item */
+.s-root[data-theme="pearl"] .sb-item.is-active {
+  box-shadow: 0 4px 18px var(--item-glow), inset 0 1px 0 rgba(255,255,255,0.85);
+}
+
+/* Pearl bg is light so any whitespace looks bigger than the same px
+   on the dark themes. Tighten s-main left padding visually. */
+.s-root[data-theme="pearl"] .s-main {
+  padding-left: 0.7rem;
+}
+
+/* ═══════════════════════════════════════════════
+   Pearl Dawn — drifting flowing light layer
+   Cool-dominant: ice blue + pearl white major notes, gold minor accent.
+   No more "土黄 sweep" — see color ratio note in style.css.
+═══════════════════════════════════════════════ */
+.s-root[data-theme="pearl"]::before {
+  content: '';
+  position: fixed;
+  inset: -30%;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    conic-gradient(
+      from 0deg at 28% 32%,
+      transparent 0deg,
+      rgba(160, 200, 230, 0.42) 50deg,
+      rgba(195, 220, 235, 0.24) 110deg,
+      transparent 190deg,
+      rgba(232, 215, 175, 0.22) 270deg,
+      rgba(240, 230, 210, 0.10) 320deg,
+      transparent 360deg
+    );
+  filter: blur(70px);
+  animation: pearlFlow 28s linear infinite;
+  will-change: transform;
+}
+
+.s-root[data-theme="pearl"]::after {
+  content: '';
+  position: fixed;
+  inset: -20%;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    conic-gradient(
+      from 180deg at 75% 68%,
+      transparent 0deg,
+      rgba(180, 210, 230, 0.36) 70deg,
+      transparent 170deg,
+      rgba(220, 228, 238, 0.30) 250deg,
+      rgba(232, 215, 175, 0.18) 320deg,
+      transparent 360deg
+    );
+  filter: blur(80px);
+  animation: pearlFlow 38s linear infinite reverse;
+  will-change: transform;
+}
+
+@keyframes pearlFlow {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
 }
 
 /* ── Responsive ── */
