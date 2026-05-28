@@ -98,27 +98,89 @@
         </div>
       </div>
 
-      <!-- ════ E: Completely empty ════ -->
+      <!-- ════ E: Completely empty — illustrated empty state ════ -->
       <div v-else class="pp-empty">
-        <div class="pp-empty-icon" aria-hidden="true">
-          <svg viewBox="0 0 64 64" fill="none" width="56" height="56">
-            <rect x="6" y="14" width="52" height="36" rx="7" stroke="currentColor" stroke-width="1.8" stroke-opacity="0.28"/>
-            <path d="M26 24 L42 32 L26 40 Z" fill="currentColor" fill-opacity="0.20"/>
-            <circle cx="16" cy="44" r="2" fill="currentColor" fill-opacity="0.14"/>
-            <circle cx="48" cy="20" r="1.5" fill="currentColor" fill-opacity="0.14"/>
+        <!-- Decorative illustration -->
+        <div class="pp-empty-illus" aria-hidden="true">
+          <svg viewBox="0 0 240 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="ppGrad1" x1="0" y1="0" x2="240" y2="180" gradientUnits="userSpaceOnUse">
+                <stop offset="0%"  stop-color="#fbbf24" stop-opacity="0.55"/>
+                <stop offset="100%" stop-color="#f97316" stop-opacity="0.30"/>
+              </linearGradient>
+              <linearGradient id="ppGrad2" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stop-color="#fbbf24" stop-opacity="0.30"/>
+                <stop offset="100%" stop-color="#f59e0b" stop-opacity="0.10"/>
+              </linearGradient>
+              <radialGradient id="ppGlow" cx="50%" cy="50%" r="50%">
+                <stop offset="0%"   stop-color="#fbbf24" stop-opacity="0.35"/>
+                <stop offset="100%" stop-color="#fbbf24" stop-opacity="0"/>
+              </radialGradient>
+            </defs>
+
+            <!-- Background glow -->
+            <ellipse cx="120" cy="90" rx="100" ry="60" fill="url(#ppGlow)"/>
+
+            <!-- Background mountains (story landscape) -->
+            <path d="M0 130 L40 92 L66 110 L92 78 L122 105 L156 70 L190 100 L240 75 L240 180 L0 180 Z"
+                  fill="url(#ppGrad2)" opacity="0.7"/>
+            <path d="M0 130 L40 92 L66 110 L92 78 L122 105 L156 70 L190 100 L240 75"
+                  stroke="#fbbf24" stroke-width="1.2" stroke-opacity="0.45" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+
+            <!-- Film clapperboard centre -->
+            <g transform="translate(72, 38)">
+              <!-- Top stripe -->
+              <rect x="0" y="0" width="96" height="14" rx="2" fill="#1a1409" stroke="url(#ppGrad1)" stroke-width="1.4"/>
+              <!-- Diagonal stripes -->
+              <path d="M4 0 L14 14 M22 0 L32 14 M40 0 L50 14 M58 0 L68 14 M76 0 L86 14"
+                    stroke="#fbbf24" stroke-width="1.4" stroke-opacity="0.55"/>
+              <!-- Main board -->
+              <rect x="0" y="16" width="96" height="58" rx="3" fill="#0f0c06" stroke="url(#ppGrad1)" stroke-width="1.4"/>
+              <!-- Play triangle -->
+              <path d="M36 32 L60 45 L36 58 Z" fill="url(#ppGrad1)" opacity="0.85"/>
+              <circle cx="48" cy="45" r="22" stroke="#fbbf24" stroke-width="1.2" stroke-opacity="0.40" stroke-dasharray="3 3" fill="none"/>
+            </g>
+
+            <!-- Sparkle stars -->
+            <g fill="#fbbf24">
+              <path d="M28 36 L30 41 L35 42 L30 43 L28 48 L26 43 L21 42 L26 41 Z" opacity="0.70"/>
+              <path d="M208 50 L210 55 L215 56 L210 57 L208 62 L206 57 L201 56 L206 55 Z" opacity="0.55"/>
+              <path d="M195 28 L197 32 L201 33 L197 34 L195 38 L193 34 L189 33 L193 32 Z" opacity="0.45"/>
+              <path d="M40 110 L42 114 L46 115 L42 116 L40 120 L38 116 L34 115 L38 114 Z" opacity="0.40"/>
+              <circle cx="18"  cy="68"  r="1.5" opacity="0.50"/>
+              <circle cx="222" cy="118" r="1.5" opacity="0.50"/>
+              <circle cx="58"  cy="22"  r="1.2" opacity="0.40"/>
+              <circle cx="180" cy="142" r="1.2" opacity="0.40"/>
+            </g>
+
+            <!-- Floating particles around centre -->
+            <g fill="#fde68a">
+              <circle cx="62"  cy="60"  r="1.2" opacity="0.65"/>
+              <circle cx="178" cy="78"  r="1.5" opacity="0.55"/>
+              <circle cx="158" cy="118" r="1.0" opacity="0.40"/>
+              <circle cx="90"  cy="128" r="1.3" opacity="0.50"/>
+            </g>
           </svg>
         </div>
-        <div class="pp-empty-title">视频将在这里播放</div>
-        <div class="pp-empty-desc">创作完成后自动渲染并展示</div>
+
+        <div class="pp-empty-title">还没有视频，先讲一个故事吧</div>
+        <div class="pp-empty-desc">在左侧填写故事主题，配置生成参数<br/>点击「开始创作」即可生成专属视频</div>
+
         <div v-if="(exampleTopics?.length ?? 0) > 0" class="pp-empty-topics">
-          <div class="pp-empty-topics-label">快速开始：</div>
+          <div class="pp-empty-topics-label">
+            <span class="pp-empty-topics-icon">✦</span>
+            试试这些主题
+          </div>
           <div class="pp-empty-topics-row">
             <button
               v-for="topic in (exampleTopics ?? [])"
               :key="topic"
               class="pp-topic-btn"
               @click="$emit('set-topic', topic)"
-            >{{ topic }}</button>
+            >
+              <span class="pp-topic-icon">→</span>
+              <span class="pp-topic-text">{{ topic }}</span>
+            </button>
           </div>
         </div>
       </div>
@@ -509,51 +571,85 @@ const historyListRef = ref<HTMLElement | null>(null)
 
 .pp-hist-card:hover .pp-hist-card-label { color: var(--arc-300); }
 
-/* ── Fully empty state ── */
+/* ══════════════════════════════════════════════════
+   Illustrated empty state — invites user to create
+══════════════════════════════════════════════════ */
 .pp-empty {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 2.5rem 1.5rem;
-  min-height: 280px;
+  padding: 2rem 2rem 2.5rem;
   text-align: center;
-  gap: 0.625rem;
+  gap: 0.5rem;
+  min-height: 420px;
 }
 
-.pp-empty-icon {
-  color: var(--arc-300);
-  opacity: 0.25;
-  margin-bottom: 0.375rem;
+/* SVG illustration — floats gently */
+.pp-empty-illus {
+  width: 240px;
+  max-width: 80%;
+  line-height: 0;
+  margin-bottom: 0.5rem;
+  animation: ppEmptyFloat 5s ease-in-out infinite;
+}
+
+.pp-empty-illus svg { width: 100%; height: auto; }
+
+@keyframes ppEmptyFloat {
+  0%,100% { transform: translateY(0); }
+  50%      { transform: translateY(-8px); }
 }
 
 .pp-empty-title {
-  font-size: 1.0625rem;
+  font-size: 1.125rem;
   font-weight: 700;
-  color: var(--text-secondary);
+  background: linear-gradient(120deg, var(--arc-200) 0%, var(--arc-300) 50%, var(--prism-400) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: 0.01em;
 }
 
 .pp-empty-desc {
   font-size: 0.8125rem;
   color: var(--text-muted);
-  line-height: 1.6;
+  line-height: 1.7;
+  max-width: 280px;
 }
 
 .pp-empty-topics {
-  margin-top: 1.25rem;
+  margin-top: 1.5rem;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.625rem;
+  gap: 0.75rem;
   width: 100%;
+  max-width: 360px;
 }
 
 .pp-empty-topics-label {
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.05em;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
   color: var(--text-muted);
+}
+
+.pp-empty-topics-icon {
+  color: var(--arc-300);
+  font-size: 0.75rem;
+  text-shadow: 0 0 8px rgba(245,158,11,0.55);
+  animation: ppEmptySpark 2.4s ease-in-out infinite;
+}
+
+@keyframes ppEmptySpark {
+  0%,100% { opacity: 0.6; transform: scale(1); }
+  50%      { opacity: 1.0; transform: scale(1.2); }
 }
 
 .pp-empty-topics-row {
@@ -564,25 +660,42 @@ const historyListRef = ref<HTMLElement | null>(null)
 }
 
 .pp-topic-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
   cursor: pointer;
-  border: 1px solid rgba(245,158,11,0.20);
-  background: rgba(245,158,11,0.06);
+  border: 1px solid rgba(245,158,11,0.22);
+  background: linear-gradient(135deg, rgba(245,158,11,0.06) 0%, rgba(249,115,22,0.04) 100%);
   color: var(--arc-300);
   font-family: inherit;
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   font-weight: 500;
-  padding: 0.5rem 1rem;
-  border-radius: 8px;
+  padding: 0.625rem 0.875rem;
+  border-radius: 10px;
   text-align: left;
-  transition: border-color 0.18s, background 0.18s;
+  transition: border-color 0.18s, background 0.18s, transform 0.18s, box-shadow 0.18s;
   width: 100%;
 }
 
 .pp-topic-btn:hover {
-  border-color: rgba(245,158,11,0.45);
-  background: rgba(245,158,11,0.12);
+  border-color: rgba(245,158,11,0.55);
+  background: linear-gradient(135deg, rgba(245,158,11,0.14) 0%, rgba(249,115,22,0.10) 100%);
   color: var(--arc-200);
+  transform: translateX(2px);
+  box-shadow: 0 4px 16px rgba(245,158,11,0.18);
 }
+
+.pp-topic-icon {
+  color: var(--arc-400);
+  font-weight: 800;
+  font-size: 0.875rem;
+  flex-shrink: 0;
+  transition: transform 0.18s;
+}
+
+.pp-topic-btn:hover .pp-topic-icon { transform: translateX(2px); }
+
+.pp-topic-text { flex: 1; min-width: 0; }
 
 /* ── History strip ── */
 .pp-history {
