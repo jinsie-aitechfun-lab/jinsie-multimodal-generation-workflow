@@ -51,6 +51,41 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* ─── Theme overrides (set on :root when data-theme on .s-root propagates via JS) ── */
+:root[data-theme="blue"] {
+  --arc-400:        #0ea5e9;
+  --arc-300:        #38bdf8;
+  --arc-200:        #bae6fd;
+  --prism-400:      #818cf8;
+  --prism-500:      #6366f1;
+  --border-subtle:  rgba(14,165,233,0.07);
+  --border-glass:   rgba(14,165,233,0.12);
+  --border-arc:     rgba(14,165,233,0.35);
+  --glass-border:   rgba(14,165,233,0.10);
+  --glass-bg:       rgba(2,10,30,0.65);
+  --glass-bg-light: rgba(4,14,38,0.70);
+  --glow-arc:       0 0 20px rgba(14,165,233,0.50), 0 0 48px rgba(14,165,233,0.18);
+  --glow-prism:     0 0 20px rgba(99,102,241,0.45), 0 0 48px rgba(99,102,241,0.15);
+  --shadow-glass:   0 8px 32px rgba(0,0,0,0.55), inset 0 1px 0 rgba(14,165,233,0.06);
+}
+
+:root[data-theme="purple"] {
+  --arc-400:        #a855f7;
+  --arc-300:        #c084fc;
+  --arc-200:        #e9d5ff;
+  --prism-400:      #f472b6;
+  --prism-500:      #ec4899;
+  --border-subtle:  rgba(168,85,247,0.07);
+  --border-glass:   rgba(168,85,247,0.12);
+  --border-arc:     rgba(168,85,247,0.35);
+  --glass-border:   rgba(168,85,247,0.10);
+  --glass-bg:       rgba(10,4,22,0.65);
+  --glass-bg-light: rgba(14,6,30,0.70);
+  --glow-arc:       0 0 20px rgba(168,85,247,0.50), 0 0 48px rgba(168,85,247,0.18);
+  --glow-prism:     0 0 20px rgba(244,63,94,0.45),  0 0 48px rgba(244,63,94,0.15);
+  --shadow-glass:   0 8px 32px rgba(0,0,0,0.55), inset 0 1px 0 rgba(168,85,247,0.06);
+}
+
 /* ─── Base reset ──────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 

@@ -1,49 +1,48 @@
 <template>
-  <div class="s-root">
-    <!-- Aurora orbs -->
+  <div class="s-root" :data-theme="currentTheme">
+    <!-- ── Aurora orbs ── -->
     <div class="aurora" aria-hidden="true">
-      <div class="orb orb-cyan" />
-      <div class="orb orb-violet" />
-      <div class="orb orb-rose" />
+      <div class="orb orb-a" />
+      <div class="orb orb-b" />
+      <div class="orb orb-c" />
     </div>
-    <!-- Dot grid -->
+    <!-- ── Dot grid ── -->
     <div class="dot-grid" aria-hidden="true" />
-    <!-- Water drop ripples — glowing rings + center point -->
+
+    <!-- ── Water drop ripples ── -->
     <div class="water-layer" aria-hidden="true">
       <div class="drop" style="top:35%; left:20%;">
         <div class="dc"/>
-        <div class="ring" style="--s:420px;--c:rgba(245,158,11,0.60);--dur:8s; animation-delay:0s;"/>
-        <div class="ring" style="--s:360px;--c:rgba(245,158,11,0.42);--dur:8s; animation-delay:-2.7s;"/>
-        <div class="ring" style="--s:290px;--c:rgba(249,115,22,0.28);--dur:8s; animation-delay:-5.4s;"/>
+        <div class="ring" :style="`--s:420px;--c:${tc(0.60)};--dur:8s;animation-delay:0s;`"/>
+        <div class="ring" :style="`--s:360px;--c:${tc(0.42)};--dur:8s;animation-delay:-2.7s;`"/>
+        <div class="ring" :style="`--s:290px;--c:${tc(0.28,'b')};--dur:8s;animation-delay:-5.4s;`"/>
       </div>
       <div class="drop" style="top:58%; left:76%;">
         <div class="dc"/>
-        <div class="ring" style="--s:480px;--c:rgba(249,115,22,0.55);--dur:9s; animation-delay:-1.8s;"/>
-        <div class="ring" style="--s:410px;--c:rgba(249,115,22,0.38);--dur:9s; animation-delay:-4.8s;"/>
-        <div class="ring" style="--s:330px;--c:rgba(245,158,11,0.24);--dur:9s; animation-delay:-7.5s;"/>
+        <div class="ring" :style="`--s:480px;--c:${tc(0.55,'b')};--dur:9s;animation-delay:-1.8s;`"/>
+        <div class="ring" :style="`--s:410px;--c:${tc(0.38,'b')};--dur:9s;animation-delay:-4.8s;`"/>
+        <div class="ring" :style="`--s:330px;--c:${tc(0.24)};--dur:9s;animation-delay:-7.5s;`"/>
       </div>
       <div class="drop" style="top:20%; left:66%;">
         <div class="dc"/>
-        <div class="ring" style="--s:350px;--c:rgba(251,191,36,0.55);--dur:7.5s;animation-delay:-0.9s;"/>
-        <div class="ring" style="--s:290px;--c:rgba(251,191,36,0.38);--dur:7.5s;animation-delay:-3.4s;"/>
-        <div class="ring" style="--s:220px;--c:rgba(245,158,11,0.24);--dur:7.5s;animation-delay:-6.0s;"/>
+        <div class="ring" :style="`--s:350px;--c:${tc(0.55,'c')};--dur:7.5s;animation-delay:-0.9s;`"/>
+        <div class="ring" :style="`--s:290px;--c:${tc(0.38,'c')};--dur:7.5s;animation-delay:-3.4s;`"/>
+        <div class="ring" :style="`--s:220px;--c:${tc(0.24)};--dur:7.5s;animation-delay:-6.0s;`"/>
       </div>
       <div class="drop" style="top:76%; left:36%;">
         <div class="dc"/>
-        <div class="ring" style="--s:390px;--c:rgba(245,158,11,0.52);--dur:8.5s;animation-delay:-4.0s;"/>
-        <div class="ring" style="--s:330px;--c:rgba(245,158,11,0.36);--dur:8.5s;animation-delay:-7.0s;"/>
-        <div class="ring" style="--s:260px;--c:rgba(249,115,22,0.22);--dur:8.5s;animation-delay:-1.5s;"/>
+        <div class="ring" :style="`--s:390px;--c:${tc(0.52)};--dur:8.5s;animation-delay:-4.0s;`"/>
+        <div class="ring" :style="`--s:330px;--c:${tc(0.36)};--dur:8.5s;animation-delay:-7.0s;`"/>
+        <div class="ring" :style="`--s:260px;--c:${tc(0.22,'b')};--dur:8.5s;animation-delay:-1.5s;`"/>
       </div>
     </div>
 
-    <!-- Particle layer — three tiers of glowing orbs -->
+    <!-- ── Particle layer ── -->
     <div class="pt-layer" aria-hidden="true">
-      <!-- Large glow orbs -->
       <div class="pt lg" style="left:8%;  top:68%;--dur:22s;--d:-4s; --dx:12px;"/>
       <div class="pt lg" style="left:87%; top:54%;--dur:28s;--d:-14s;--dx:-10px;"/>
       <div class="pt lg" style="left:44%; top:80%;--dur:20s;--d:-8s; --dx:8px;"/>
       <div class="pt lg" style="left:71%; top:24%;--dur:25s;--d:-18s;--dx:-6px;"/>
-      <!-- Medium orbs -->
       <div class="pt md" style="left:18%; top:42%;--dur:17s;--d:-2s; --dx:6px;"/>
       <div class="pt md" style="left:61%; top:64%;--dur:21s;--d:-11s;--dx:-8px;"/>
       <div class="pt md" style="left:34%; top:57%;--dur:19s;--d:-6s; --dx:10px;"/>
@@ -52,7 +51,6 @@
       <div class="pt md" style="left:54%; top:31%;--dur:26s;--d:-20s;--dx:-12px;"/>
       <div class="pt md" style="left:92%; top:38%;--dur:18s;--d:-7s; --dx:7px;"/>
       <div class="pt md" style="left:5%;  top:22%;--dur:24s;--d:-12s;--dx:-4px;"/>
-      <!-- Tiny sparkles -->
       <div class="pt sm" style="left:13%; top:53%;--dur:12s;--d:-1s;"/>
       <div class="pt sm" style="left:39%; top:45%;--dur:14s;--d:-5s;"/>
       <div class="pt sm" style="left:67%; top:37%;--dur:11s;--d:-9s;"/>
@@ -67,68 +65,77 @@
       <div class="pt sm" style="left:51%; top:51%;--dur:14s;--d:-4s;"/>
     </div>
 
-    <!-- Top bar -->
-    <header class="topbar">
-      <div class="topbar-inner">
-        <!-- Brand -->
-        <div class="brand">
-          <div class="brand-hex" aria-hidden="true">
-            <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-              <path d="M11 1.5L20.5 6.5V15.5L11 20.5L1.5 15.5V6.5Z"
-                stroke="url(#hexG)" stroke-width="1.5" stroke-linejoin="round"/>
-              <circle cx="11" cy="11" r="2.5" fill="url(#hexG)" opacity="0.9"/>
-              <defs>
-                <linearGradient id="hexG" x1="1.5" y1="1.5" x2="20.5" y2="20.5" gradientUnits="userSpaceOnUse">
-                  <stop offset="0%" stop-color="#f59e0b"/>
-                  <stop offset="100%" stop-color="#fb923c"/>
-                </linearGradient>
-              </defs>
-            </svg>
-          </div>
-          <span class="brand-name">Jinsie<em class="brand-em"> AI</em> Studio</span>
-          <span class="brand-tag">BETA</span>
+    <!-- ═══════════════════════════════════
+         LEFT SIDEBAR
+    ═══════════════════════════════════ -->
+    <aside class="sidebar">
+      <!-- Brand -->
+      <div class="sb-brand" aria-label="Jinsie AI Studio">
+        <div class="sb-brand-hex">
+          <svg width="28" height="28" viewBox="0 0 22 22" fill="none">
+            <path d="M11 1.5L20.5 6.5V15.5L11 20.5L1.5 15.5V6.5Z"
+              stroke="url(#sbHexG)" stroke-width="1.5" stroke-linejoin="round"/>
+            <circle cx="11" cy="11" r="2.5" fill="url(#sbHexG)" opacity="0.9"/>
+            <defs>
+              <linearGradient id="sbHexG" x1="1.5" y1="1.5" x2="20.5" y2="20.5" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" :stop-color="themeAccentA"/>
+                <stop offset="100%" :stop-color="themeAccentB"/>
+              </linearGradient>
+            </defs>
+          </svg>
         </div>
-
-        <!-- Navigation -->
-        <nav class="nav" role="tablist">
-          <button
-            v-for="tab in tabs"
-            :key="tab.id"
-            role="tab"
-            :class="['nav-item', { 'is-active': modelValue === tab.id }]"
-            :aria-selected="modelValue === tab.id"
-            @click="$emit('update:modelValue', tab.id)"
-          >
-            <span class="nav-icon" aria-hidden="true">{{ tab.icon }}</span>
-            <span class="nav-label">{{ tab.label }}</span>
-            <span v-if="tab.badge" class="nav-badge">{{ tab.badge }}</span>
-          </button>
-        </nav>
-
-        <!-- Right actions -->
-        <div class="topbar-right">
-          <slot name="header-actions" />
-          <button v-if="devMode" class="dev-btn" title="Dev mode" @click="$emit('toggle-dev')">
-            ⚙
-          </button>
-        </div>
+        <span class="sb-brand-dot"/>
       </div>
 
-      <!-- Progress sub-row -->
-      <div v-if="$slots['progress']" class="topbar-progress">
-        <slot name="progress" />
-      </div>
-    </header>
+      <!-- Navigation -->
+      <nav class="sb-nav" role="tablist">
+        <button
+          v-for="tab in tabs"
+          :key="tab.id"
+          role="tab"
+          :class="['sb-item', { 'is-active': modelValue === tab.id }]"
+          :aria-selected="modelValue === tab.id"
+          @click="$emit('update:modelValue', tab.id)"
+        >
+          <span class="sb-icon" aria-hidden="true">{{ tab.icon }}</span>
+          <span class="sb-label">{{ tab.label }}</span>
+          <span v-if="tab.badge" class="sb-badge">{{ tab.badge }}</span>
+        </button>
+      </nav>
 
-    <!-- Page content -->
-    <main class="s-main" ref="mainRef">
-      <slot />
-    </main>
+      <!-- Footer: theme switcher + slot + dev -->
+      <div class="sb-footer">
+        <slot name="header-actions"/>
+        <!-- Theme cycle button -->
+        <button class="sb-theme-btn" @click="cycleTheme" :title="`主题：${THEMES[currentTheme].label} → 点击切换`">
+          <span class="sb-theme-ring">
+            <span class="sb-theme-dot"/>
+          </span>
+          <span class="sb-theme-label">{{ THEMES[currentTheme].short }}</span>
+        </button>
+        <button v-if="devMode" class="sb-dev-btn" title="Dev mode" @click="$emit('toggle-dev')">⚙</button>
+      </div>
+    </aside>
+
+    <!-- ═══════════════════════════════════
+         CONTENT AREA
+    ═══════════════════════════════════ -->
+    <div class="s-content">
+      <!-- Progress bar slot -->
+      <div v-if="$slots['progress']" class="s-progress">
+        <slot name="progress"/>
+      </div>
+
+      <!-- Main content -->
+      <main class="s-main" ref="mainRef">
+        <slot/>
+      </main>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { animate } from 'animejs'
 
 const props = defineProps<{
@@ -142,20 +149,52 @@ defineEmits<{
   (e: 'toggle-dev'): void
 }>()
 
+// ── Theme system ────────────────────────────────
+type ThemeKey = 'gold' | 'blue' | 'purple'
+
+const THEMES: Record<ThemeKey, { label: string; short: string; a: string; b: string; c: string }> = {
+  gold:   { label: '沉金暗调', short: '金',  a: '245,158,11', b: '249,115,22', c: '251,191,36' },
+  blue:   { label: '极夜蓝调', short: '蓝',  a: '14,165,233', b: '99,102,241', c: '56,189,248' },
+  purple: { label: '暗紫星芒', short: '紫',  a: '168,85,247', b: '244,63,94',  c: '192,132,252' },
+}
+const THEME_ORDER: ThemeKey[] = ['gold', 'blue', 'purple']
+
+const currentTheme = ref<ThemeKey>(
+  (localStorage.getItem('studio_theme') as ThemeKey | null) ?? 'gold'
+)
+
+function applyTheme(t: ThemeKey) {
+  document.documentElement.setAttribute('data-theme', t)
+}
+
+function cycleTheme() {
+  const idx = THEME_ORDER.indexOf(currentTheme.value)
+  currentTheme.value = THEME_ORDER[(idx + 1) % THEME_ORDER.length]
+  localStorage.setItem('studio_theme', currentTheme.value)
+  applyTheme(currentTheme.value)
+}
+
+// Theme-aware accent color helper
+function tc(opacity: number, variant: 'a' | 'b' | 'c' = 'a'): string {
+  return `rgba(${THEMES[currentTheme.value][variant]},${opacity})`
+}
+
+const themeAccentA = computed(() => {
+  const { a } = THEMES[currentTheme.value]
+  return `rgb(${a})`
+})
+const themeAccentB = computed(() => {
+  const { b } = THEMES[currentTheme.value]
+  return `rgb(${b})`
+})
+
+// ── Content animation ────────────────────────────
 const mainRef = ref<HTMLElement | null>(null)
 
 function animateContentIn() {
   const container = mainRef.value
   if (!container) return
-
-  // Pure fade — no translate, no scale
-  animate(container, {
-    opacity: [0, 1],
-    duration: 340,
-    easing: 'easeOutCubic',
-  })
-
-  // Stagger-fade each glass-card inside, no scale/translate
+  animate(container, { opacity: [0, 1], duration: 340, easing: 'easeOutCubic' })
   const cards = container.querySelectorAll<HTMLElement>('.glass-card, .glass-card-vivid')
   if (cards.length) {
     animate(Array.from(cards), {
@@ -167,46 +206,47 @@ function animateContentIn() {
   }
 }
 
-// Animate nav items on first mount
 onMounted(() => {
-  animate('.nav-item', {
+  // Apply saved theme on load
+  applyTheme(currentTheme.value)
+
+  animate('.sb-item', {
     opacity: [0, 1],
-    translateY: [-6, 0],
-    duration: 450,
-    delay: (_el: HTMLElement, i: number) => 80 + i * 70,
+    translateX: [-10, 0],
+    duration: 420,
+    delay: (_el: HTMLElement, i: number) => 80 + i * 60,
     easing: 'easeOutCubic',
   })
-  animate('.brand', {
+  animate('.sb-brand', {
     opacity: [0, 1],
-    translateX: [-14, 0],
-    duration: 480,
+    translateY: [-8, 0],
+    duration: 400,
     easing: 'easeOutCubic',
   })
-  // Initial content entrance
   setTimeout(animateContentIn, 150)
 })
 
-// Animate on tab change
 watch(() => props.modelValue, () => {
-  // Short delay so Vue can swap the content
   setTimeout(animateContentIn, 16)
 })
 </script>
 
 <style scoped>
-/* ── Root shell — transparent so the body background-image gradient shows through ── */
+/* ══════════════════════════════════════════════════
+   Root — row layout so sidebar + content sit side-by-side
+══════════════════════════════════════════════════ */
 .s-root {
   position: relative;
   min-height: 100vh;
   background: transparent;
   overflow-x: hidden;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
 }
 
-/* ═══════════════════════════════════════════════
-   Aurora background
-═══════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════
+   Aurora
+══════════════════════════════════════════════════ */
 .aurora {
   position: fixed;
   inset: 0;
@@ -221,417 +261,460 @@ watch(() => props.modelValue, () => {
   will-change: transform;
 }
 
-/* Top-left gold orb */
-.orb-cyan {
-  width: 900px;
-  height: 700px;
-  top: -260px;
-  left: -180px;
+.orb-a {
+  width: 900px; height: 700px;
+  top: -260px; left: -180px;
   background: radial-gradient(ellipse at center,
-    rgba(245,158,11,0.36) 0%,
-    rgba(180,80,10,0.14) 42%,
+    var(--orb-a1, rgba(245,158,11,0.36)) 0%,
+    var(--orb-a2, rgba(180,80,10,0.14)) 42%,
     transparent 65%
   );
   filter: blur(40px);
-  animation: driftCyan 16s ease-in-out infinite;
+  animation: driftA 16s ease-in-out infinite;
 }
 
-/* Bottom-right ember orb */
-.orb-violet {
-  width: 800px;
-  height: 650px;
-  bottom: -200px;
-  right: -160px;
+.orb-b {
+  width: 800px; height: 650px;
+  bottom: -200px; right: -160px;
   background: radial-gradient(ellipse at center,
-    rgba(249,115,22,0.30) 0%,
-    rgba(180,60,10,0.12) 42%,
+    var(--orb-b1, rgba(249,115,22,0.30)) 0%,
+    var(--orb-b2, rgba(180,60,10,0.12)) 42%,
     transparent 65%
   );
   filter: blur(44px);
-  animation: driftViolet 20s ease-in-out infinite;
+  animation: driftB 20s ease-in-out infinite;
 }
 
-/* Roaming amber — creates warm glow in the middle */
-.orb-rose {
-  width: 520px;
-  height: 400px;
-  top: 30%;
-  left: 40%;
+.orb-c {
+  width: 520px; height: 400px;
+  top: 30%; left: 40%;
   background: radial-gradient(ellipse at center,
-    rgba(251,191,36,0.14) 0%,
+    var(--orb-c1, rgba(251,191,36,0.14)) 0%,
     transparent 60%
   );
   filter: blur(70px);
-  animation: driftRose 27s ease-in-out infinite;
+  animation: driftC 27s ease-in-out infinite;
 }
 
-@keyframes driftCyan {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  30%       { transform: translate(60px, -35px) scale(1.04); }
-  65%       { transform: translate(-28px, 50px) scale(0.97); }
+@keyframes driftA {
+  0%,100% { transform: translate(0,0) scale(1); }
+  30%      { transform: translate(60px,-35px) scale(1.04); }
+  65%      { transform: translate(-28px,50px) scale(0.97); }
 }
-@keyframes driftViolet {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  38%       { transform: translate(-50px, -60px) scale(1.07); }
-  72%       { transform: translate(38px, 30px) scale(0.94); }
+@keyframes driftB {
+  0%,100% { transform: translate(0,0) scale(1); }
+  38%      { transform: translate(-50px,-60px) scale(1.07); }
+  72%      { transform: translate(38px,30px) scale(0.94); }
 }
-@keyframes driftRose {
-  0%, 100% { transform: translate(0, 0); }
-  50%       { transform: translate(-70px, -45px); }
+@keyframes driftC {
+  0%,100% { transform: translate(0,0); }
+  50%      { transform: translate(-70px,-45px); }
 }
 
-/* ── Dot grid overlay ── */
+/* ── Dot grid ── */
 .dot-grid {
-  position: fixed;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  background-image: radial-gradient(circle, rgba(245,158,11,0.22) 1px, transparent 1px);
+  position: fixed; inset: 0;
+  z-index: 1; pointer-events: none;
+  background-image: radial-gradient(circle, var(--dot-color, rgba(245,158,11,0.20)) 1px, transparent 1px);
   background-size: 38px 38px;
   -webkit-mask-image: radial-gradient(ellipse 75% 70% at 50% 35%, black 15%, transparent 85%);
-  mask-image: radial-gradient(ellipse 75% 70% at 50% 35%, black 15%, transparent 85%);
+  mask-image:         radial-gradient(ellipse 75% 70% at 50% 35%, black 15%, transparent 85%);
 }
 
-/* ═══════════════════════════════════════════════
-   Top bar — frosted glass
-═══════════════════════════════════════════════ */
-.topbar {
-  position: sticky;
-  top: 0;
+/* ══════════════════════════════════════════════════
+   SIDEBAR
+══════════════════════════════════════════════════ */
+.sidebar {
+  position: fixed;
+  left: 0; top: 0; bottom: 0;
+  width: 88px;
   z-index: 50;
-  background: rgba(9, 7, 3, 0.82);
-  backdrop-filter: blur(28px) saturate(160%);
-  -webkit-backdrop-filter: blur(28px) saturate(160%);
-  flex-shrink: 0;
-}
-
-/* Gold glow line at bottom of header */
-.topbar::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(245, 158, 11, 0.60) 28%,
-    rgba(251, 146, 60, 0.55) 72%,
-    transparent 100%
-  );
-  z-index: 1;
-}
-
-@keyframes metalSheen {
-  0%   { background-position: -100% 0; }
-  50%  { background-position:  200% 0; }
-  100% { background-position: -100% 0; }
-}
-
-.topbar-inner {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 1rem;
-  height: 58px;
-  padding: 0 1.75rem;
-  max-width: 1440px;
-  margin: 0 auto;
-  width: 100%;
-  position: relative;
-  z-index: 2;
+  padding: 20px 0 16px;
+  gap: 0;
+
+  background: rgba(7,5,2,0.88);
+  backdrop-filter: blur(28px) saturate(150%);
+  -webkit-backdrop-filter: blur(28px) saturate(150%);
+  border-right: 1px solid var(--sidebar-border, rgba(245,158,11,0.10));
+  box-shadow: 4px 0 32px rgba(0,0,0,0.55), inset -1px 0 0 var(--sidebar-border, rgba(245,158,11,0.06));
 }
 
 /* ── Brand ── */
-.brand {
+.sb-brand {
   display: flex;
-  align-items: center;
-  gap: 9px;
-  flex-shrink: 0;
-  opacity: 0; /* animated in on mount */
-}
-
-.brand-hex {
-  line-height: 0;
-  filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.60));
-  flex-shrink: 0;
-}
-
-.brand-name {
-  font-size: 15px;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.96);
-  letter-spacing: -0.025em;
-  white-space: nowrap;
-}
-
-.brand-em {
-  font-style: normal;
-  background: linear-gradient(110deg, #f59e0b 0%, #fb923c 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.brand-tag {
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: rgba(245, 158, 11, 0.75);
-  border: 1px solid rgba(245, 158, 11, 0.30);
-  border-radius: 4px;
-  padding: 1px 5px;
-  flex-shrink: 0;
-}
-
-/* ── Navigation ── */
-.nav {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  flex: 1;
-  justify-content: center;
-}
-
-.nav-item {
-  position: relative;
-  display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 6px;
-  padding: 7px 20px;
-  border-radius: 9px;
-  font-size: 13.5px;
-  font-weight: 500;
-  font-family: inherit;
-  color: rgba(255, 255, 255, 0.42);
-  background: none;
+  margin-bottom: 28px;
+  opacity: 0;
+}
+
+.sb-brand-hex {
+  line-height: 0;
+  filter: drop-shadow(0 0 10px var(--brand-glow, rgba(245,158,11,0.65)));
+}
+
+.sb-brand-dot {
+  display: block;
+  width: 18px;
+  height: 2px;
+  border-radius: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent-a, rgba(245,158,11,0.6)), transparent);
+}
+
+/* ── Nav ── */
+.sb-nav {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  width: 100%;
+  padding: 0 8px;
+}
+
+.sb-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 72px;
+  padding: 10px 6px;
+  border-radius: 14px;
   border: 1px solid transparent;
+  background: transparent;
   cursor: pointer;
-  transition: color 0.18s, background 0.18s, border-color 0.18s, box-shadow 0.22s;
-  white-space: nowrap;
-  user-select: none;
-  opacity: 0; /* animated in on mount */
+  font-family: inherit;
+  transition: all 0.2s cubic-bezier(0.16,1,0.3,1);
+  opacity: 0;
 }
 
-.nav-item:hover:not(.is-active) {
-  color: rgba(255, 255, 255, 0.78);
-  background: rgba(255, 255, 255, 0.055);
+.sb-item:hover:not(.is-active) {
+  background: var(--item-hover-bg, rgba(245,158,11,0.07));
+  border-color: var(--item-hover-border, rgba(245,158,11,0.18));
 }
 
-.nav-item.is-active {
-  color: #ffffff;
-  font-weight: 600;
-  background: linear-gradient(140deg,
-    rgba(245, 158, 11, 0.18) 0%,
-    rgba(249, 115, 22, 0.13) 100%
-  );
-  border-color: rgba(245, 158, 11, 0.38);
+.sb-item.is-active {
+  background: var(--item-active-bg, rgba(245,158,11,0.14));
+  border-color: var(--item-active-border, rgba(245,158,11,0.38));
   box-shadow:
-    0 0 22px rgba(245, 158, 11, 0.22),
-    inset 0 1px 0 rgba(255, 255, 255, 0.10);
+    0 0 20px var(--item-glow, rgba(245,158,11,0.18)),
+    inset 0 1px 0 rgba(255,255,255,0.08);
 }
 
-/* Bottom indicator glow for active tab */
-.nav-item.is-active::after {
+/* Active indicator bar */
+.sb-item.is-active::before {
   content: '';
   position: absolute;
-  bottom: -1px;
-  left: 25%;
-  right: 25%;
-  height: 2px;
-  background: linear-gradient(90deg, #f59e0b, #fb923c);
-  border-radius: 1px;
-  opacity: 0.85;
+  left: -9px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 60%;
+  border-radius: 0 2px 2px 0;
+  background: var(--accent-a, rgba(245,158,11,0.8));
+  box-shadow: 0 0 8px var(--accent-a, rgba(245,158,11,0.6));
 }
 
-.nav-icon {
-  font-size: 11px;
+.sb-icon {
+  font-size: 17px;
   line-height: 1;
-  opacity: 0.75;
+  color: rgba(255,255,255,0.42);
+  transition: color 0.18s;
 }
+.sb-item:hover:not(.is-active) .sb-icon { color: rgba(255,255,255,0.70); }
+.sb-item.is-active .sb-icon             { color: var(--arc-300, #fbbf24); }
 
-.nav-badge {
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  color: rgba(245, 158, 11, 0.85);
-  border: 1px solid rgba(245, 158, 11, 0.28);
+.sb-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: rgba(255,255,255,0.38);
+  white-space: nowrap;
+  transition: color 0.18s;
+}
+.sb-item:hover:not(.is-active) .sb-label { color: rgba(255,255,255,0.65); }
+.sb-item.is-active .sb-label             { color: var(--arc-300, #fbbf24); }
+
+.sb-badge {
+  position: absolute;
+  top: 6px; right: 6px;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: var(--arc-300, #fbbf24);
+  border: 1px solid var(--item-active-border, rgba(245,158,11,0.30));
   border-radius: 3px;
-  padding: 0 4px;
-  margin-left: 1px;
+  padding: 0 3px;
 }
 
-/* ── Right actions ── */
-.topbar-right {
+/* ── Footer ── */
+.sb-footer {
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  width: 100%;
+  border-top: 1px solid var(--sidebar-border, rgba(245,158,11,0.08));
+}
+
+/* Theme cycle button */
+.sb-theme-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 56px;
+  padding: 8px 4px;
+  border-radius: 12px;
+  border: 1px solid var(--sidebar-border, rgba(245,158,11,0.14));
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.2s, border-color 0.2s;
+}
+.sb-theme-btn:hover {
+  background: var(--item-hover-bg, rgba(245,158,11,0.08));
+  border-color: var(--item-active-border, rgba(245,158,11,0.30));
+}
+
+.sb-theme-ring {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent-a, rgba(245,158,11,0.60));
+  box-shadow: 0 0 8px var(--accent-a, rgba(245,158,11,0.30));
+}
+
+.sb-theme-dot {
+  display: block;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--accent-a-solid, #f59e0b);
+  box-shadow: 0 0 6px var(--accent-a, rgba(245,158,11,0.70));
+}
+
+.sb-theme-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: rgba(255,255,255,0.40);
+}
+
+.sb-dev-btn {
+  width: 36px; height: 36px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-family: inherit;
+  color: rgba(255,255,255,0.35);
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.18s, background 0.18s;
+}
+.sb-dev-btn:hover { color: rgba(255,255,255,0.65); background: rgba(255,255,255,0.08); }
+
+/* ══════════════════════════════════════════════════
+   CONTENT AREA
+══════════════════════════════════════════════════ */
+.s-content {
+  margin-left: 88px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  position: relative;
+  z-index: 1;
+}
+
+/* Progress bar strip */
+.s-progress {
+  padding: 0.5rem 1.75rem 0.25rem;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
   flex-shrink: 0;
 }
 
-.dev-btn {
-  padding: 5px 11px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-family: inherit;
-  color: rgba(255, 255, 255, 0.42);
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  cursor: pointer;
-  transition: color 0.18s, background 0.18s;
-}
-
-.dev-btn:hover {
-  color: rgba(255, 255, 255, 0.72);
-  background: rgba(255, 255, 255, 0.08);
-}
-
-/* ── Progress slot ── */
-.topbar-progress {
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
-  padding: 0 1.75rem 0.5rem;
-  max-width: 1440px;
-  margin: 0 auto;
-  width: 100%;
-}
-
-/* ── Main content ── */
+/* Main content */
 .s-main {
-  position: relative;
-  z-index: 1;
   flex: 1;
   padding: 1.5rem 1.75rem;
   max-width: 1440px;
-  margin: 0 auto;
   width: 100%;
   box-sizing: border-box;
 }
 
-/* ═══════════════════════════════════════════════
-   Water drop ripples — glowing rings
-═══════════════════════════════════════════════ */
-.water-layer {
-  position: fixed; inset: 0;
-  z-index: 0; pointer-events: none; overflow: hidden;
-}
-
+/* ══════════════════════════════════════════════════
+   Water drop ripples
+══════════════════════════════════════════════════ */
+.water-layer { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
 .drop { position: absolute; }
 
-/* Glowing center point — simulates the drop itself */
 .dc {
   position: absolute;
   width: 7px; height: 7px;
   border-radius: 50%;
   top: -3.5px; left: -3.5px;
-  background: rgba(251,191,36,0.95);
+  background: var(--dc-color, rgba(251,191,36,0.95));
   box-shadow:
-    0 0 6px  rgba(251,191,36,1),
-    0 0 18px rgba(245,158,11,0.70),
-    0 0 36px rgba(245,158,11,0.35),
-    0 0 60px rgba(245,158,11,0.15);
+    0 0 6px  var(--dc-color, rgba(251,191,36,1)),
+    0 0 18px var(--accent-a, rgba(245,158,11,0.70)),
+    0 0 36px var(--accent-a, rgba(245,158,11,0.35)),
+    0 0 60px var(--accent-a, rgba(245,158,11,0.15));
   animation: dcPulse 2.8s ease-in-out infinite;
 }
-
 @keyframes dcPulse {
-  0%,100% { opacity: 0.95; transform: scale(1);    }
+  0%,100% { opacity: 0.95; transform: scale(1); }
   50%      { opacity: 0.40; transform: scale(0.65); }
 }
 
-/* Expanding ring — starts tiny, grows to full size, fades out */
 .ring {
   position: absolute;
-  width:  var(--s, 350px);
-  height: var(--s, 350px);
+  width: var(--s,350px); height: var(--s,350px);
   border-radius: 50%;
   border: 1.5px solid var(--c, rgba(245,158,11,0.50));
-  box-shadow: 0 0 14px var(--c), 0 0 30px rgba(245,158,11,0.08);
-  top:  calc(var(--s, 350px) / -2);
-  left: calc(var(--s, 350px) / -2);
+  box-shadow: 0 0 14px var(--c), 0 0 30px rgba(0,0,0,0.04);
+  top: calc(var(--s,350px) / -2);
+  left: calc(var(--s,350px) / -2);
   transform: scale(0.04);
   opacity: 0;
-  animation: waterRing var(--dur, 8s) cubic-bezier(0.08, 0.65, 0.28, 1) infinite;
+  animation: waterRing var(--dur,8s) cubic-bezier(0.08,0.65,0.28,1) infinite;
 }
-
 @keyframes waterRing {
-  0%   { transform: scale(0.04); opacity: 0;    }
-  5%   {                          opacity: 0.95; }
-  40%  {                          opacity: 0.40; }
-  100% { transform: scale(1);     opacity: 0;    }
+  0%   { transform: scale(0.04); opacity: 0; }
+  5%   { opacity: 0.95; }
+  40%  { opacity: 0.40; }
+  100% { transform: scale(1); opacity: 0; }
 }
 
-/* ═══════════════════════════════════════════════
-   Particle system — three tiers of glowing orbs
-═══════════════════════════════════════════════ */
-.pt-layer {
-  position: fixed; inset: 0;
-  z-index: 0; pointer-events: none; overflow: hidden;
-}
-
+/* ══════════════════════════════════════════════════
+   Particles
+══════════════════════════════════════════════════ */
+.pt-layer { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
 .pt {
   position: absolute;
   border-radius: 50%;
-  animation-duration: var(--dur, 20s);
-  animation-delay:    var(--d,  0s);
+  animation-duration: var(--dur,20s);
+  animation-delay: var(--d,0s);
   animation-timing-function: ease-in-out;
   animation-iteration-count: infinite;
 }
-
-/* ── Large orbs: strong glow, slow drift ── */
 .pt.lg {
   width: 6px; height: 6px;
-  background: radial-gradient(circle, #fbbf24 0%, rgba(245,158,11,0.35) 65%, transparent 100%);
+  background: radial-gradient(circle, var(--pt-a,#fbbf24) 0%, rgba(245,158,11,0.35) 65%, transparent 100%);
   box-shadow:
-    0 0 8px  rgba(251,191,36,0.95),
-    0 0 22px rgba(245,158,11,0.65),
-    0 0 45px rgba(245,158,11,0.30),
-    0 0 80px rgba(245,158,11,0.10);
+    0 0 8px  var(--pt-glow-a, rgba(251,191,36,0.95)),
+    0 0 22px var(--accent-a,  rgba(245,158,11,0.65)),
+    0 0 45px var(--accent-a,  rgba(245,158,11,0.30)),
+    0 0 80px var(--accent-a,  rgba(245,158,11,0.10));
   animation-name: ptRise;
 }
-
-/* ── Medium orbs: moderate glow ── */
 .pt.md {
   width: 3.5px; height: 3.5px;
-  background: radial-gradient(circle, #fde68a 0%, rgba(245,158,11,0.45) 60%, transparent 100%);
+  background: radial-gradient(circle, var(--pt-b,#fde68a) 0%, rgba(245,158,11,0.45) 60%, transparent 100%);
   box-shadow:
-    0 0 5px  rgba(253,230,138,0.95),
-    0 0 14px rgba(245,158,11,0.55),
-    0 0 28px rgba(245,158,11,0.22);
+    0 0 5px  var(--pt-glow-b, rgba(253,230,138,0.95)),
+    0 0 14px var(--accent-a,  rgba(245,158,11,0.55)),
+    0 0 28px var(--accent-a,  rgba(245,158,11,0.22));
   animation-name: ptRise;
 }
-
-/* ── Tiny sparkles: twinkle in place ── */
 .pt.sm {
   width: 2px; height: 2px;
-  background: #fde68a;
+  background: var(--pt-c, #fde68a);
   box-shadow:
-    0 0 3px  rgba(253,230,138,1),
-    0 0 9px  rgba(251,191,36,0.80),
-    0 0 18px rgba(245,158,11,0.40);
+    0 0 3px  var(--pt-glow-c, rgba(253,230,138,1)),
+    0 0 9px  var(--accent-c,  rgba(251,191,36,0.80)),
+    0 0 18px var(--accent-a,  rgba(245,158,11,0.40));
   animation-name: ptTwinkle;
 }
-
 @keyframes ptRise {
-  0%   { transform: translateY(0)     translateX(0);              opacity: 0; }
-  8%   {                                                           opacity: 1; }
-  50%  { transform: translateY(-45px) translateX(var(--dx, 6px)); opacity: 0.85; }
-  92%  {                                                           opacity: 0.30; }
-  100% { transform: translateY(-90px) translateX(0);              opacity: 0; }
+  0%   { transform: translateY(0) translateX(0); opacity: 0; }
+  8%   { opacity: 1; }
+  50%  { transform: translateY(-45px) translateX(var(--dx,6px)); opacity: 0.85; }
+  92%  { opacity: 0.30; }
+  100% { transform: translateY(-90px) translateX(0); opacity: 0; }
+}
+@keyframes ptTwinkle {
+  0%,100% { opacity: 0; transform: scale(0.5); }
+  25%,75%  { opacity: 1; transform: scale(1.8); }
+  50%      { opacity: 0.55; transform: scale(1.2); }
 }
 
-@keyframes ptTwinkle {
-  0%,100% { opacity: 0;    transform: scale(0.5); }
-  25%, 75% { opacity: 1;   transform: scale(1.8);
-    box-shadow: 0 0 5px rgba(253,230,138,1), 0 0 14px rgba(251,191,36,0.85), 0 0 28px rgba(245,158,11,0.50); }
-  50%      { opacity: 0.55; transform: scale(1.2); }
+/* ══════════════════════════════════════════════════
+   THEME OVERRIDES via data-theme (cascade into vars)
+══════════════════════════════════════════════════ */
+
+/* Blue theme */
+.s-root[data-theme="blue"] {
+  --accent-a:         rgba(14,165,233,0.65);
+  --accent-c:         rgba(56,189,248,0.80);
+  --accent-a-solid:   #0ea5e9;
+  --brand-glow:       rgba(14,165,233,0.65);
+  --sidebar-border:   rgba(14,165,233,0.10);
+  --item-hover-bg:    rgba(14,165,233,0.07);
+  --item-hover-border:rgba(14,165,233,0.20);
+  --item-active-bg:   rgba(14,165,233,0.14);
+  --item-active-border:rgba(14,165,233,0.40);
+  --item-glow:        rgba(14,165,233,0.20);
+  --orb-a1: rgba(14,165,233,0.36);
+  --orb-a2: rgba(6,60,160,0.14);
+  --orb-b1: rgba(99,102,241,0.28);
+  --orb-b2: rgba(50,40,180,0.12);
+  --orb-c1: rgba(56,189,248,0.12);
+  --dot-color: rgba(14,165,233,0.18);
+  --dc-color: rgba(56,189,248,0.95);
+  --pt-a: #38bdf8;
+  --pt-b: #bae6fd;
+  --pt-c: #bae6fd;
+  --pt-glow-a: rgba(56,189,248,0.95);
+  --pt-glow-b: rgba(186,230,253,0.95);
+  --pt-glow-c: rgba(186,230,253,1);
+}
+
+/* Purple theme */
+.s-root[data-theme="purple"] {
+  --accent-a:         rgba(168,85,247,0.65);
+  --accent-c:         rgba(192,132,252,0.80);
+  --accent-a-solid:   #a855f7;
+  --brand-glow:       rgba(168,85,247,0.65);
+  --sidebar-border:   rgba(168,85,247,0.10);
+  --item-hover-bg:    rgba(168,85,247,0.07);
+  --item-hover-border:rgba(168,85,247,0.22);
+  --item-active-bg:   rgba(168,85,247,0.14);
+  --item-active-border:rgba(168,85,247,0.40);
+  --item-glow:        rgba(168,85,247,0.20);
+  --orb-a1: rgba(168,85,247,0.36);
+  --orb-a2: rgba(80,20,180,0.14);
+  --orb-b1: rgba(244,63,94,0.28);
+  --orb-b2: rgba(160,20,80,0.12);
+  --orb-c1: rgba(192,132,252,0.14);
+  --dot-color: rgba(168,85,247,0.18);
+  --dc-color: rgba(192,132,252,0.95);
+  --pt-a: #c084fc;
+  --pt-b: #e9d5ff;
+  --pt-c: #e9d5ff;
+  --pt-glow-a: rgba(192,132,252,0.95);
+  --pt-glow-b: rgba(233,213,255,0.95);
+  --pt-glow-c: rgba(233,213,255,1);
 }
 
 /* ── Responsive ── */
 @media (max-width: 768px) {
-  .topbar-inner { padding: 0 1rem; height: 52px; }
-  .s-main       { padding: 1rem; }
-  .brand-name   { font-size: 13px; }
-  .nav-item     { padding: 6px 12px; font-size: 12px; }
-  .nav-icon     { display: none; }
+  .sidebar    { width: 64px; }
+  .s-content  { margin-left: 64px; }
+  .sb-label   { display: none; }
+  .sb-item    { padding: 10px 4px; }
+  .s-main     { padding: 1rem; }
 }
 </style>
