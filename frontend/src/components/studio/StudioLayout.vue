@@ -8,46 +8,63 @@
     </div>
     <!-- Dot grid -->
     <div class="dot-grid" aria-hidden="true" />
-    <!-- Water ripple drop points -->
+    <!-- Water drop ripples — glowing rings + center point -->
     <div class="water-layer" aria-hidden="true">
-      <!-- Drop A: left-center area -->
-      <div class="drop" style="top:38%; left:18%;">
-        <div class="ring" style="--s:320px; --c:rgba(245,158,11,0.50); --dur:6s; animation-delay:0s;"/>
-        <div class="ring" style="--s:320px; --c:rgba(245,158,11,0.38); --dur:6s; animation-delay:-2.0s;"/>
-        <div class="ring" style="--s:320px; --c:rgba(245,158,11,0.26); --dur:6s; animation-delay:-4.0s;"/>
+      <div class="drop" style="top:35%; left:20%;">
+        <div class="dc"/>
+        <div class="ring" style="--s:420px;--c:rgba(245,158,11,0.60);--dur:8s; animation-delay:0s;"/>
+        <div class="ring" style="--s:360px;--c:rgba(245,158,11,0.42);--dur:8s; animation-delay:-2.7s;"/>
+        <div class="ring" style="--s:290px;--c:rgba(249,115,22,0.28);--dur:8s; animation-delay:-5.4s;"/>
       </div>
-      <!-- Drop B: right-center area -->
-      <div class="drop" style="top:55%; left:78%;">
-        <div class="ring" style="--s:380px; --c:rgba(249,115,22,0.45); --dur:7s; animation-delay:-1.5s;"/>
-        <div class="ring" style="--s:380px; --c:rgba(249,115,22,0.33); --dur:7s; animation-delay:-3.8s;"/>
-        <div class="ring" style="--s:380px; --c:rgba(249,115,22,0.22); --dur:7s; animation-delay:-6.0s;"/>
+      <div class="drop" style="top:58%; left:76%;">
+        <div class="dc"/>
+        <div class="ring" style="--s:480px;--c:rgba(249,115,22,0.55);--dur:9s; animation-delay:-1.8s;"/>
+        <div class="ring" style="--s:410px;--c:rgba(249,115,22,0.38);--dur:9s; animation-delay:-4.8s;"/>
+        <div class="ring" style="--s:330px;--c:rgba(245,158,11,0.24);--dur:9s; animation-delay:-7.5s;"/>
       </div>
-      <!-- Drop C: top-right -->
-      <div class="drop" style="top:22%; left:68%;">
-        <div class="ring" style="--s:260px; --c:rgba(251,191,36,0.42); --dur:5.5s; animation-delay:-0.8s;"/>
-        <div class="ring" style="--s:260px; --c:rgba(251,191,36,0.30); --dur:5.5s; animation-delay:-2.6s;"/>
-        <div class="ring" style="--s:260px; --c:rgba(251,191,36,0.18); --dur:5.5s; animation-delay:-4.4s;"/>
+      <div class="drop" style="top:20%; left:66%;">
+        <div class="dc"/>
+        <div class="ring" style="--s:350px;--c:rgba(251,191,36,0.55);--dur:7.5s;animation-delay:-0.9s;"/>
+        <div class="ring" style="--s:290px;--c:rgba(251,191,36,0.38);--dur:7.5s;animation-delay:-3.4s;"/>
+        <div class="ring" style="--s:220px;--c:rgba(245,158,11,0.24);--dur:7.5s;animation-delay:-6.0s;"/>
       </div>
-      <!-- Drop D: bottom-left -->
-      <div class="drop" style="top:72%; left:32%;">
-        <div class="ring" style="--s:300px; --c:rgba(245,158,11,0.40); --dur:6.5s; animation-delay:-3.2s;"/>
-        <div class="ring" style="--s:300px; --c:rgba(245,158,11,0.28); --dur:6.5s; animation-delay:-5.4s;"/>
-        <div class="ring" style="--s:300px; --c:rgba(245,158,11,0.16); --dur:6.5s; animation-delay:-1.0s;"/>
+      <div class="drop" style="top:76%; left:36%;">
+        <div class="dc"/>
+        <div class="ring" style="--s:390px;--c:rgba(245,158,11,0.52);--dur:8.5s;animation-delay:-4.0s;"/>
+        <div class="ring" style="--s:330px;--c:rgba(245,158,11,0.36);--dur:8.5s;animation-delay:-7.0s;"/>
+        <div class="ring" style="--s:260px;--c:rgba(249,115,22,0.22);--dur:8.5s;animation-delay:-1.5s;"/>
       </div>
     </div>
 
-    <!-- Geometric decorative shapes -->
-    <div class="geo-layer" aria-hidden="true">
-      <!-- Large slow-rotating hexagon — top-right -->
-      <div class="geo geo-hex geo-lg" style="top:-60px; right:-60px;"/>
-      <!-- Medium rotating square — bottom-left -->
-      <div class="geo geo-sq geo-md" style="bottom:60px; left:-30px;"/>
-      <!-- Small pulsing circle ring — mid-right -->
-      <div class="geo geo-circ geo-sm" style="top:42%; right:20px;"/>
-      <!-- Triangle — top-left -->
-      <div class="geo geo-tri geo-sm" style="top:120px; left:30px;"/>
-      <!-- Small hexagon — bottom-right -->
-      <div class="geo geo-hex geo-xs" style="bottom:140px; right:80px;"/>
+    <!-- Particle layer — three tiers of glowing orbs -->
+    <div class="pt-layer" aria-hidden="true">
+      <!-- Large glow orbs -->
+      <div class="pt lg" style="left:8%;  top:68%;--dur:22s;--d:-4s; --dx:12px;"/>
+      <div class="pt lg" style="left:87%; top:54%;--dur:28s;--d:-14s;--dx:-10px;"/>
+      <div class="pt lg" style="left:44%; top:80%;--dur:20s;--d:-8s; --dx:8px;"/>
+      <div class="pt lg" style="left:71%; top:24%;--dur:25s;--d:-18s;--dx:-6px;"/>
+      <!-- Medium orbs -->
+      <div class="pt md" style="left:18%; top:42%;--dur:17s;--d:-2s; --dx:6px;"/>
+      <div class="pt md" style="left:61%; top:64%;--dur:21s;--d:-11s;--dx:-8px;"/>
+      <div class="pt md" style="left:34%; top:57%;--dur:19s;--d:-6s; --dx:10px;"/>
+      <div class="pt md" style="left:81%; top:77%;--dur:23s;--d:-16s;--dx:-5px;"/>
+      <div class="pt md" style="left:26%; top:86%;--dur:15s;--d:-9s; --dx:4px;"/>
+      <div class="pt md" style="left:54%; top:31%;--dur:26s;--d:-20s;--dx:-12px;"/>
+      <div class="pt md" style="left:92%; top:38%;--dur:18s;--d:-7s; --dx:7px;"/>
+      <div class="pt md" style="left:5%;  top:22%;--dur:24s;--d:-12s;--dx:-4px;"/>
+      <!-- Tiny sparkles -->
+      <div class="pt sm" style="left:13%; top:53%;--dur:12s;--d:-1s;"/>
+      <div class="pt sm" style="left:39%; top:45%;--dur:14s;--d:-5s;"/>
+      <div class="pt sm" style="left:67%; top:37%;--dur:11s;--d:-9s;"/>
+      <div class="pt sm" style="left:83%; top:69%;--dur:16s;--d:-13s;"/>
+      <div class="pt sm" style="left:23%; top:73%;--dur:13s;--d:-3s;"/>
+      <div class="pt sm" style="left:57%; top:83%;--dur:15s;--d:-7s;"/>
+      <div class="pt sm" style="left:4%;  top:48%;--dur:18s;--d:-11s;"/>
+      <div class="pt sm" style="left:75%; top:89%;--dur:20s;--d:-15s;"/>
+      <div class="pt sm" style="left:48%; top:17%;--dur:17s;--d:-8s;"/>
+      <div class="pt sm" style="left:29%; top:28%;--dur:10s;--d:-6s;"/>
+      <div class="pt sm" style="left:96%; top:60%;--dur:22s;--d:-10s;"/>
+      <div class="pt sm" style="left:51%; top:51%;--dur:14s;--d:-4s;"/>
     </div>
 
     <!-- Top bar -->
@@ -492,98 +509,121 @@ watch(() => props.modelValue, () => {
 }
 
 /* ═══════════════════════════════════════════════
-   Water ripple — drop point + expanding rings
+   Water drop ripples — glowing rings
 ═══════════════════════════════════════════════ */
 .water-layer {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  overflow: hidden;
+  position: fixed; inset: 0;
+  z-index: 0; pointer-events: none; overflow: hidden;
 }
 
-.drop {
+.drop { position: absolute; }
+
+/* Glowing center point — simulates the drop itself */
+.dc {
   position: absolute;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  top: -3.5px; left: -3.5px;
+  background: rgba(251,191,36,0.95);
+  box-shadow:
+    0 0 6px  rgba(251,191,36,1),
+    0 0 18px rgba(245,158,11,0.70),
+    0 0 36px rgba(245,158,11,0.35),
+    0 0 60px rgba(245,158,11,0.15);
+  animation: dcPulse 2.8s ease-in-out infinite;
 }
 
-/* Each ring starts tiny, expands to full --s size, fades out */
+@keyframes dcPulse {
+  0%,100% { opacity: 0.95; transform: scale(1);    }
+  50%      { opacity: 0.40; transform: scale(0.65); }
+}
+
+/* Expanding ring — starts tiny, grows to full size, fades out */
 .ring {
   position: absolute;
-  width: var(--s, 300px);
-  height: var(--s, 300px);
+  width:  var(--s, 350px);
+  height: var(--s, 350px);
   border-radius: 50%;
-  border: 1.4px solid var(--c, rgba(245,158,11,0.45));
-  /* Centre the ring on the drop point */
-  top:  calc(var(--s, 300px) / -2);
-  left: calc(var(--s, 300px) / -2);
+  border: 1.5px solid var(--c, rgba(245,158,11,0.50));
+  box-shadow: 0 0 14px var(--c), 0 0 30px rgba(245,158,11,0.08);
+  top:  calc(var(--s, 350px) / -2);
+  left: calc(var(--s, 350px) / -2);
   transform: scale(0.04);
   opacity: 0;
-  animation: waterRing var(--dur, 6s) cubic-bezier(0.2, 0.6, 0.4, 1) infinite;
+  animation: waterRing var(--dur, 8s) cubic-bezier(0.08, 0.65, 0.28, 1) infinite;
 }
 
 @keyframes waterRing {
-  0%   { transform: scale(0.04); opacity: 0; }
-  6%   { opacity: 1; }
-  60%  { opacity: 0.25; }
-  100% { transform: scale(1);    opacity: 0; }
+  0%   { transform: scale(0.04); opacity: 0;    }
+  5%   {                          opacity: 0.95; }
+  40%  {                          opacity: 0.40; }
+  100% { transform: scale(1);     opacity: 0;    }
 }
 
 /* ═══════════════════════════════════════════════
-   Geometric decorative shapes
+   Particle system — three tiers of glowing orbs
 ═══════════════════════════════════════════════ */
-.geo-layer {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  overflow: hidden;
+.pt-layer {
+  position: fixed; inset: 0;
+  z-index: 0; pointer-events: none; overflow: hidden;
 }
 
-.geo {
+.pt {
   position: absolute;
-  border-style: solid;
-  border-color: rgba(245,158,11,0.18);
-}
-
-/* Size variants */
-.geo-lg { width: 220px; height: 220px; border-width: 1px; }
-.geo-md { width: 120px; height: 120px; border-width: 1px; }
-.geo-sm { width:  72px; height:  72px; border-width: 1px; }
-.geo-xs { width:  44px; height:  44px; border-width: 1px; }
-
-/* Hexagon */
-.geo-hex {
-  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
-  animation: geoSpin 28s linear infinite;
-}
-
-/* Square (diamond orientation) */
-.geo-sq {
-  clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
-  animation: geoSpin 20s linear infinite reverse;
-}
-
-/* Circle ring */
-.geo-circ {
   border-radius: 50%;
-  clip-path: none;
-  animation: geoPulse 6s ease-in-out infinite;
+  animation-duration: var(--dur, 20s);
+  animation-delay:    var(--d,  0s);
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
 }
 
-/* Triangle */
-.geo-tri {
-  clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
-  animation: geoSpin 35s linear infinite;
+/* ── Large orbs: strong glow, slow drift ── */
+.pt.lg {
+  width: 6px; height: 6px;
+  background: radial-gradient(circle, #fbbf24 0%, rgba(245,158,11,0.35) 65%, transparent 100%);
+  box-shadow:
+    0 0 8px  rgba(251,191,36,0.95),
+    0 0 22px rgba(245,158,11,0.65),
+    0 0 45px rgba(245,158,11,0.30),
+    0 0 80px rgba(245,158,11,0.10);
+  animation-name: ptRise;
 }
 
-@keyframes geoSpin {
-  from { transform: rotate(0deg);   }
-  to   { transform: rotate(360deg); }
+/* ── Medium orbs: moderate glow ── */
+.pt.md {
+  width: 3.5px; height: 3.5px;
+  background: radial-gradient(circle, #fde68a 0%, rgba(245,158,11,0.45) 60%, transparent 100%);
+  box-shadow:
+    0 0 5px  rgba(253,230,138,0.95),
+    0 0 14px rgba(245,158,11,0.55),
+    0 0 28px rgba(245,158,11,0.22);
+  animation-name: ptRise;
 }
 
-@keyframes geoPulse {
-  0%,100% { transform: scale(1);    opacity: 0.18; }
-  50%      { transform: scale(1.22); opacity: 0.32; }
+/* ── Tiny sparkles: twinkle in place ── */
+.pt.sm {
+  width: 2px; height: 2px;
+  background: #fde68a;
+  box-shadow:
+    0 0 3px  rgba(253,230,138,1),
+    0 0 9px  rgba(251,191,36,0.80),
+    0 0 18px rgba(245,158,11,0.40);
+  animation-name: ptTwinkle;
+}
+
+@keyframes ptRise {
+  0%   { transform: translateY(0)     translateX(0);              opacity: 0; }
+  8%   {                                                           opacity: 1; }
+  50%  { transform: translateY(-45px) translateX(var(--dx, 6px)); opacity: 0.85; }
+  92%  {                                                           opacity: 0.30; }
+  100% { transform: translateY(-90px) translateX(0);              opacity: 0; }
+}
+
+@keyframes ptTwinkle {
+  0%,100% { opacity: 0;    transform: scale(0.5); }
+  25%, 75% { opacity: 1;   transform: scale(1.8);
+    box-shadow: 0 0 5px rgba(253,230,138,1), 0 0 14px rgba(251,191,36,0.85), 0 0 28px rgba(245,158,11,0.50); }
+  50%      { opacity: 0.55; transform: scale(1.2); }
 }
 
 /* ── Responsive ── */
