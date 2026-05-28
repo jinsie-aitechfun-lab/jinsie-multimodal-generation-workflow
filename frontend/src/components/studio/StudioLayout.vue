@@ -21,8 +21,8 @@
               <circle cx="11" cy="11" r="2.5" fill="url(#hexG)" opacity="0.9"/>
               <defs>
                 <linearGradient id="hexG" x1="1.5" y1="1.5" x2="20.5" y2="20.5" gradientUnits="userSpaceOnUse">
-                  <stop offset="0%" stop-color="#00c4ff"/>
-                  <stop offset="100%" stop-color="#a855f7"/>
+                  <stop offset="0%" stop-color="#f59e0b"/>
+                  <stop offset="100%" stop-color="#fb923c"/>
                 </linearGradient>
               </defs>
             </svg>
@@ -139,11 +139,11 @@ watch(() => props.modelValue, () => {
 </script>
 
 <style scoped>
-/* ── Root shell ── */
+/* ── Root shell — transparent so the body background-image gradient shows through ── */
 .s-root {
   position: relative;
   min-height: 100vh;
-  background: #06091b;
+  background: transparent;
   overflow-x: hidden;
   display: flex;
   flex-direction: column;
@@ -166,47 +166,47 @@ watch(() => props.modelValue, () => {
   will-change: transform;
 }
 
-/* Top-left cyan orb — the dominant light source */
+/* Top-left gold orb */
 .orb-cyan {
-  width: 1000px;
-  height: 750px;
-  top: -280px;
-  left: -200px;
+  width: 900px;
+  height: 700px;
+  top: -260px;
+  left: -180px;
   background: radial-gradient(ellipse at center,
-    rgba(0,190,255,0.55) 0%,
-    rgba(0,100,230,0.22) 40%,
-    transparent 68%
+    rgba(245,158,11,0.36) 0%,
+    rgba(180,80,10,0.14) 42%,
+    transparent 65%
   );
-  filter: blur(50px);
+  filter: blur(40px);
   animation: driftCyan 16s ease-in-out infinite;
 }
 
-/* Bottom-right violet orb */
+/* Bottom-right ember orb */
 .orb-violet {
-  width: 850px;
-  height: 680px;
-  bottom: -220px;
-  right: -180px;
+  width: 800px;
+  height: 650px;
+  bottom: -200px;
+  right: -160px;
   background: radial-gradient(ellipse at center,
-    rgba(140,60,255,0.52) 0%,
-    rgba(80,20,210,0.18) 42%,
-    transparent 68%
+    rgba(249,115,22,0.30) 0%,
+    rgba(180,60,10,0.12) 42%,
+    transparent 65%
   );
-  filter: blur(55px);
+  filter: blur(44px);
   animation: driftViolet 20s ease-in-out infinite;
 }
 
-/* Center-right rose accent */
+/* Roaming amber — creates warm glow in the middle */
 .orb-rose {
-  width: 580px;
-  height: 440px;
-  top: 28%;
-  left: 42%;
+  width: 520px;
+  height: 400px;
+  top: 30%;
+  left: 40%;
   background: radial-gradient(ellipse at center,
-    rgba(225,65,210,0.24) 0%,
-    transparent 62%
+    rgba(251,191,36,0.14) 0%,
+    transparent 60%
   );
-  filter: blur(80px);
+  filter: blur(70px);
   animation: driftRose 27s ease-in-out infinite;
 }
 
@@ -229,28 +229,28 @@ watch(() => props.modelValue, () => {
 .dot-grid {
   position: fixed;
   inset: 0;
-  z-index: 0;
+  z-index: 1;
   pointer-events: none;
-  background-image: radial-gradient(circle, rgba(0,196,255,0.22) 1px, transparent 1px);
+  background-image: radial-gradient(circle, rgba(245,158,11,0.22) 1px, transparent 1px);
   background-size: 38px 38px;
-  -webkit-mask-image: radial-gradient(ellipse 70% 70% at 50% 40%, black 20%, transparent 88%);
-  mask-image: radial-gradient(ellipse 70% 70% at 50% 40%, black 20%, transparent 88%);
+  -webkit-mask-image: radial-gradient(ellipse 75% 70% at 50% 35%, black 15%, transparent 85%);
+  mask-image: radial-gradient(ellipse 75% 70% at 50% 35%, black 15%, transparent 85%);
 }
 
 /* ═══════════════════════════════════════════════
-   Top bar
+   Top bar — frosted glass that tints with the body gradient
 ═══════════════════════════════════════════════ */
 .topbar {
   position: sticky;
   top: 0;
   z-index: 50;
-  background: rgba(6, 9, 27, 0.80);
-  backdrop-filter: blur(28px);
-  -webkit-backdrop-filter: blur(28px);
+  background: rgba(9, 7, 3, 0.78);
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
   flex-shrink: 0;
 }
 
-/* Rainbow glow line at bottom of header */
+/* Gold glow line at bottom of header */
 .topbar::after {
   content: '';
   position: absolute;
@@ -261,8 +261,8 @@ watch(() => props.modelValue, () => {
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(0, 196, 255, 0.55) 28%,
-    rgba(168, 85, 247, 0.55) 72%,
+    rgba(245, 158, 11, 0.60) 28%,
+    rgba(251, 146, 60, 0.55) 72%,
     transparent 100%
   );
 }
@@ -289,7 +289,7 @@ watch(() => props.modelValue, () => {
 
 .brand-hex {
   line-height: 0;
-  filter: drop-shadow(0 0 8px rgba(0, 196, 255, 0.55));
+  filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.60));
   flex-shrink: 0;
 }
 
@@ -303,7 +303,7 @@ watch(() => props.modelValue, () => {
 
 .brand-em {
   font-style: normal;
-  background: linear-gradient(110deg, #00c4ff 0%, #c084fc 100%);
+  background: linear-gradient(110deg, #f59e0b 0%, #fb923c 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -314,8 +314,8 @@ watch(() => props.modelValue, () => {
   font-weight: 800;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: rgba(0, 196, 255, 0.65);
-  border: 1px solid rgba(0, 196, 255, 0.25);
+  color: rgba(245, 158, 11, 0.75);
+  border: 1px solid rgba(245, 158, 11, 0.30);
   border-radius: 4px;
   padding: 1px 5px;
   flex-shrink: 0;
@@ -359,12 +359,12 @@ watch(() => props.modelValue, () => {
   color: #ffffff;
   font-weight: 600;
   background: linear-gradient(140deg,
-    rgba(0, 196, 255, 0.17) 0%,
-    rgba(168, 85, 247, 0.13) 100%
+    rgba(245, 158, 11, 0.18) 0%,
+    rgba(249, 115, 22, 0.13) 100%
   );
-  border-color: rgba(0, 196, 255, 0.32);
+  border-color: rgba(245, 158, 11, 0.38);
   box-shadow:
-    0 0 22px rgba(0, 196, 255, 0.20),
+    0 0 22px rgba(245, 158, 11, 0.22),
     inset 0 1px 0 rgba(255, 255, 255, 0.10);
 }
 
@@ -376,9 +376,9 @@ watch(() => props.modelValue, () => {
   left: 25%;
   right: 25%;
   height: 2px;
-  background: linear-gradient(90deg, #00c4ff, #a855f7);
+  background: linear-gradient(90deg, #f59e0b, #fb923c);
   border-radius: 1px;
-  opacity: 0.75;
+  opacity: 0.85;
 }
 
 .nav-icon {
@@ -391,8 +391,8 @@ watch(() => props.modelValue, () => {
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.08em;
-  color: rgba(0, 196, 255, 0.75);
-  border: 1px solid rgba(0, 196, 255, 0.22);
+  color: rgba(245, 158, 11, 0.85);
+  border: 1px solid rgba(245, 158, 11, 0.28);
   border-radius: 3px;
   padding: 0 4px;
   margin-left: 1px;

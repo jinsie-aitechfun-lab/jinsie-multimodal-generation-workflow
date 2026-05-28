@@ -2316,8 +2316,8 @@ async function runWorkflow() {
   align-items: center;
   gap: 0.5rem;
   padding: 0.875rem 1.25rem 0.75rem;
-  border-bottom: 1px solid rgba(0,196,255,0.12);
-  background: linear-gradient(90deg, rgba(0,196,255,0.04) 0%, transparent 60%);
+  border-bottom: 1px solid rgba(245,158,11,0.12);
+  background: linear-gradient(90deg, rgba(245,158,11,0.05) 0%, transparent 60%);
 }
 
 .review-section-icon {

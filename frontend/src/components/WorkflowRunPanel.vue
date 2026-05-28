@@ -870,7 +870,7 @@ function getTopicManualMismatchWarning(): string {
 .input {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid rgba(0,181,240,0.20);
+  border: 1px solid rgba(245,158,11,0.20);
   border-radius: 10px;
   padding: 10px 12px;
   margin-bottom: 14px;
@@ -884,7 +884,7 @@ function getTopicManualMismatchWarning(): string {
 .textarea {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid rgba(0,181,240,0.20);
+  border: 1px solid rgba(245,158,11,0.20);
   border-radius: 10px;
   padding: 10px 12px;
   font-size: 0.9375rem;
@@ -900,7 +900,7 @@ function getTopicManualMismatchWarning(): string {
 .textarea:focus {
   outline: none;
   border-color: var(--arc-400);
-  box-shadow: 0 0 0 2px rgba(0,181,240,0.12);
+  box-shadow: 0 0 0 2px rgba(245,158,11,0.12);
 }
 
 /* Placeholder text color */
@@ -1001,12 +1001,12 @@ function getTopicManualMismatchWarning(): string {
   cursor: pointer;
   font-family: inherit;
   transition: opacity 0.15s, box-shadow 0.15s;
-  box-shadow: 0 4px 16px rgba(0,181,240,0.25);
+  box-shadow: 0 4px 16px rgba(245,158,11,0.25);
 }
 
 .btn:hover:not(:disabled) {
   opacity: 0.9;
-  box-shadow: 0 6px 20px rgba(0,181,240,0.35);
+  box-shadow: 0 6px 20px rgba(245,158,11,0.38);
 }
 
 .btn:disabled {
@@ -1020,7 +1020,7 @@ function getTopicManualMismatchWarning(): string {
   margin-top: 14px;
   padding: 10px;
   border-radius: 14px;
-  border: 1px solid rgba(0,181,240,0.15);
+  border: 1px solid rgba(245,158,11,0.15);
   background: rgba(6,11,26,0.90);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -1132,16 +1132,16 @@ function getTopicManualMismatchWarning(): string {
 }
 
 .chipBtn:hover {
-  border-color: rgba(0,181,240,0.35);
+  border-color: rgba(245,158,11,0.38);
   color: var(--arc-300);
-  background: rgba(0,181,240,0.08);
+  background: rgba(245,158,11,0.09);
 }
 
 .chipBtn.active {
   border-color: var(--arc-400);
-  background: rgba(0,181,240,0.15);
+  background: rgba(245,158,11,0.15);
   color: var(--arc-200);
-  box-shadow: 0 0 8px rgba(0,181,240,0.20);
+  box-shadow: 0 0 8px rgba(245,158,11,0.20);
 }
 
 .chipBtn.subtle {
@@ -1168,7 +1168,7 @@ function getTopicManualMismatchWarning(): string {
 .advancedSummary::-webkit-details-marker { display: none; }
 
 .advancedBox:hover {
-  border-color: rgba(0,181,240,0.20);
+  border-color: rgba(245,158,11,0.20);
 }
 
 .advancedBody {

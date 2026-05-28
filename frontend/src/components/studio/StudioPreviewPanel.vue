@@ -135,7 +135,7 @@ const progressSteps = computed(() => {
   align-items: center;
   gap: 0.5rem;
   padding: 0.875rem 1.25rem 0.75rem;
-  border-bottom: 1px solid rgba(0,181,240,0.10);
+  border-bottom: 1px solid rgba(245,158,11,0.10);
   flex-shrink: 0;
 }
 .preview-panel__icon {
@@ -164,7 +164,7 @@ const progressSteps = computed(() => {
   border-radius: 0.75rem;
   overflow: hidden;
   background: #000;
-  box-shadow: 0 0 24px rgba(0,181,240,0.15);
+  box-shadow: 0 0 24px rgba(245,158,11,0.15);
 }
 .preview-video {
   width: 100%;
@@ -183,18 +183,18 @@ const progressSteps = computed(() => {
   align-items: center;
   justify-content: center;
   gap: 0.75rem;
-  border: 1px dashed rgba(0,181,240,0.25);
-  background: rgba(0,181,240,0.03);
+  border: 1px dashed rgba(245,158,11,0.25);
+  background: rgba(245,158,11,0.04);
 }
 
 .preview-video-shell--loading {
-  border-color: rgba(139,92,246,0.30);
+  border-color: rgba(249,115,22,0.30);
   background: rgba(139,92,246,0.05);
 }
 
 .preview-video-shell--processing {
-  border-color: rgba(0,181,240,0.20);
-  background: rgba(0,181,240,0.04);
+  border-color: rgba(245,158,11,0.20);
+  background: rgba(245,158,11,0.05);
   padding: 1.5rem;
   aspect-ratio: unset;
   min-height: 220px;
@@ -241,7 +241,7 @@ const progressSteps = computed(() => {
 }
 .preview-step--active .preview-step__dot {
   background: var(--arc-400);
-  box-shadow: 0 0 8px rgba(0,181,240,0.7);
+  box-shadow: 0 0 8px rgba(245,158,11,0.65);
 }
 .preview-step--done .preview-step__label { color: var(--text-secondary); }
 .preview-step--active .preview-step__label { color: var(--arc-300); font-weight: 600; }

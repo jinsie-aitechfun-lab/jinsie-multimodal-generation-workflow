@@ -16,9 +16,9 @@ export function glowPulse(el: HTMLElement | null) {
   if (!el) return
   animate(el, {
     boxShadow: [
-      '0 0 0px rgba(0,196,255,0)',
-      '0 0 32px rgba(0,196,255,0.60)',
-      '0 0 0px rgba(0,196,255,0)',
+      '0 0 0px rgba(245,158,11,0)',
+      '0 0 32px rgba(245,158,11,0.60)',
+      '0 0 0px rgba(245,158,11,0)',
     ],
     duration: 900,
     easing: 'easeInOutSine',

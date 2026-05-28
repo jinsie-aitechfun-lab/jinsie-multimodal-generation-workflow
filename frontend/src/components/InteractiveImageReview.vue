@@ -947,25 +947,25 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 .review-scene-card {
   padding: 14px;
   border-radius: 16px;
-  background: linear-gradient(160deg, rgba(14,22,46,0.80) 0%, rgba(10,17,38,0.75) 100%);
-  border: 1px solid rgba(255,255,255,0.08);
-  box-shadow: 0 4px 16px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.06);
+  background: linear-gradient(160deg, rgba(20,15,5,0.82) 0%, rgba(14,11,4,0.78) 100%);
+  border: 1px solid rgba(245,158,11,0.10);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.35), inset 0 1px 0 rgba(251,191,36,0.06);
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .review-scene-card:hover {
-  border-color: rgba(0,196,255,0.18);
-  box-shadow: 0 4px 24px rgba(0,0,0,0.30), 0 0 0 1px rgba(0,196,255,0.06);
+  border-color: rgba(245,158,11,0.22);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.40), 0 0 0 1px rgba(245,158,11,0.08);
 }
 
 .review-scene-card-placeholder {
-  background: linear-gradient(160deg, rgba(8,16,40,0.85) 0%, rgba(10,20,48,0.80) 100%);
-  border-color: rgba(0,196,255,0.14);
+  background: linear-gradient(160deg, rgba(16,12,4,0.88) 0%, rgba(12,9,3,0.84) 100%);
+  border-color: rgba(245,158,11,0.12);
 }
 
 .review-scene-card-refreshing {
-  border-color: rgba(0,196,255,0.30);
-  box-shadow: 0 4px 24px rgba(0,0,0,0.30), 0 0 20px rgba(0,196,255,0.08);
+  border-color: rgba(245,158,11,0.32);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.35), 0 0 20px rgba(245,158,11,0.10);
 }
 
 .review-scene-card-failed {
@@ -1006,8 +1006,8 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   align-items: stretch;
   padding: 10px;
   border-radius: 14px;
-  background: rgba(6,12,28,0.60);
-  border: 1px solid rgba(0,196,255,0.08);
+  background: rgba(10,8,3,0.62);
+  border: 1px solid rgba(245,158,11,0.08);
 }
 
 .preview-card-selected,
@@ -1086,7 +1086,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 }
 
 .preview-state-tag-refreshing {
-  background: rgba(0,181,240,0.15);
+  background: rgba(245,158,11,0.15);
   color: var(--arc-300);
 }
 
@@ -1152,8 +1152,8 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   min-height: 28px;
   padding: 0 12px;
   border-radius: 8px;
-  border: 1px solid rgba(139,92,246,0.30);
-  background: rgba(139,92,246,0.10);
+  border: 1px solid rgba(249,115,22,0.32);
+  background: rgba(249,115,22,0.10);
   color: var(--prism-400);
   font-size: 0.8125rem;
   font-weight: 600;
@@ -1164,8 +1164,8 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 }
 
 .enhance-scene-button:hover:not(:disabled) {
-  background: rgba(139,92,246,0.18);
-  border-color: rgba(139,92,246,0.50);
+  background: rgba(249,115,22,0.18);
+  border-color: rgba(249,115,22,0.52);
 }
 
 .enhance-scene-button:disabled {
@@ -1209,15 +1209,15 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 }
 
 .asset-select-card:hover:not(:disabled) {
-  border-color: rgba(0,196,255,0.35);
-  box-shadow: 0 4px 20px rgba(0,196,255,0.14), 0 0 0 1px rgba(0,196,255,0.08);
+  border-color: rgba(245,158,11,0.38);
+  box-shadow: 0 4px 20px rgba(245,158,11,0.14), 0 0 0 1px rgba(245,158,11,0.10);
   transform: translateY(-1px);
 }
 
 .asset-select-card.active {
   border-color: var(--arc-400);
-  box-shadow: 0 0 0 2px rgba(0,196,255,0.20), 0 0 24px rgba(0,196,255,0.18);
-  background: rgba(0,196,255,0.05);
+  box-shadow: 0 0 0 2px rgba(245,158,11,0.22), 0 0 24px rgba(245,158,11,0.18);
+  background: rgba(245,158,11,0.06);
 }
 
 .asset-select-card:disabled {
@@ -1242,12 +1242,12 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   font-family: var(--font-mono, monospace);
 }
 
-/* ── Dark placeholder artwork ── */
+/* ── Dark placeholder artwork — warm dark gold tones ── */
 .placeholder-card {
   position: relative;
   width: 100%;
   height: 100%;
-  background: linear-gradient(160deg, #060e24 0%, #0b1732 100%);
+  background: linear-gradient(160deg, #100c03 0%, #16100a 100%);
 }
 
 .placeholder-art {
@@ -1266,21 +1266,21 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   inset: 14px 12px 12px 12px;
   border-radius: 10px;
   overflow: hidden;
-  background: #07102a;
-  border: 1px solid rgba(0,196,255,0.10);
+  background: #0c0802;
+  border: 1px solid rgba(245,158,11,0.10);
 }
 
 .placeholder-sky {
   position: absolute;
   inset: 0 0 38% 0;
-  background: linear-gradient(180deg, #0a1c42 0%, #081530 100%);
+  background: linear-gradient(180deg, #1a0f02 0%, #120b02 100%);
 }
 
 .placeholder-cloud {
   position: absolute;
   height: 10px;
   border-radius: 999px;
-  background: rgba(0,196,255,0.07);
+  background: rgba(245,158,11,0.07);
 }
 
 .placeholder-cloud::before,
@@ -1288,7 +1288,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   content: '';
   position: absolute;
   border-radius: 999px;
-  background: rgba(0,196,255,0.07);
+  background: rgba(245,158,11,0.07);
 }
 
 .placeholder-cloud-left {
@@ -1341,14 +1341,14 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   left: -6%;
   width: 76%;
   height: 24%;
-  background: #0e2248;
+  background: #1e1003;
 }
 
 .placeholder-hill-front {
   right: -8%;
   width: 84%;
   height: 30%;
-  background: #091a38;
+  background: #180d02;
 }
 
 .placeholder-water {
@@ -1357,7 +1357,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   right: 0;
   bottom: 0;
   height: 24%;
-  background: linear-gradient(180deg, #0c2252 0%, #081a3c 100%);
+  background: linear-gradient(180deg, #1a0f04 0%, #100902 100%);
 }
 
 .placeholder-sun {
@@ -1367,15 +1367,15 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: rgba(0,196,255,0.18);
-  box-shadow: 0 0 0 6px rgba(0,196,255,0.06), 0 0 20px rgba(0,196,255,0.15);
+  background: rgba(245,158,11,0.22);
+  box-shadow: 0 0 0 6px rgba(245,158,11,0.07), 0 0 20px rgba(245,158,11,0.18);
 }
 
 .placeholder-tree {
   position: absolute;
   bottom: 18%;
   width: 5px;
-  background: #0d2040;
+  background: #1a1004;
   border-radius: 999px;
 }
 
@@ -1387,7 +1387,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: #0d2040;
+  background: #1a1004;
   transform: translateX(-50%);
 }
 
@@ -1408,7 +1408,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   bottom: 10px;
   height: 6px;
   border-radius: 999px;
-  background: rgba(0,196,255,0.08);
+  background: rgba(245,158,11,0.08);
 }
 .shimmer-active::after {
   content: '';
@@ -1416,9 +1416,9 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   inset: 0;
   background: linear-gradient(
     110deg,
-    rgba(0,196,255,0) 18%,
-    rgba(0,196,255,0.12) 46%,
-    rgba(0,196,255,0) 74%
+    rgba(245,158,11,0) 18%,
+    rgba(245,158,11,0.12) 46%,
+    rgba(245,158,11,0) 74%
   );
   transform: translateX(-120%);
   animation: reviewShimmer 1.6s linear infinite;
@@ -1432,15 +1432,15 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   align-items: center;
   padding: 18px;
   border-radius: 16px;
-  background: rgba(0,181,240,0.04);
-  border: 1px solid rgba(0,181,240,0.15);
+  background: rgba(245,158,11,0.04);
+  border: 1px solid rgba(245,158,11,0.14);
 }
 
 .waiting-preview-frame {
   width: 180px;
   height: 220px;
   border-radius: 16px;
-  border: 1px solid rgba(0,181,240,0.15);
+  border: 1px solid rgba(245,158,11,0.14);
   background: rgba(0,0,0,0.30);
   overflow: hidden;
   position: relative;
@@ -1483,7 +1483,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   font-weight: 600;
   cursor: pointer;
   font-family: inherit;
-  box-shadow: 0 4px 14px rgba(0,181,240,0.25);
+  box-shadow: 0 4px 14px rgba(245,158,11,0.30);
   transition:
     opacity 0.2s ease,
     transform 0.2s ease,
@@ -1492,7 +1492,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 
 .refresh-button:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(0,181,240,0.35);
+  box-shadow: 0 6px 18px rgba(245,158,11,0.42);
 }
 
 .refresh-button:disabled {

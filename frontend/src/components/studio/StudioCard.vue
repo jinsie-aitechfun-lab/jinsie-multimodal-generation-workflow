@@ -56,16 +56,16 @@ withDefaults(defineProps<{
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
 }
 .studio-card--highlight {
-  background: rgba(0,181,240,0.05);
-  border: 1px solid rgba(0,181,240,0.20);
-  box-shadow: 0 0 20px rgba(0,181,240,0.10);
+  background: rgba(245,158,11,0.06);
+  border: 1px solid rgba(245,158,11,0.20);
+  box-shadow: 0 0 20px rgba(245,158,11,0.10);
 }
 
 /* Modifiers */
 .studio-card--hoverable:hover {
   transform: translateY(-2px);
-  box-shadow: var(--shadow-float), 0 0 24px rgba(0,181,240,0.12);
-  border-color: rgba(0,181,240,0.20);
+  box-shadow: var(--shadow-float), 0 0 24px rgba(245,158,11,0.12);
+  border-color: rgba(245,158,11,0.20);
 }
 .studio-card--glow {
   animation: pulseGlow 3s ease-in-out infinite;
@@ -78,7 +78,7 @@ withDefaults(defineProps<{
   inset: 0;
   border-radius: inherit;
   padding: 1px;
-  background: linear-gradient(135deg, rgba(0,181,240,0.40) 0%, rgba(139,92,246,0.30) 100%);
+  background: linear-gradient(135deg, rgba(245,158,11,0.42) 0%, rgba(249,115,22,0.30) 100%);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;

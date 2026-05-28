@@ -28,7 +28,7 @@ defineProps<{
   align-items: center;
   gap: 0.5rem;
   padding: 0.875rem 1.25rem 0.75rem;
-  border-bottom: 1px solid rgba(0,181,240,0.10);
+  border-bottom: 1px solid rgba(245,158,11,0.10);
   flex-shrink: 0;
 }
 .create-panel__icon {
