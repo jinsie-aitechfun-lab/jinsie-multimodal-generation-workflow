@@ -8,13 +8,46 @@
     </div>
     <!-- Dot grid -->
     <div class="dot-grid" aria-hidden="true" />
-    <!-- Water ripple layer -->
-    <div class="ripple-layer" aria-hidden="true">
-      <div class="ripple ripple-1" />
-      <div class="ripple ripple-2" />
-      <div class="ripple ripple-3" />
-      <div class="ripple ripple-4" />
-      <div class="ripple ripple-5" />
+    <!-- Water ripple drop points -->
+    <div class="water-layer" aria-hidden="true">
+      <!-- Drop A: left-center area -->
+      <div class="drop" style="top:38%; left:18%;">
+        <div class="ring" style="--s:320px; --c:rgba(245,158,11,0.50); --dur:6s; animation-delay:0s;"/>
+        <div class="ring" style="--s:320px; --c:rgba(245,158,11,0.38); --dur:6s; animation-delay:-2.0s;"/>
+        <div class="ring" style="--s:320px; --c:rgba(245,158,11,0.26); --dur:6s; animation-delay:-4.0s;"/>
+      </div>
+      <!-- Drop B: right-center area -->
+      <div class="drop" style="top:55%; left:78%;">
+        <div class="ring" style="--s:380px; --c:rgba(249,115,22,0.45); --dur:7s; animation-delay:-1.5s;"/>
+        <div class="ring" style="--s:380px; --c:rgba(249,115,22,0.33); --dur:7s; animation-delay:-3.8s;"/>
+        <div class="ring" style="--s:380px; --c:rgba(249,115,22,0.22); --dur:7s; animation-delay:-6.0s;"/>
+      </div>
+      <!-- Drop C: top-right -->
+      <div class="drop" style="top:22%; left:68%;">
+        <div class="ring" style="--s:260px; --c:rgba(251,191,36,0.42); --dur:5.5s; animation-delay:-0.8s;"/>
+        <div class="ring" style="--s:260px; --c:rgba(251,191,36,0.30); --dur:5.5s; animation-delay:-2.6s;"/>
+        <div class="ring" style="--s:260px; --c:rgba(251,191,36,0.18); --dur:5.5s; animation-delay:-4.4s;"/>
+      </div>
+      <!-- Drop D: bottom-left -->
+      <div class="drop" style="top:72%; left:32%;">
+        <div class="ring" style="--s:300px; --c:rgba(245,158,11,0.40); --dur:6.5s; animation-delay:-3.2s;"/>
+        <div class="ring" style="--s:300px; --c:rgba(245,158,11,0.28); --dur:6.5s; animation-delay:-5.4s;"/>
+        <div class="ring" style="--s:300px; --c:rgba(245,158,11,0.16); --dur:6.5s; animation-delay:-1.0s;"/>
+      </div>
+    </div>
+
+    <!-- Geometric decorative shapes -->
+    <div class="geo-layer" aria-hidden="true">
+      <!-- Large slow-rotating hexagon — top-right -->
+      <div class="geo geo-hex geo-lg" style="top:-60px; right:-60px;"/>
+      <!-- Medium rotating square — bottom-left -->
+      <div class="geo geo-sq geo-md" style="bottom:60px; left:-30px;"/>
+      <!-- Small pulsing circle ring — mid-right -->
+      <div class="geo geo-circ geo-sm" style="top:42%; right:20px;"/>
+      <!-- Triangle — top-left -->
+      <div class="geo geo-tri geo-sm" style="top:120px; left:30px;"/>
+      <!-- Small hexagon — bottom-right -->
+      <div class="geo geo-hex geo-xs" style="bottom:140px; right:80px;"/>
     </div>
 
     <!-- Top bar -->
@@ -243,45 +276,16 @@ watch(() => props.modelValue, () => {
 }
 
 /* ═══════════════════════════════════════════════
-   Top bar — frosted glass with metallic sheen
+   Top bar — frosted glass
 ═══════════════════════════════════════════════ */
 .topbar {
   position: sticky;
   top: 0;
   z-index: 50;
-  background:
-    /* metallic diagonal sheen sweep */
-    linear-gradient(
-      118deg,
-      transparent 0%,
-      rgba(255,220,100,0.04) 38%,
-      rgba(255,255,255,0.07) 50%,
-      rgba(255,220,100,0.03) 62%,
-      transparent 100%
-    ),
-    rgba(9, 7, 3, 0.82);
+  background: rgba(9, 7, 3, 0.82);
   backdrop-filter: blur(28px) saturate(160%);
   -webkit-backdrop-filter: blur(28px) saturate(160%);
   flex-shrink: 0;
-}
-
-/* Animated metallic sheen that slowly sweeps across */
-.topbar::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    118deg,
-    transparent 0%,
-    transparent 30%,
-    rgba(255,230,120,0.06) 50%,
-    transparent 70%,
-    transparent 100%
-  );
-  background-size: 200% 100%;
-  animation: metalSheen 8s ease-in-out infinite;
-  pointer-events: none;
-  z-index: 0;
 }
 
 /* Gold glow line at bottom of header */
@@ -488,9 +492,9 @@ watch(() => props.modelValue, () => {
 }
 
 /* ═══════════════════════════════════════════════
-   Water ripple layer
+   Water ripple — drop point + expanding rings
 ═══════════════════════════════════════════════ */
-.ripple-layer {
+.water-layer {
   position: fixed;
   inset: 0;
   z-index: 0;
@@ -498,26 +502,88 @@ watch(() => props.modelValue, () => {
   overflow: hidden;
 }
 
-.ripple {
+.drop {
   position: absolute;
-  border-radius: 50%;
-  border: 1px solid rgba(245,158,11,0.12);
-  animation: rippleExpand 8s ease-out infinite;
-  transform: translate(-50%, -50%) scale(0);
-  opacity: 0;
 }
 
-/* Different origin points for each ring */
-.ripple-1 { top: 18%;  left: 22%;  width: 600px; height: 600px; animation-delay: 0s;    animation-duration: 9s; }
-.ripple-2 { top: 70%;  left: 75%;  width: 500px; height: 500px; animation-delay: 2.5s;  animation-duration: 8s; border-color: rgba(249,115,22,0.10); }
-.ripple-3 { top: 45%;  left: 55%;  width: 700px; height: 700px; animation-delay: 5s;    animation-duration: 11s; }
-.ripple-4 { top: 82%;  left: 18%;  width: 450px; height: 450px; animation-delay: 1.2s;  animation-duration: 7s; border-color: rgba(251,191,36,0.08); }
-.ripple-5 { top: 12%;  left: 78%;  width: 550px; height: 550px; animation-delay: 3.8s;  animation-duration: 10s; }
+/* Each ring starts tiny, expands to full --s size, fades out */
+.ring {
+  position: absolute;
+  width: var(--s, 300px);
+  height: var(--s, 300px);
+  border-radius: 50%;
+  border: 1.4px solid var(--c, rgba(245,158,11,0.45));
+  /* Centre the ring on the drop point */
+  top:  calc(var(--s, 300px) / -2);
+  left: calc(var(--s, 300px) / -2);
+  transform: scale(0.04);
+  opacity: 0;
+  animation: waterRing var(--dur, 6s) cubic-bezier(0.2, 0.6, 0.4, 1) infinite;
+}
 
-@keyframes rippleExpand {
-  0%   { transform: translate(-50%, -50%) scale(0.05); opacity: 0; }
-  12%  { opacity: 1; }
-  100% { transform: translate(-50%, -50%) scale(1);    opacity: 0; }
+@keyframes waterRing {
+  0%   { transform: scale(0.04); opacity: 0; }
+  6%   { opacity: 1; }
+  60%  { opacity: 0.25; }
+  100% { transform: scale(1);    opacity: 0; }
+}
+
+/* ═══════════════════════════════════════════════
+   Geometric decorative shapes
+═══════════════════════════════════════════════ */
+.geo-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.geo {
+  position: absolute;
+  border-style: solid;
+  border-color: rgba(245,158,11,0.18);
+}
+
+/* Size variants */
+.geo-lg { width: 220px; height: 220px; border-width: 1px; }
+.geo-md { width: 120px; height: 120px; border-width: 1px; }
+.geo-sm { width:  72px; height:  72px; border-width: 1px; }
+.geo-xs { width:  44px; height:  44px; border-width: 1px; }
+
+/* Hexagon */
+.geo-hex {
+  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+  animation: geoSpin 28s linear infinite;
+}
+
+/* Square (diamond orientation) */
+.geo-sq {
+  clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+  animation: geoSpin 20s linear infinite reverse;
+}
+
+/* Circle ring */
+.geo-circ {
+  border-radius: 50%;
+  clip-path: none;
+  animation: geoPulse 6s ease-in-out infinite;
+}
+
+/* Triangle */
+.geo-tri {
+  clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+  animation: geoSpin 35s linear infinite;
+}
+
+@keyframes geoSpin {
+  from { transform: rotate(0deg);   }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes geoPulse {
+  0%,100% { transform: scale(1);    opacity: 0.18; }
+  50%      { transform: scale(1.22); opacity: 0.32; }
 }
 
 /* ── Responsive ── */

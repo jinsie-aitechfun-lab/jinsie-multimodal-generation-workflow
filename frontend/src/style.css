@@ -101,32 +101,10 @@ body::before {
     box-shadow:
       var(--shadow-glass),
       inset 0 1px 0 rgba(251,191,36,0.08),
-      inset 0 0 0 1px rgba(245,158,11,0.04),
       0 0 0 1px rgba(245,158,11,0.04);
     border-radius: 1rem;
-    position: relative;
-    overflow: hidden;
   }
 
-  /* Metallic sheen sweep — sits on top via pointer-events:none */
-  .glass-card::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    background: linear-gradient(
-      118deg,
-      transparent 0%,
-      rgba(255,230,140,0.04) 35%,
-      rgba(255,255,255,0.07) 50%,
-      rgba(255,230,140,0.03) 65%,
-      transparent 100%
-    );
-    background-size: 300% 100%;
-    animation: metalCardSheen 12s ease-in-out infinite;
-    pointer-events: none;
-    z-index: 0;
-  }
 
   .glass-card-elevated {
     background: var(--glass-bg-light);
@@ -152,28 +130,8 @@ body::before {
       inset 0 1px 0 rgba(251,191,36,0.12),
       0 0 60px rgba(245,158,11,0.07);
     border-radius: 1rem;
-    position: relative;
-    overflow: hidden;
   }
 
-  .glass-card-vivid::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    background: linear-gradient(
-      118deg,
-      transparent 0%,
-      rgba(255,230,140,0.05) 35%,
-      rgba(255,255,255,0.09) 50%,
-      rgba(255,230,140,0.04) 65%,
-      transparent 100%
-    );
-    background-size: 300% 100%;
-    animation: metalCardSheen 10s ease-in-out infinite;
-    pointer-events: none;
-    z-index: 0;
-  }
 
   /* Gradient border wrapper — use pseudo-element approach */
   .border-gradient {
@@ -366,11 +324,6 @@ body::before {
 /* ─── Animation keyframes ─────────────────────────────────────── */
 @keyframes shimmer {
   0%   { background-position: -200% 0; }
-  100% { background-position:  200% 0; }
-}
-@keyframes metalCardSheen {
-  0%   { background-position: -200% 0; }
-  40%  { background-position:  200% 0; }
   100% { background-position:  200% 0; }
 }
 @keyframes scanLine {
