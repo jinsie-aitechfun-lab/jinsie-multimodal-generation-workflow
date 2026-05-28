@@ -295,28 +295,31 @@ const placeholderDesc = computed(() => {
   min-width: 220px;
   height: 42px;
   padding: 0 18px;
-  border: none;
+  border: 1px solid rgba(245,158,11,0.45);
   border-radius: 999px;
   font-size: 14px;
   font-weight: 700;
   cursor: pointer;
-  background: #ffffff;
-  color: #111827;
+  background: linear-gradient(135deg, rgba(245,158,11,0.22) 0%, rgba(249,115,22,0.16) 100%);
+  color: #fff;
+  font-family: inherit;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
-
-.render-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
+.render-button:hover:not(:disabled) {
+  border-color: rgba(245,158,11,0.75);
+  box-shadow: 0 0 20px rgba(245,158,11,0.40);
 }
+.render-button:disabled { cursor: not-allowed; opacity: 0.40; }
 
 .final-json {
   max-width: 1100px;
   margin: 10px auto 0;
-  background: #f7f7f9;
-  border: 1px solid rgba(17, 24, 39, 0.08);
+  background: rgba(0,0,0,0.30);
+  border: 1px solid rgba(245,158,11,0.10);
   border-radius: 12px;
   padding: 10px 12px;
   font-size: 12px;
+  color: var(--text-secondary);
   overflow: auto;
 }
 </style>

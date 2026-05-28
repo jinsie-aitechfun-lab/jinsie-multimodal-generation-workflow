@@ -2408,9 +2408,9 @@ async function runWorkflow() {
 }
 
 .copy-diag-btn {
-  border: 1px solid #d1d5db;
-  background: #ffffff;
-  color: #374151;
+  border: 1px solid rgba(245,158,11,0.18);
+  background: rgba(14,11,5,0.60);
+  color: var(--text-secondary);
   border-radius: 8px;
   padding: 6px 14px;
   font-size: 13px;
@@ -2463,7 +2463,7 @@ async function runWorkflow() {
   margin: 0 0 12px;
   font-size: 16px;
   line-height: 1.4;
-  color: #111827;
+  color: var(--text-primary);
 }
 
 .result {
@@ -2485,13 +2485,13 @@ async function runWorkflow() {
 }
 
 .detail-label {
-  color: #6b7280;
+  color: var(--text-muted);
   font-size: 13px;
   font-weight: 600;
 }
 
 .detail-text {
-  color: #111827;
+  color: var(--text-primary);
   line-height: 1.6;
 }
 
@@ -2514,7 +2514,7 @@ async function runWorkflow() {
   align-items: center;
   width: fit-content;
   margin-top: 6px;
-  color: #2563eb;
+  color: var(--arc-300);
   font-size: 13px;
   font-weight: 600;
   text-decoration: none;
@@ -2534,8 +2534,8 @@ async function runWorkflow() {
   width: 100%;
   max-width: 520px;
   border-radius: 10px;
-  border: 1px solid #e5e7eb;
-  background: #ffffff;
+  border: 1px solid rgba(245,158,11,0.10);
+  background: rgba(14,11,5,0.60);
   margin-top: 8px;
 }
 
@@ -2570,9 +2570,9 @@ async function runWorkflow() {
 
 .asset-grid-list .asset-list-item {
   padding: 10px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid rgba(245,158,11,0.10);
   border-radius: 10px;
-  background: #f8fafc;
+  background: rgba(10,8,3,0.50);
 }
 
 .review-scene-grid {
@@ -2583,8 +2583,8 @@ async function runWorkflow() {
 .review-scene-card {
   padding: 16px;
   border-radius: 14px;
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
+  background: rgba(14,11,5,0.60);
+  border: 1px solid rgba(245,158,11,0.10);
 }
 
 .review-scene-head {
@@ -2609,15 +2609,15 @@ async function runWorkflow() {
   width: 100%;
   padding: 12px;
   border-radius: 12px;
-  border: 1px solid #d1d5db;
-  background: #f8fafc;
+  border: 1px solid rgba(245,158,11,0.18);
+  background: rgba(10,8,3,0.50);
   cursor: pointer;
   text-align: left;
 }
 
 .asset-select-card.active {
-  border-color: #111827;
-  background: #eef2ff;
+  border-color: rgba(245,158,11,0.50);
+  background: rgba(245,158,11,0.08);
 }
 
 .asset-select-card:disabled {
@@ -2637,9 +2637,9 @@ async function runWorkflow() {
   margin: 0;
   padding: 12px;
   border-radius: 10px;
-  border: 1px solid #e5e7eb;
-  background: #f8fafc;
-  color: #111827;
+  border: 1px solid rgba(245,158,11,0.10);
+  background: rgba(10,8,3,0.50);
+  color: var(--text-primary);
   font-size: 13px;
   line-height: 1.6;
   white-space: pre-wrap;
@@ -2655,15 +2655,15 @@ async function runWorkflow() {
   align-items: flex-start;
   margin-bottom: 16px;
   padding: 14px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid rgba(245,158,11,0.10);
   border-radius: 12px;
-  background: #f9fafb;
+  background: rgba(10,8,3,0.50);
 }
 
 .mock-audio-label {
   font-size: 13px;
   font-weight: 600;
-  color: #374151;
+  color: var(--text-secondary);
 }
 
 .mock-audio-scenes {
@@ -2672,10 +2672,10 @@ async function runWorkflow() {
 }
 
 .mock-audio-scene-card {
-  border: 1px solid #e5e7eb;
+  border: 1px solid rgba(245,158,11,0.10);
   border-radius: 14px;
   padding: 16px;
-  background: #ffffff;
+  background: rgba(14,11,5,0.60);
 }
 
 .mock-audio-scene-head {
@@ -2684,7 +2684,7 @@ async function runWorkflow() {
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 12px;
-  color: #111827;
+  color: var(--text-primary);
 }
 
 .mock-audio-asset-list {
@@ -2702,8 +2702,8 @@ async function runWorkflow() {
   gap: 12px;
   padding: 12px 14px;
   border-radius: 12px;
-  background: #f9fafb;
-  border: 1px solid #e5e7eb;
+  background: rgba(10,8,3,0.50);
+  border: 1px solid rgba(245,158,11,0.10);
 }
 
 .mock-audio-asset-main {
@@ -2715,7 +2715,7 @@ async function runWorkflow() {
 
 .mock-audio-meta {
   font-size: 13px;
-  color: #6b7280;
+  color: var(--text-muted);
 }
 
 .mock-audio-details {
@@ -2726,7 +2726,7 @@ async function runWorkflow() {
   cursor: pointer;
   font-size: 14px;
   font-weight: 600;
-  color: #111827;
+  color: var(--text-primary);
   margin-bottom: 10px;
 }
 
@@ -2750,8 +2750,8 @@ async function runWorkflow() {
 .final-video-summary-waiting {
   border-radius: 16px;
   padding: 24px;
-  background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
-  border: 1px solid #e5e7eb;
+  background: linear-gradient(160deg, rgba(22,16,5,0.85) 0%, rgba(14,11,4,0.80) 100%);
+  border: 1px solid rgba(245,158,11,0.10);
 }
 
 .final-video-hero {
@@ -2885,7 +2885,7 @@ async function runWorkflow() {
   align-items: center;
   gap: 16px;
   padding: 12px 20px;
-  background: #fff8e1;
+  background: rgba(245,158,11,0.06);
   border: 1px solid #ffe082;
   border-radius: 8px;
   margin-bottom: 16px;

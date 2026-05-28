@@ -74,34 +74,40 @@ defineProps<{
 <style scoped>
 .story-panel,
 .result-panel {
-  margin-top: 20px;
-  padding: 16px;
+  margin-top: 16px;
+  padding: 18px 20px;
   border-radius: 14px;
-  background: #f8fafc;
-  border: 1px solid #e5e7eb;
+  background: rgba(14,11,5,0.65);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  border: 1px solid rgba(245,158,11,0.12);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.35), inset 0 1px 0 rgba(251,191,36,0.06);
 }
 
 .section-title {
   margin: 0 0 12px;
-  font-size: 16px;
-  line-height: 1.4;
-  color: #111827;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 
 .story-text {
   margin: 0;
-  color: #1f2937;
-  font-size: 15px;
+  color: var(--text-secondary);
+  font-size: 14px;
   line-height: 1.8;
   white-space: pre-wrap;
 }
 
 .light-result {
-  margin: 12px 0 0;
+  margin: 8px 0 0;
   white-space: pre-wrap;
   word-break: break-word;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.6;
-  color: #1f2937;
+  color: var(--text-secondary);
+  font-family: 'SF Mono', 'Fira Code', monospace;
 }
 </style>
