@@ -101,54 +101,72 @@
 
 /* ═══════════════════════════════════════════════
    珍珠晨光 · Pearl Dawn — light theme
+   Soft warm cream → cool pearl gradient with champagne gold accents.
 ═══════════════════════════════════════════════ */
 :root[data-theme="pearl"] {
   color-scheme: light;
 
-  /* Accent — champagne gold + ice blue */
-  --arc-400:        #c2914a;   /* champagne gold */
-  --arc-300:        #b8843e;
-  --arc-200:        #8a6629;   /* darker for text on light bg */
-  --prism-400:      #4f8fc0;   /* ice blue */
-  --prism-500:      #3a7aae;
+  /* Accent — champagne gold + ice blue, slightly cooler than V1 */
+  --arc-400:        #c89a55;   /* champagne gold — main */
+  --arc-300:        #b18638;
+  --arc-200:        #8b6722;   /* darker for badge text on light bg */
+  --prism-400:      #5b9cce;   /* ice blue accent */
+  --prism-500:      #3f80b6;
 
-  /* Text — deep on light */
-  --text-primary:   rgba(28,24,18,0.92);
-  --text-secondary: rgba(50,44,34,0.66);
-  --text-muted:     rgba(80,72,58,0.45);
+  /* Text — deep grey on light, target #333~#444 */
+  --text-primary:   rgba(34, 38, 46, 0.94);   /* ~#22262e */
+  --text-secondary: rgba(60, 66, 76, 0.70);   /* ~#3c424c */
+  --text-muted:     rgba(96, 104, 115, 0.55); /* ~#606873 */
 
-  /* Background tones */
-  --bg-void:        #f7f4ec;
-  --bg-deep:        #f0ebde;
-  --bg-surface:     #ece5d2;
-  --bg-elevated:    #e6dcc4;
-  --bg-float:       #ddd1b3;
+  /* Background tones — bright whites with the faintest cream */
+  --bg-void:        #ffffff;
+  --bg-deep:        #fbfaf6;
+  --bg-surface:     #f6f3eb;
+  --bg-elevated:    #efece1;
+  --bg-float:       #e7e3d4;
 
-  /* Borders + glass */
-  --border-subtle:  rgba(194,145,74,0.10);
-  --border-glass:   rgba(194,145,74,0.18);
-  --border-arc:     rgba(194,145,74,0.45);
-  --glass-bg:       rgba(255,252,243,0.78);
-  --glass-bg-light: rgba(255,253,247,0.85);
-  --glass-border:   rgba(194,145,74,0.16);
+  /* Borders + glass — bright white glass with champagne gold edges */
+  --border-subtle:  rgba(200, 154, 85, 0.10);
+  --border-glass:   rgba(200, 154, 85, 0.18);
+  --border-arc:     rgba(200, 154, 85, 0.48);
+  --glass-bg:       rgba(255, 255, 255, 0.82);
+  --glass-bg-light: rgba(255, 255, 255, 0.90);
+  --glass-border:   rgba(200, 154, 85, 0.18);
 
-  /* Glow + shadow — lighter, softer */
-  --glow-arc:       0 0 20px rgba(194,145,74,0.30), 0 0 40px rgba(194,145,74,0.10);
-  --glow-prism:     0 0 20px rgba(79,143,192,0.25), 0 0 40px rgba(79,143,192,0.08);
-  --shadow-float:   0 16px 48px rgba(120,90,40,0.18), 0 0 0 1px rgba(194,145,74,0.10);
-  --shadow-glass:   0 6px 24px rgba(120,90,40,0.10), inset 0 1px 0 rgba(255,255,255,0.60);
+  /* Glow + shadow — soft lift, no heavy black */
+  --glow-arc:       0 0 22px rgba(200, 154, 85, 0.32),
+                    0 0 44px rgba(200, 154, 85, 0.12);
+  --glow-prism:     0 0 22px rgba( 91, 156, 206, 0.28),
+                    0 0 44px rgba( 91, 156, 206, 0.10);
+  --shadow-float:   0 18px 48px rgba(100, 90, 60, 0.16),
+                    0 4px 12px  rgba(100, 90, 60, 0.08),
+                    0 0 0 1px   rgba(200, 154, 85, 0.10);
+  --shadow-glass:   0 8px 26px  rgba(100, 90, 60, 0.10),
+                    0 2px 6px   rgba(100, 90, 60, 0.04),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.80);
 
-  /* Page background — soft pearl gradient */
-  --page-bg-color:  #f5f0e2;
+  /* Page background — soft warm cream → cool pearl diagonal */
+  --page-bg-color:  #fafaf3;
   --page-bg-image:
-    radial-gradient(ellipse 65% 50% at 12% 6%,  rgba(194,145,74,0.18) 0%, transparent 55%),
-    radial-gradient(ellipse 60% 50% at 88% 94%, rgba(79,143,192,0.14) 0%, transparent 55%),
-    radial-gradient(ellipse 40% 30% at 55% 48%, rgba(233,203,131,0.12) 0%, transparent 60%);
-  --noise-opacity:  0.020;
+    /* Top-left: warm cream/champagne breath */
+    radial-gradient(ellipse 70% 55% at 10% 8%,
+                    rgba(255, 226, 168, 0.55) 0%,
+                    rgba(255, 226, 168, 0.22) 30%,
+                    transparent 70%),
+    /* Bottom-right: cool ice-blue tint */
+    radial-gradient(ellipse 65% 55% at 92% 96%,
+                    rgba(180, 210, 235, 0.40) 0%,
+                    rgba(180, 210, 235, 0.16) 35%,
+                    transparent 72%),
+    /* Centre: very subtle gold sun */
+    radial-gradient(ellipse 45% 32% at 58% 42%,
+                    rgba(255, 233, 175, 0.22) 0%,
+                    transparent 65%);
+  --noise-opacity:  0.014;
   --noise-blend:    multiply;
-  --scrollbar-color: rgba(194,145,74,0.35);
-  --scrollbar-hover: rgba(194,145,74,0.60);
-  --selection-bg:   rgba(194,145,74,0.25);
+  --scrollbar-color: rgba(200, 154, 85, 0.40);
+  --scrollbar-hover: rgba(200, 154, 85, 0.65);
+  --selection-bg:   rgba(200, 154, 85, 0.28);
   --selection-fg:   #1c1812;
 }
 
@@ -163,7 +181,26 @@ body {
   color: var(--text-primary);
   min-height: 100vh;
   overflow-x: hidden;
-  transition: background-color 0.3s ease;
+  transition: background-color 0.35s ease, color 0.35s ease;
+}
+
+/* ─── Theme transitions ─────────────────────────────
+   Apply a brief crossfade when the theme changes so colors
+   morph smoothly instead of snapping. Use a class added to
+   :root for ~600ms when the user picks a new theme.
+─────────────────────────────────────────────────────── */
+:root.theme-transitioning,
+:root.theme-transitioning *,
+:root.theme-transitioning *::before,
+:root.theme-transitioning *::after {
+  transition:
+    background-color 0.40s ease,
+    background-image 0.40s ease,
+    border-color     0.40s ease,
+    box-shadow       0.40s ease,
+    color            0.40s ease,
+    fill             0.40s ease,
+    stroke           0.40s ease !important;
 }
 
 /* Noise grain — adds premium texture depth */

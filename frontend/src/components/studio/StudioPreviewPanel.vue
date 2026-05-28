@@ -271,7 +271,6 @@ const progressSteps = computed(() => {
   }))
 })
 
-const historyListRef = ref<HTMLElement | null>(null)
 </script>
 
 <style scoped>

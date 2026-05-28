@@ -106,13 +106,7 @@
       <!-- Footer: theme switcher + slot + dev -->
       <div class="sb-footer">
         <slot name="header-actions"/>
-        <!-- Theme cycle button -->
-        <button class="sb-theme-btn" @click="cycleTheme" :title="`主题：${THEMES[currentTheme].label} → 点击切换`">
-          <span class="sb-theme-ring">
-            <span class="sb-theme-dot"/>
-          </span>
-          <span class="sb-theme-label">{{ THEMES[currentTheme].short }}</span>
-        </button>
+        <ThemeSwitcher/>
         <button v-if="devMode" class="sb-dev-btn" title="Dev mode" @click="$emit('toggle-dev')">⚙</button>
       </div>
     </aside>
@@ -137,6 +131,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { animate } from 'animejs'
+import ThemeSwitcher from './ThemeSwitcher.vue'
+import { useTheme } from '../../composables/useTheme'
 
 const props = defineProps<{
   modelValue: string
@@ -149,45 +145,26 @@ defineEmits<{
   (e: 'toggle-dev'): void
 }>()
 
-// ── Theme system ────────────────────────────────
-type ThemeKey = 'gold' | 'blue' | 'purple' | 'pearl'
+// ── Theme (shared composable) ────────────────────
+const { theme: currentTheme, themeMeta } = useTheme()
 
-const THEMES: Record<ThemeKey, { label: string; short: string; a: string; b: string; c: string }> = {
-  gold:   { label: '沉金暗调', short: '金',  a: '245,158,11', b: '249,115,22', c: '251,191,36' },
-  blue:   { label: '极夜蓝调', short: '蓝',  a: '14,165,233', b: '99,102,241', c: '56,189,248' },
-  purple: { label: '暗紫星芒', short: '紫',  a: '168,85,247', b: '244,63,94',  c: '192,132,252' },
-  pearl:  { label: '珍珠晨光', short: '珠',  a: '194,145,74', b: '79,143,192', c: '233,203,131' },
-}
-const THEME_ORDER: ThemeKey[] = ['gold', 'blue', 'purple', 'pearl']
-
-const currentTheme = ref<ThemeKey>(
-  (localStorage.getItem('studio_theme') as ThemeKey | null) ?? 'gold'
-)
-
-function applyTheme(t: ThemeKey) {
-  document.documentElement.setAttribute('data-theme', t)
-}
-
-function cycleTheme() {
-  const idx = THEME_ORDER.indexOf(currentTheme.value)
-  currentTheme.value = THEME_ORDER[(idx + 1) % THEME_ORDER.length]
-  localStorage.setItem('studio_theme', currentTheme.value)
-  applyTheme(currentTheme.value)
-}
-
-// Theme-aware accent color helper
+// Accent helpers for inline-styled SVG / dynamic styles
 function tc(opacity: number, variant: 'a' | 'b' | 'c' = 'a'): string {
-  return `rgba(${THEMES[currentTheme.value][variant]},${opacity})`
+  const arr = themeMeta.value.swatches
+  // Convert hex swatch to "r,g,b" for use in rgba()
+  const hex = variant === 'a' ? arr[0] : variant === 'b' ? arr[1] : arr[2]
+  const rgb = hexToRgb(hex)
+  return `rgba(${rgb},${opacity})`
 }
 
-const themeAccentA = computed(() => {
-  const { a } = THEMES[currentTheme.value]
-  return `rgb(${a})`
-})
-const themeAccentB = computed(() => {
-  const { b } = THEMES[currentTheme.value]
-  return `rgb(${b})`
-})
+function hexToRgb(hex: string): string {
+  const m = hex.replace('#', '').match(/.{2}/g)
+  if (!m || m.length < 3) return '255,255,255'
+  return `${parseInt(m[0], 16)},${parseInt(m[1], 16)},${parseInt(m[2], 16)}`
+}
+
+const themeAccentA = computed(() => themeMeta.value.swatches[0])
+const themeAccentB = computed(() => themeMeta.value.swatches[1])
 
 // ── Content animation ────────────────────────────
 const mainRef = ref<HTMLElement | null>(null)
@@ -208,9 +185,6 @@ function animateContentIn() {
 }
 
 onMounted(() => {
-  // Apply saved theme on load
-  applyTheme(currentTheme.value)
-
   animate('.sb-item', {
     opacity: [0, 1],
     translateX: [-10, 0],
@@ -466,51 +440,6 @@ watch(() => props.modelValue, () => {
   border-top: 1px solid var(--sidebar-border, rgba(245,158,11,0.08));
 }
 
-/* Theme cycle button */
-.sb-theme-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  width: 56px;
-  padding: 8px 4px;
-  border-radius: 12px;
-  border: 1px solid var(--sidebar-border, rgba(245,158,11,0.14));
-  background: transparent;
-  cursor: pointer;
-  font-family: inherit;
-  transition: background 0.2s, border-color 0.2s;
-}
-.sb-theme-btn:hover {
-  background: var(--item-hover-bg, rgba(245,158,11,0.08));
-  border-color: var(--item-active-border, rgba(245,158,11,0.30));
-}
-
-.sb-theme-ring {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px; height: 22px;
-  border-radius: 50%;
-  border: 1.5px solid var(--accent-a, rgba(245,158,11,0.60));
-  box-shadow: 0 0 8px var(--accent-a, rgba(245,158,11,0.30));
-}
-
-.sb-theme-dot {
-  display: block;
-  width: 10px; height: 10px;
-  border-radius: 50%;
-  background: var(--accent-a-solid, #f59e0b);
-  box-shadow: 0 0 6px var(--accent-a, rgba(245,158,11,0.70));
-}
-
-.sb-theme-label {
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  color: rgba(255,255,255,0.40);
-}
-
 .sb-dev-btn {
   width: 36px; height: 36px;
   border-radius: 10px;
@@ -720,48 +649,52 @@ watch(() => props.modelValue, () => {
    珍珠晨光 · Pearl Dawn (light theme)
 ═══════════════════════════════════════════════ */
 .s-root[data-theme="pearl"] {
-  --accent-a:           rgba(194,145,74,0.70);
+  --accent-a:           rgba(200,154,85,0.72);
   --accent-c:           rgba(233,203,131,0.80);
-  --accent-a-solid:     #c2914a;
-  --brand-glow:         rgba(194,145,74,0.55);
-  --sidebar-bg:         rgba(255,253,247,0.86);
-  --sidebar-border:     rgba(194,145,74,0.16);
-  --sidebar-shadow:     4px 0 32px rgba(120,90,40,0.10);
-  --item-hover-bg:      rgba(194,145,74,0.10);
-  --item-hover-border:  rgba(194,145,74,0.28);
-  --item-active-bg:     rgba(194,145,74,0.18);
-  --item-active-border: rgba(194,145,74,0.50);
-  --item-glow:          rgba(194,145,74,0.22);
-  /* Soft pearl orbs */
-  --orb-a1: rgba(194,145,74,0.22);
-  --orb-a2: rgba(140,100,40,0.08);
-  --orb-b1: rgba(79,143,192,0.20);
-  --orb-b2: rgba(40,90,140,0.08);
-  --orb-c1: rgba(233,203,131,0.16);
-  --dot-color:  rgba(194,145,74,0.18);
-  --dc-color:   rgba(194,145,74,0.90);
-  --pt-a:       #c2914a;
+  --accent-a-solid:     #c89a55;
+  --brand-glow:         rgba(200,154,85,0.50);
+
+  /* Bright white pearl sidebar */
+  --sidebar-bg:         rgba(255,255,255,0.88);
+  --sidebar-border:     rgba(200,154,85,0.18);
+  --sidebar-shadow:     4px 0 28px rgba(100,90,60,0.10);
+
+  --item-hover-bg:      rgba(200,154,85,0.10);
+  --item-hover-border:  rgba(200,154,85,0.28);
+  --item-active-bg:     rgba(255,238,200,0.55);
+  --item-active-border: rgba(200,154,85,0.55);
+  --item-glow:          rgba(200,154,85,0.22);
+
+  /* Aurora orbs — pastel soft */
+  --orb-a1: rgba(255,226,168,0.36);
+  --orb-a2: rgba(220,180,100,0.10);
+  --orb-b1: rgba(180,210,235,0.32);
+  --orb-b2: rgba(120,170,210,0.10);
+  --orb-c1: rgba(255,233,175,0.18);
+
+  --dot-color:  rgba(200,154,85,0.16);
+  --dc-color:   rgba(200,154,85,0.85);
+  --pt-a:       #c89a55;
   --pt-b:       #e9cb83;
   --pt-c:       #d6b06a;
-  --pt-glow-a:  rgba(194,145,74,0.85);
-  --pt-glow-b:  rgba(233,203,131,0.85);
-  --pt-glow-c:  rgba(194,145,74,1);
+  --pt-glow-a:  rgba(200,154,85,0.80);
+  --pt-glow-b:  rgba(233,203,131,0.80);
+  --pt-glow-c:  rgba(200,154,85,0.95);
 }
 
-/* Sidebar nav items — text reversal for light theme */
-.s-root[data-theme="pearl"] .sb-icon          { color: rgba(50,44,34,0.50); }
-.s-root[data-theme="pearl"] .sb-item:hover:not(.is-active) .sb-icon { color: rgba(50,44,34,0.78); }
-.s-root[data-theme="pearl"] .sb-label         { color: rgba(50,44,34,0.45); }
-.s-root[data-theme="pearl"] .sb-item:hover:not(.is-active) .sb-label { color: rgba(50,44,34,0.78); }
+/* Sidebar nav items — dark icons/labels on white pearl */
+.s-root[data-theme="pearl"] .sb-icon                                { color: rgba(60,66,76,0.55); }
+.s-root[data-theme="pearl"] .sb-item:hover:not(.is-active) .sb-icon { color: rgba(60,66,76,0.85); }
+.s-root[data-theme="pearl"] .sb-label                               { color: rgba(60,66,76,0.55); }
+.s-root[data-theme="pearl"] .sb-item:hover:not(.is-active) .sb-label{ color: rgba(60,66,76,0.85); }
 .s-root[data-theme="pearl"] .sb-item.is-active .sb-icon,
-.s-root[data-theme="pearl"] .sb-item.is-active .sb-label { color: var(--arc-300, #b8843e); }
-.s-root[data-theme="pearl"] .sb-dev-btn       { color: rgba(50,44,34,0.45); background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.08); }
-.s-root[data-theme="pearl"] .sb-dev-btn:hover { color: rgba(50,44,34,0.75); background: rgba(0,0,0,0.08); }
-.s-root[data-theme="pearl"] .sb-theme-label   { color: rgba(50,44,34,0.50); }
+.s-root[data-theme="pearl"] .sb-item.is-active .sb-label            { color: #8b6722; }
+.s-root[data-theme="pearl"] .sb-dev-btn                             { color: rgba(60,66,76,0.55); background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.08); }
+.s-root[data-theme="pearl"] .sb-dev-btn:hover                       { color: rgba(60,66,76,0.85); background: rgba(0,0,0,0.07); }
 
-/* Lighten the dark inset highlight in light mode */
+/* Soft white highlight on active item */
 .s-root[data-theme="pearl"] .sb-item.is-active {
-  box-shadow: 0 0 18px var(--item-glow), inset 0 1px 0 rgba(255,255,255,0.50);
+  box-shadow: 0 4px 18px var(--item-glow), inset 0 1px 0 rgba(255,255,255,0.85);
 }
 
 /* ── Responsive ── */
