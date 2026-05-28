@@ -39,7 +39,8 @@
         <div class="ph-title">{{ placeholderTitle }}</div>
         <div class="ph-desc">{{ placeholderDesc }}</div>
 
-        <div class="ph-progress">
+        <!-- Progress bar: only show when NOT delegated to the global sticky bar -->
+        <div v-if="!refreshingImages" class="ph-progress">
           <div class="ph-bar" :class="{ indeterminate }">
             <div
               class="ph-bar-fill"
@@ -53,6 +54,11 @@
             </template>
             <span>{{ progressLabel }}</span>
           </div>
+        </div>
+        <!-- When global bar is active, just show a minimal status chip -->
+        <div v-else class="ph-status-chip">
+          <span class="ph-status-dot"/>
+          {{ progressLabel }}
         </div>
       </div>
     </div>
@@ -72,6 +78,7 @@ const props = defineProps<{
   workflowResponse: UnknownRecord | null
   renderInFlight: boolean
   loading: boolean
+  refreshingImages?: boolean   // true when image review refresh is running (top bar already covers it)
   errorMessage?: string
   workflowStatusMessage?: string
   workflowStatusProgress?: number | null
@@ -333,8 +340,34 @@ const placeholderDesc = computed(() => {
   gap: 8px;
 }
 
-.ph-dot {
-  opacity: 0.5;
+.ph-dot { opacity: 0.5; }
+
+/* Minimal status chip shown when global bar is covering the progress */
+.ph-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(245,158,11,0.20);
+  background: rgba(245,158,11,0.07);
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0 auto;
+}
+
+.ph-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--arc-400);
+  box-shadow: 0 0 6px rgba(245,158,11,0.70);
+  animation: dotPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes dotPulse {
+  0%,100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.5; transform: scale(0.75); }
 }
 
 .render-button {
