@@ -301,48 +301,40 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
     v-if="renderEntries.length > 0 || showWaitingCard"
     class="result-panel"
   >
-    <h2 class="section-title">Interactive Image Review</h2>
+    <h2 class="section-title">画面审核</h2>
 
-    <div v-if="progressText" class="review-progress">
-      <div class="review-progress-head">
-        <div class="review-progress-copy">{{ progressText }}</div>
-        <button
-          v-if="canCancel"
-          type="button"
-          class="cancel-refresh-button"
-          @click="onCancelRefresh"
-        >
-          停止生成
-        </button>
-      </div>
-      <div class="review-progress-track" aria-hidden="true">
-        <div
-          class="review-progress-fill"
-          :style="{ width: `${Math.max(0, Math.min(100, progressPercent || 0))}%` }"
-        ></div>
-      </div>
+    <!-- Progress text only — bar is shown in the global sticky header -->
+    <div v-if="progressText" class="review-progress-inline">
+      <span class="review-progress-copy">{{ progressText }}</span>
+      <button
+        v-if="canCancel"
+        type="button"
+        class="cancel-refresh-button"
+        @click="onCancelRefresh"
+      >
+        停止生成
+      </button>
     </div>
 
     <article v-if="showWaitingCard && renderEntries.length === 0" class="review-waiting-card">
-      <div class="waiting-preview-frame">
-        <div class="placeholder-card shimmer-active">
-          <div class="placeholder-art">
-            <div class="placeholder-badge">PLACEHOLDER</div>
-
-            <div class="placeholder-canvas">
-              <div class="placeholder-sky"></div>
-              <div class="placeholder-sun"></div>
-              <div class="placeholder-cloud placeholder-cloud-left"></div>
-              <div class="placeholder-cloud placeholder-cloud-right"></div>
-              <div class="placeholder-hill placeholder-hill-back"></div>
-              <div class="placeholder-hill placeholder-hill-front"></div>
-              <div class="placeholder-water"></div>
-              <div class="placeholder-tree placeholder-tree-left"></div>
-              <div class="placeholder-tree placeholder-tree-right"></div>
-              <div class="placeholder-caption-bar"></div>
-            </div>
-          </div>
-        </div>
+      <!-- Illustration -->
+      <div class="waiting-illus">
+        <svg class="waiting-svg" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <!-- Photo frame -->
+          <rect x="10" y="16" width="80" height="68" rx="8" stroke="currentColor" stroke-width="1.8" stroke-opacity="0.55"/>
+          <!-- Top bar -->
+          <rect x="10" y="16" width="80" height="16" rx="8" fill="currentColor" fill-opacity="0.07"/>
+          <!-- Landscape mountains -->
+          <path d="M10 70 L32 45 L48 60 L65 38 L90 70 V84 H10 Z" fill="currentColor" fill-opacity="0.12"/>
+          <path d="M10 78 L32 55 L48 68 L65 48 L90 78" stroke="currentColor" stroke-width="1.4" stroke-opacity="0.40" stroke-linecap="round" stroke-linejoin="round"/>
+          <!-- Sun / circle -->
+          <circle cx="74" cy="32" r="8" stroke="currentColor" stroke-width="1.6" stroke-opacity="0.50"/>
+          <circle cx="74" cy="32" r="4" fill="currentColor" fill-opacity="0.30"/>
+          <!-- Shimmer lines -->
+          <line x1="24" y1="24" x2="50" y2="24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-opacity="0.35"/>
+          <line x1="24" y1="24" x2="36" y2="24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-opacity="0.55"/>
+        </svg>
+        <div class="waiting-illus-glow"/>
       </div>
 
       <div class="waiting-copy">
@@ -462,7 +454,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                   target="_blank"
                   rel="noreferrer"
                 >
-                  Open original
+                  查看原图
                 </a>
 
                 <button
@@ -472,7 +464,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                   :title="'用 Cinematic 档重新生成更高质量候选'"
                   @click="onEnhanceScene(entry.sceneId)"
                 >
-                  ✦ Enhance
+                  ✦ 增强画质
                 </button>
               </div>
             </div>
@@ -482,7 +474,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
             <div class="candidate-header">
               <span class="preview-title">候选图</span>
               <span class="candidate-count">
-                {{ (entry.item.candidate_asset_refs || []).length || 2 }} candidates
+                {{ (entry.item.candidate_asset_refs || []).length || 2 }} 张候选
               </span>
             </div>
 
@@ -709,7 +701,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
           <div class="detail-block detail-block-tight">
             <div class="candidate-header">
               <span class="preview-title">候选图</span>
-              <span class="candidate-count">2 candidates</span>
+              <span class="candidate-count">2 张候选</span>
             </div>
 
             <div class="review-candidate-grid">
@@ -834,63 +826,48 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 
 <style scoped>
 .result-panel {
-  margin-top: 20px;
-  padding: 14px;
-  border-radius: 14px;
-  background: #f8fafc;
-  border: 1px solid #e5e7eb;
+  margin-top: 0;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  border: none;
 }
 
 .section-title {
   margin: 0 0 10px;
-  font-size: 16px;
-  line-height: 1.4;
-  color: #111827;
-  text-align: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  text-align: left;
 }
 
-.review-progress {
-  margin: 0 0 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.review-progress-head {
+/* Inline progress — just text + cancel, no duplicate bar */
+.review-progress-inline {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(245,158,11,0.06);
+  border: 1px solid rgba(245,158,11,0.12);
 }
 
 .review-progress-copy {
   flex: 1;
   min-width: 0;
-  color: #334155;
-  font-size: 13px;
-  font-weight: 700;
+  color: var(--arc-300);
+  font-size: 0.8125rem;
+  font-weight: 600;
   line-height: 1.4;
-  text-align: left;
-}
-
-.review-progress-track {
-  width: 100%;
-  height: 8px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: #e2e8f0;
-}
-
-.review-progress-fill {
-  height: 100%;
-  border-radius: inherit;
-  background: #2563eb;
-  transition: width 180ms ease;
 }
 
 .summary-status {
-  color: #2563eb;
-  font-size: 12px;
+  color: var(--arc-300);
+  font-size: 0.75rem;
   font-weight: 700;
   flex-shrink: 0;
 }
@@ -906,20 +883,20 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 }
 
 .detail-text {
-  color: #111827;
+  color: var(--text-secondary);
   line-height: 1.5;
 }
 
 .scene-subtext {
   margin: 6px 0 0;
-  font-size: 14px;
-  color: #64748b;
+  font-size: 0.875rem;
+  color: var(--text-muted);
 }
 
 .asset-code-wrap {
   padding: 10px 12px;
   border-radius: 8px;
-  background: #f3f1eb;
+  background: rgba(0,0,0,0.25);
 }
 
 .asset-code-wrap-compact {
@@ -928,12 +905,13 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 
 .asset-code-text {
   display: block;
-  color: #111827;
+  color: var(--text-secondary);
   line-height: 1.45;
-  font-size: 12px;
+  font-size: 0.75rem;
   white-space: pre-wrap;
   word-break: break-all;
   overflow-wrap: anywhere;
+  font-family: var(--font-mono, monospace);
 }
 
 .review-scene-grid {
@@ -944,21 +922,30 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 .review-scene-card {
   padding: 14px;
   border-radius: 16px;
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
+  background: linear-gradient(160deg, rgba(20,15,5,0.82) 0%, rgba(14,11,4,0.78) 100%);
+  border: 1px solid rgba(245,158,11,0.10);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.35), inset 0 1px 0 rgba(251,191,36,0.06);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.review-scene-card:hover {
+  border-color: rgba(245,158,11,0.22);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.40), 0 0 0 1px rgba(245,158,11,0.08);
 }
 
 .review-scene-card-placeholder {
-  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  background: linear-gradient(160deg, rgba(16,12,4,0.88) 0%, rgba(12,9,3,0.84) 100%);
+  border-color: rgba(245,158,11,0.12);
 }
 
 .review-scene-card-refreshing {
-  border-color: #cbd5e1;
+  border-color: rgba(245,158,11,0.32);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.35), 0 0 20px rgba(245,158,11,0.10);
 }
 
 .review-scene-card-failed {
-  border-color: #fecaca;
-  background: #fffafa;
+  border-color: rgba(248,113,133,0.35);
+  background: rgba(248,113,133,0.05);
 }
 
 .review-scene-head {
@@ -975,8 +962,9 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 
 .scene-title-text {
   display: block;
-  color: #111827;
-  font-size: 17px;
+  color: var(--text-primary);
+  font-size: 1.0625rem;
+  font-weight: 600;
   line-height: 1.35;
   word-break: break-word;
 }
@@ -993,8 +981,8 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   align-items: stretch;
   padding: 10px;
   border-radius: 14px;
-  background: #fbfcfe;
-  border: 1px solid #e6ebf2;
+  background: rgba(10,8,3,0.62);
+  border: 1px solid rgba(245,158,11,0.08);
 }
 
 .preview-card-selected,
@@ -1007,8 +995,8 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   aspect-ratio: 16 / 9;
   border-radius: 12px;
   overflow: hidden;
-  border: 1px solid #d7dee8;
-  background: #eef2f6;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(0,0,0,0.40);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1043,10 +1031,11 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 }
 
 .preview-title {
-  color: #475569;
-  font-size: 13px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
   font-weight: 700;
-  letter-spacing: 0.01em;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .preview-state-tag {
@@ -1062,94 +1051,101 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 }
 
 .preview-state-tag-done {
-  background: #e8f7ee;
-  color: #15803d;
+  background: rgba(245,158,11,0.14);
+  color: var(--arc-300);
 }
 
 .preview-state-tag-waiting {
-  background: #f3f4f6;
-  color: #6b7280;
+  background: rgba(255,255,255,0.07);
+  color: var(--text-muted);
 }
 
 .preview-state-tag-refreshing {
-  background: #eaf2ff;
-  color: #2563eb;
+  background: rgba(245,158,11,0.15);
+  color: var(--arc-300);
 }
 
 .preview-state-tag-failed {
-  background: #fee2e2;
-  color: #b91c1c;
+  background: rgba(248,113,133,0.15);
+  color: #f87171;
 }
 
 .selected-open-link {
   width: fit-content;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
-  color: #2563eb;
+  color: var(--arc-300);
   text-decoration: none;
 }
 
 .selected-open-link:hover {
   text-decoration: underline;
+  color: var(--arc-200);
 }
 
 .placeholder-status-copy {
-  color: #64748b;
-  font-size: 12px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
   font-weight: 600;
   line-height: 1.5;
 }
 
 .placeholder-error-copy {
-  color: #b91c1c;
-  font-size: 12px;
+  color: #f87171;
+  font-size: 0.75rem;
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
 
 .retry-scene-button {
   width: fit-content;
-  min-height: 34px;
+  min-height: 32px;
   padding: 0 14px;
   border-radius: 8px;
-  border: 1px solid #fecaca;
-  background: #fff1f2;
-  color: #b91c1c;
-  font-size: 13px;
+  border: 1px solid rgba(248,113,133,0.35);
+  background: rgba(248,113,133,0.10);
+  color: #fca5a5;
+  font-size: 0.8125rem;
   font-weight: 700;
   cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s, border-color 0.15s;
 }
 
 .retry-scene-button:hover:not(:disabled) {
-  background: #ffe4e6;
+  background: rgba(248,113,133,0.18);
+  border-color: rgba(248,113,133,0.55);
 }
 
 .retry-scene-button:disabled {
   cursor: not-allowed;
-  opacity: 0.65;
+  opacity: 0.55;
 }
 
 .enhance-scene-button {
   width: fit-content;
-  min-height: 30px;
+  min-height: 28px;
   padding: 0 12px;
   border-radius: 8px;
-  border: 1px solid #c7d2fe;
-  background: #eef2ff;
-  color: #4338ca;
-  font-size: 13px;
+  border: 1px solid rgba(249,115,22,0.32);
+  background: rgba(249,115,22,0.10);
+  color: var(--prism-400);
+  font-size: 0.8125rem;
   font-weight: 600;
   cursor: pointer;
   margin-top: 6px;
+  font-family: inherit;
+  transition: background 0.15s, border-color 0.15s;
 }
 
 .enhance-scene-button:hover:not(:disabled) {
-  background: #e0e7ff;
+  background: rgba(249,115,22,0.18);
+  border-color: rgba(249,115,22,0.52);
 }
 
 .enhance-scene-button:disabled {
   cursor: not-allowed;
-  opacity: 0.65;
+  opacity: 0.55;
 }
 
 .candidate-header {
@@ -1160,8 +1156,8 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 }
 
 .candidate-count {
-  color: #94a3b8;
-  font-size: 12px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
   font-weight: 700;
   white-space: nowrap;
 }
@@ -1174,8 +1170,8 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 
 .asset-select-card {
   appearance: none;
-  border: 1px solid #dbe1ea;
-  background: #ffffff;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.03);
   border-radius: 14px;
   padding: 0;
   text-align: left;
@@ -1188,19 +1184,20 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 }
 
 .asset-select-card:hover:not(:disabled) {
-  border-color: #94a3b8;
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+  border-color: rgba(245,158,11,0.38);
+  box-shadow: 0 4px 20px rgba(245,158,11,0.14), 0 0 0 1px rgba(245,158,11,0.10);
   transform: translateY(-1px);
 }
 
 .asset-select-card.active {
-  border-color: #0f172a;
-  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.08);
+  border-color: var(--arc-400);
+  box-shadow: 0 0 0 2px rgba(245,158,11,0.22), 0 0 24px rgba(245,158,11,0.18);
+  background: rgba(245,158,11,0.06);
 }
 
 .asset-select-card:disabled {
   cursor: not-allowed;
-  opacity: 0.7;
+  opacity: 0.55;
 }
 
 .asset-select-card-static {
@@ -1210,20 +1207,22 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 .candidate-file-chip {
   display: inline-block;
   max-width: 100%;
-  padding: 4px 8px;
-  border-radius: 6px;
-  background: #f3f1eb;
-  color: #4b5563;
-  font-size: 12px;
+  padding: 3px 7px;
+  border-radius: 5px;
+  background: rgba(0,0,0,0.30);
+  color: var(--text-muted);
+  font-size: 0.6875rem;
   line-height: 1.35;
   word-break: break-all;
+  font-family: var(--font-mono, monospace);
 }
 
+/* ── Dark placeholder artwork — warm dark gold tones ── */
 .placeholder-card {
   position: relative;
   width: 100%;
   height: 100%;
-  background: linear-gradient(180deg, #eef2f6 0%, #e5eaef 100%);
+  background: linear-gradient(160deg, #100c03 0%, #16100a 100%);
 }
 
 .placeholder-art {
@@ -1234,42 +1233,29 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 }
 
 .placeholder-badge {
-  position: absolute;
-  top: 46%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 3;
-  padding: 0;
-  background: transparent;
-  color: rgba(100, 116, 139, 0.92);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  white-space: nowrap;
-  border-radius: 0;
-  box-shadow: none;
+  display: none;
 }
+
 .placeholder-canvas {
   position: absolute;
-  inset: 16px 14px 14px 14px;
-  border-radius: 12px;
+  inset: 14px 12px 12px 12px;
+  border-radius: 10px;
   overflow: hidden;
-  background: #f3f5f7;
-  border: 1px solid #d7dee5;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  background: #0c0802;
+  border: 1px solid rgba(245,158,11,0.10);
 }
 
 .placeholder-sky {
   position: absolute;
   inset: 0 0 38% 0;
-  background: linear-gradient(180deg, #e9edf1 0%, #dde4ea 100%);
+  background: linear-gradient(180deg, #1a0f02 0%, #120b02 100%);
 }
 
 .placeholder-cloud {
   position: absolute;
   height: 10px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.55);
+  background: rgba(245,158,11,0.07);
 }
 
 .placeholder-cloud::before,
@@ -1277,7 +1263,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   content: '';
   position: absolute;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.55);
+  background: rgba(245,158,11,0.07);
 }
 
 .placeholder-cloud-left {
@@ -1330,14 +1316,14 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   left: -6%;
   width: 76%;
   height: 24%;
-  background: #cfd6dd;
+  background: #1e1003;
 }
 
 .placeholder-hill-front {
   right: -8%;
   width: 84%;
   height: 30%;
-  background: #bcc6cf;
+  background: #180d02;
 }
 
 .placeholder-water {
@@ -1346,7 +1332,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   right: 0;
   bottom: 0;
   height: 24%;
-  background: linear-gradient(180deg, #b8c2cb 0%, #aeb9c3 100%);
+  background: linear-gradient(180deg, #1a0f04 0%, #100902 100%);
 }
 
 .placeholder-sun {
@@ -1356,15 +1342,15 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: #c7d0d8;
-  box-shadow: 0 0 0 6px rgba(199, 208, 216, 0.26);
+  background: rgba(245,158,11,0.22);
+  box-shadow: 0 0 0 6px rgba(245,158,11,0.07), 0 0 20px rgba(245,158,11,0.18);
 }
 
 .placeholder-tree {
   position: absolute;
   bottom: 18%;
-  width: 6px;
-  background: #97a5b2;
+  width: 5px;
+  background: #1a1004;
   border-radius: 999px;
 }
 
@@ -1376,7 +1362,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: #c9d1d8;
+  background: #1a1004;
   transform: translateX(-50%);
 }
 
@@ -1395,9 +1381,9 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   left: 14px;
   right: 14px;
   bottom: 10px;
-  height: 8px;
+  height: 6px;
   border-radius: 999px;
-  background: #d8dfe6;
+  background: rgba(245,158,11,0.08);
 }
 .shimmer-active::after {
   content: '';
@@ -1405,9 +1391,9 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   inset: 0;
   background: linear-gradient(
     110deg,
-    rgba(255, 255, 255, 0) 18%,
-    rgba(255, 255, 255, 0.58) 46%,
-    rgba(255, 255, 255, 0) 74%
+    rgba(245,158,11,0) 18%,
+    rgba(245,158,11,0.12) 46%,
+    rgba(245,158,11,0) 74%
   );
   transform: translateX(-120%);
   animation: reviewShimmer 1.6s linear infinite;
@@ -1416,23 +1402,43 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 
 .review-waiting-card {
   display: grid;
-  grid-template-columns: 180px 1fr;
-  gap: 20px;
+  grid-template-columns: 140px 1fr;
+  gap: 24px;
   align-items: center;
-  padding: 18px;
+  padding: 24px 20px;
   border-radius: 16px;
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
+  background: rgba(245,158,11,0.04);
+  border: 1px solid rgba(245,158,11,0.14);
 }
 
-.waiting-preview-frame {
-  width: 180px;
-  height: 220px;
-  border-radius: 16px;
-  border: 1px solid #dbe3ee;
-  background: #eef2f6;
-  overflow: hidden;
+.waiting-illus {
   position: relative;
+  width: 110px;
+  height: 110px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.waiting-svg {
+  width: 100px;
+  height: 100px;
+  color: var(--arc-300);
+  filter: drop-shadow(0 0 14px rgba(245,158,11,0.35));
+  animation: waitingPulse 3s ease-in-out infinite;
+}
+
+.waiting-illus-glow {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(245,158,11,0.10) 0%, transparent 70%);
+  animation: waitingPulse 3s ease-in-out infinite;
+}
+
+@keyframes waitingPulse {
+  0%,100% { opacity: 0.70; transform: scale(1); }
+  50%      { opacity: 1.00; transform: scale(1.04); }
 }
 
 .waiting-copy {
@@ -1443,15 +1449,16 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 
 .waiting-title {
   margin: 0;
-  font-size: 18px;
-  color: #111827;
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--text-primary);
 }
 
 .waiting-message {
   margin: 0;
-  color: #475569;
+  color: var(--text-secondary);
   line-height: 1.65;
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 
 .waiting-actions {
@@ -1462,48 +1469,55 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 
 .refresh-button {
   appearance: none;
-  border: 1px solid #0f172a;
-  background: #0f172a;
-  color: #ffffff;
+  border: none;
+  background: linear-gradient(90deg, var(--arc-400), var(--prism-500));
+  color: #fff;
   border-radius: 999px;
-  padding: 10px 18px;
-  font-size: 14px;
+  padding: 10px 20px;
+  font-size: 0.875rem;
   font-weight: 600;
   cursor: pointer;
+  font-family: inherit;
+  box-shadow: 0 4px 14px rgba(245,158,11,0.30);
   transition:
     opacity 0.2s ease,
-    transform 0.2s ease;
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .refresh-button:hover:not(:disabled) {
   transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(245,158,11,0.42);
 }
 
 .refresh-button:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
 .cancel-refresh-button {
   appearance: none;
   flex-shrink: 0;
-  border: 1px solid #cbd5e1;
-  background: #ffffff;
-  color: #334155;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.05);
+  color: var(--text-secondary);
   border-radius: 999px;
   padding: 8px 14px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
   cursor: pointer;
+  font-family: inherit;
   transition:
     border-color 0.2s ease,
     color 0.2s ease,
+    background 0.2s ease,
     transform 0.2s ease;
 }
 
 .cancel-refresh-button:hover {
-  border-color: #ef4444;
-  color: #b91c1c;
+  border-color: rgba(248,113,133,0.50);
+  color: #fca5a5;
+  background: rgba(248,113,133,0.08);
   transform: translateY(-1px);
 }
 

@@ -315,17 +315,7 @@ function getTopicManualMismatchWarning(): string {
 
 <template>
   <section class="workflow-run-panel">
-    <label class="label" for="session-id">Session ID</label>
-    <input
-      id="session-id"
-      :value="formState.sessionId"
-      class="input"
-      type="text"
-      placeholder="请输入会话标识，例如 demo-session-001"
-      @input="updateFormState('sessionId', ($event.target as HTMLInputElement).value)"
-    />
-
-    <label class="label" for="topic">Topic</label>
+    <label class="label" for="topic">故事主题</label>
     <textarea
       id="topic"
       :value="formState.topic"
@@ -336,11 +326,11 @@ function getTopicManualMismatchWarning(): string {
     />
 
     <section class="config-panel">
-      <h2 class="section-title">Generation Config</h2>
+      <h2 class="section-title">生成配置</h2>
 
       <div class="config-grid">
         <label class="field">
-          <span>Audience</span>
+          <span>受众群体</span>
           <input
             :value="formState.audience"
             class="input"
@@ -350,7 +340,7 @@ function getTopicManualMismatchWarning(): string {
         </label>
 
         <label class="field">
-          <span>Tone</span>
+          <span>故事风格</span>
           <input
             :value="formState.tone"
             class="input"
@@ -360,7 +350,7 @@ function getTopicManualMismatchWarning(): string {
         </label>
 
         <label class="field">
-          <span>Visual Style</span>
+          <span>视觉风格</span>
           <input
             :value="formState.visualStyle"
             class="input"
@@ -370,7 +360,7 @@ function getTopicManualMismatchWarning(): string {
         </label>
 
         <label class="field">
-          <span>Character Style</span>
+          <span>角色风格</span>
           <input
             :value="formState.characterStyle"
             class="input"
@@ -380,7 +370,7 @@ function getTopicManualMismatchWarning(): string {
         </label>
 
         <label class="field">
-          <span>Voice Style</span>
+          <span>配音风格</span>
           <input
             :value="formState.voiceStyle"
             class="input"
@@ -391,10 +381,10 @@ function getTopicManualMismatchWarning(): string {
 
         <!-- ===== Render & Audio controls (UI-only layout) ===== -->
         <div class="render-audio-block">
-          <div class="block-title">Render & Audio</div>
+          <div class="block-title">渲染 & 音频</div>
 
           <div class="row">
-            <div class="row-label">Render Mode</div>
+            <div class="row-label">渲染模式</div>
 
             <label class="radio">
               <input
@@ -403,7 +393,7 @@ function getTopicManualMismatchWarning(): string {
                 :checked="formState.renderMode === 'auto'"
                 @change="updateFormState('renderMode', 'auto')"
               />
-              Auto
+              自动
             </label>
 
             <label class="radio">
@@ -413,41 +403,41 @@ function getTopicManualMismatchWarning(): string {
                 :checked="formState.renderMode === 'manual'"
                 @change="updateFormState('renderMode', 'manual')"
               />
-              Manual
+              手动
             </label>
           </div>
 
           <div class="row">
-            <div class="row-label">Image Quality</div>
+            <div class="row-label">画面质量</div>
 
-            <label class="radio" title="15 steps — fast, lower detail">
+            <label class="radio" title="15 steps — 快速，细节较少">
               <input
                 type="radio"
                 value="fast"
                 :checked="formState.qualityTier === 'fast'"
                 @change="updateFormState('qualityTier', 'fast')"
               />
-              Fast
+              快速
             </label>
 
-            <label class="radio" title="25 steps — balanced quality">
+            <label class="radio" title="25 steps — 均衡质量">
               <input
                 type="radio"
                 value="quality"
                 :checked="formState.qualityTier === 'quality'"
                 @change="updateFormState('qualityTier', 'quality')"
               />
-              Quality
+              均衡
             </label>
 
-            <label class="radio" title="40 steps — high detail, slower">
+            <label class="radio" title="40 steps — 高细节，较慢">
               <input
                 type="radio"
                 value="cinematic"
                 :checked="formState.qualityTier === 'cinematic'"
                 @change="updateFormState('qualityTier', 'cinematic')"
               />
-              Cinematic
+              电影级
             </label>
           </div>
 
@@ -467,9 +457,9 @@ function getTopicManualMismatchWarning(): string {
                   }
                 "
               />
-              <span>Enable Audio</span>
+              <span>启用配音</span>
             </label>
-            <span class="hint">Audio is the master switch.</span>
+            <span class="hint">配音总开关。</span>
           </div>
 
           <div class="row">
@@ -487,16 +477,14 @@ function getTopicManualMismatchWarning(): string {
                   })
                 "
               />
-              <span>Enable Voiceover</span>
+              <span>启用旁白</span>
             </label>
-            <span v-if="!formState.audioEnabled" class="hint"
-              >Turn on Audio to enable voiceover.</span
-            >
+            <span v-if="!formState.audioEnabled" class="hint">请先开启配音。</span>
           </div>
         </div>
 
         <label class="field">
-          <span>Voice Mode</span>
+          <span>配音模式</span>
 
           <select
             :value="formState.voiceMode"
@@ -509,7 +497,7 @@ function getTopicManualMismatchWarning(): string {
           </select>
 
           <div class="quickStart">
-            <div class="quickStartTitle">Quick Start · 快捷模板</div>
+            <div class="quickStartTitle">快捷模板</div>
             <p v-if="getTopicManualMismatchWarning()" class="warn">
               ⚠️ {{ getTopicManualMismatchWarning() }}
             </p>
@@ -543,7 +531,7 @@ function getTopicManualMismatchWarning(): string {
             </div>
 
             <details class="advancedBox">
-              <summary class="advancedSummary">Advanced · 调试</summary>
+              <summary class="advancedSummary">高级 · 调试</summary>
               <div class="advancedBody">
                 <button
                   type="button"
@@ -560,11 +548,7 @@ function getTopicManualMismatchWarning(): string {
 
         <label class="field">
           <span>
-            {{
-              formState.voiceMode === 'single'
-                ? 'Narrator Voice · 单人旁白'
-                : 'Narrator Voice · 旁白'
-            }}
+            旁白配音
           </span>
           <input
             :value="formState.narratorVoiceStyle"
@@ -578,7 +562,7 @@ function getTopicManualMismatchWarning(): string {
 
         <template v-if="formState.voiceMode === 'multi'">
           <label class="field">
-            <span>Mother Voice · 妈妈配音</span>
+            <span>妈妈配音</span>
             <input
               :value="formState.motherVoiceStyle"
               class="input"
@@ -590,7 +574,7 @@ function getTopicManualMismatchWarning(): string {
           </label>
 
           <label class="field">
-            <span>Child Voice · 宝宝配音</span>
+            <span>宝宝配音</span>
             <input
               :value="formState.childVoiceStyle"
               class="input"
@@ -604,7 +588,7 @@ function getTopicManualMismatchWarning(): string {
 
         <template v-if="formState.voiceMode === 'character'">
           <label class="field">
-            <span>Main Character Voice · 主角色配音</span>
+            <span>主角配音</span>
             <input
               :value="formState.childVoiceStyle"
               class="input"
@@ -616,7 +600,7 @@ function getTopicManualMismatchWarning(): string {
           </label>
 
           <label class="field">
-            <span>Secondary Character Voice · 次角色配音</span>
+            <span>配角配音</span>
             <input
               :value="formState.motherVoiceStyle"
               class="input"
@@ -629,7 +613,7 @@ function getTopicManualMismatchWarning(): string {
         </template>
 
         <label class="field">
-          <span>Duration · 视频时长（秒，60–180）</span>
+          <span>视频时长（秒）</span>
           <input
             :value="formState.durationSec"
             class="input"
@@ -648,7 +632,7 @@ function getTopicManualMismatchWarning(): string {
         </label>
 
         <label class="field">
-          <span>Language</span>
+          <span>语言</span>
           <input
             :value="formState.language"
             class="input"
@@ -658,17 +642,19 @@ function getTopicManualMismatchWarning(): string {
         </label>
 
         <label class="field">
-          <span>Video Provider</span>
-          <input
+          <span>视频模式</span>
+          <select
             :value="formState.videoProvider"
             class="input"
-            type="text"
-            @input="updateFormState('videoProvider', ($event.target as HTMLInputElement).value)"
-          />
+            @change="updateFormState('videoProvider', ($event.target as HTMLSelectElement).value)"
+          >
+            <option value="mock">绘本视频模式</option>
+            <option value="storybook">分镜播放模式</option>
+          </select>
         </label>
 
         <label class="field">
-          <span>Output Mode</span>
+          <span>输出模式</span>
           <input
             :value="formState.outputMode"
             class="input"
@@ -688,13 +674,13 @@ function getTopicManualMismatchWarning(): string {
               )
             "
           />
-          <span>Enable Subtitles</span>
+          <span>启用字幕</span>
         </label>
       </div>
     </section>
 
     <section v-if="formState.voiceMode === 'character'" class="config-panel">
-      <h2 class="section-title">Character Finalization</h2>
+      <h2 class="section-title">角色设置</h2>
 
       <label class="checkbox-field">
         <input
@@ -707,12 +693,12 @@ function getTopicManualMismatchWarning(): string {
             )
           "
         />
-        <span>Enable Structured Characters</span>
+        <span>启用角色精控</span>
       </label>
 
       <div v-if="formState.structuredCharactersEnabled" class="config-grid">
         <label class="field">
-          <span>Primary Character Display Name</span>
+          <span>主角名称</span>
           <input
             :value="formState.primaryCharacterDisplayName"
             class="input"
@@ -727,7 +713,7 @@ function getTopicManualMismatchWarning(): string {
         </label>
 
         <label class="field">
-          <span>Primary Character Species</span>
+          <span>主角物种</span>
           <input
             :value="formState.primaryCharacterSpecies"
             class="input"
@@ -742,7 +728,7 @@ function getTopicManualMismatchWarning(): string {
         </label>
 
         <label class="field">
-          <span>Primary Visual Traits</span>
+          <span>主角外观特征</span>
           <textarea
             :value="formState.primaryCharacterVisualTraits"
             class="textarea"
@@ -758,7 +744,7 @@ function getTopicManualMismatchWarning(): string {
         </label>
 
         <label class="field">
-          <span>Primary Forbidden Traits</span>
+          <span>主角禁用特征</span>
           <textarea
             :value="formState.primaryCharacterForbiddenTraits"
             class="textarea"
@@ -774,7 +760,7 @@ function getTopicManualMismatchWarning(): string {
         </label>
 
         <label class="field">
-          <span>Secondary Character Display Name</span>
+          <span>配角名称</span>
           <input
             :value="formState.secondaryCharacterDisplayName"
             class="input"
@@ -789,7 +775,7 @@ function getTopicManualMismatchWarning(): string {
         </label>
 
         <label class="field">
-          <span>Secondary Character Species</span>
+          <span>配角物种</span>
           <input
             :value="formState.secondaryCharacterSpecies"
             class="input"
@@ -804,7 +790,7 @@ function getTopicManualMismatchWarning(): string {
         </label>
 
         <label class="field">
-          <span>Secondary Visual Traits</span>
+          <span>配角外观特征</span>
           <textarea
             :value="formState.secondaryCharacterVisualTraits"
             class="textarea"
@@ -820,7 +806,7 @@ function getTopicManualMismatchWarning(): string {
         </label>
 
         <label class="field">
-          <span>Secondary Forbidden Traits</span>
+          <span>配角禁用特征</span>
           <textarea
             :value="formState.secondaryCharacterForbiddenTraits"
             class="textarea"
@@ -838,7 +824,7 @@ function getTopicManualMismatchWarning(): string {
     </section>
 
     <section class="steps-panel">
-      <h2 class="section-title">Workflow Steps</h2>
+      <h2 class="section-title">工作步骤</h2>
       <div class="steps-grid">
         <label v-for="step in stepOptions" :key="step.value" class="step-option">
           <input
@@ -862,7 +848,7 @@ function getTopicManualMismatchWarning(): string {
 
     <div class="stickyCtaBar">
       <button class="btn stickyCtaBtn" :disabled="!canSubmit" @click="emit('run')">
-        {{ loading ? '请求中...' : 'Run Workflow' }}
+        {{ loading ? '生成中…' : '开始创作' }}
       </button>
     </div>
   </section>
@@ -876,55 +862,72 @@ function getTopicManualMismatchWarning(): string {
 .label {
   display: block;
   margin-bottom: 8px;
-  color: #111827;
-  font-size: 14px;
+  color: var(--text-primary);
+  font-size: 0.875rem;
   font-weight: 600;
 }
 
 .input {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid #d1d5db;
-  border-radius: 12px;
-  padding: 12px 14px;
-  margin-bottom: 16px;
-  font-size: 14px;
-  color: #111827;
-  background: #ffffff;
+  border: 1px solid rgba(245,158,11,0.20);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  background: rgba(0,0,0,0.30);
+  font-family: inherit;
+  transition: border-color 0.15s;
 }
 
 .textarea {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid #d1d5db;
-  border-radius: 12px;
-  padding: 12px 14px;
-  font-size: 15px;
+  border: 1px solid rgba(245,158,11,0.20);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 0.9375rem;
   line-height: 1.5;
   resize: vertical;
-  background: #ffffff;
-  color: #111827;
+  background: rgba(0,0,0,0.30);
+  color: var(--text-primary);
+  font-family: inherit;
+  transition: border-color 0.15s;
 }
 
 .input:focus,
 .textarea:focus {
   outline: none;
-  border-color: #111827;
+  border-color: var(--arc-400);
+  box-shadow: 0 0 0 2px rgba(245,158,11,0.12);
+}
+
+/* Placeholder text color */
+.input::placeholder,
+.textarea::placeholder {
+  color: var(--text-muted);
+}
+
+/* Select arrow color fix for dark bg */
+.input option {
+  background: var(--bg-surface);
+  color: var(--text-primary);
 }
 
 .config-panel,
 .steps-panel {
-  margin-top: 20px;
-  padding: 16px;
-  border-radius: 14px;
-  background: #f8fafc;
-  border: 1px solid #e5e7eb;
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: 0.875rem;
+  background: rgba(0,0,0,0.20);
+  border: 1px solid rgba(255,255,255,0.06);
 }
 
 .config-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+  gap: 1rem;
 }
 
 .field {
@@ -934,10 +937,11 @@ function getTopicManualMismatchWarning(): string {
 .field span,
 .checkbox-field span {
   display: block;
-  margin-bottom: 8px;
-  color: #111827;
-  font-size: 14px;
+  margin-bottom: 6px;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
   font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .checkbox-field {
@@ -949,6 +953,7 @@ function getTopicManualMismatchWarning(): string {
 .checkbox-field input {
   width: 16px;
   height: 16px;
+  accent-color: var(--arc-400);
 }
 
 .checkbox-field span {
@@ -958,53 +963,67 @@ function getTopicManualMismatchWarning(): string {
 .steps-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  gap: 10px;
 }
 
 .step-option {
   display: flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  background: #ffffff;
-  padding: 10px 12px;
-  font-size: 14px;
-  color: #111827;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 10px;
+  background: rgba(0,0,0,0.20);
+  padding: 9px 10px;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  accent-color: var(--arc-400);
 }
 
 .section-title {
-  margin: 0 0 16px;
-  color: #111827;
-  font-size: 18px;
+  margin: 0 0 14px;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   text-align: left;
 }
 
 .btn {
-  margin-top: 20px;
+  margin-top: 1rem;
   border: none;
-  border-radius: 12px;
-  background: #111827;
-  color: #ffffff;
-  padding: 12px 18px;
-  font-size: 15px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, var(--arc-400), var(--prism-500));
+  color: #fff;
+  padding: 11px 18px;
+  font-size: 0.9375rem;
+  font-weight: 600;
   cursor: pointer;
+  font-family: inherit;
+  transition: opacity 0.15s, box-shadow 0.15s;
+  box-shadow: 0 4px 16px rgba(245,158,11,0.25);
+}
+
+.btn:hover:not(:disabled) {
+  opacity: 0.9;
+  box-shadow: 0 6px 20px rgba(245,158,11,0.38);
 }
 
 .btn:disabled {
-  opacity: 0.6;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
 .stickyCtaBar {
   position: sticky;
   bottom: 16px;
-  margin-top: 16px;
+  margin-top: 14px;
   padding: 10px;
   border-radius: 14px;
-  border: 1px solid #e5e7eb;
-  background: rgba(248, 250, 252, 0.9);
-  backdrop-filter: blur(8px);
+  border: 1px solid rgba(245,158,11,0.15);
+  background: rgba(6,11,26,0.90);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   z-index: 20;
 }
 
@@ -1014,31 +1033,31 @@ function getTopicManualMismatchWarning(): string {
 }
 
 .hint {
-  margin: 12px 0 0;
-  color: #dc2626;
-  font-size: 13px;
+  margin: 10px 0 0;
+  color: #f87171;
+  font-size: 0.8125rem;
 }
 
 .error {
-  margin-top: 16px;
-  color: #dc2626;
-  font-size: 14px;
+  margin-top: 14px;
+  color: #f87171;
+  font-size: 0.875rem;
 }
 
-/* ===== Render & Audio block (UI-only) ===== */
+/* ===== Render & Audio block ===== */
 .render-audio-block {
   grid-column: 1 / -1;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 12px;
-  padding: 12px 12px;
-  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 10px;
+  padding: 12px;
+  background: rgba(0,0,0,0.15);
 }
 
 .render-audio-block .block-title {
   font-weight: 600;
   margin-bottom: 10px;
-  color: #111827;
-  font-size: 13px;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
 }
 
 .render-audio-block .row {
@@ -1051,8 +1070,8 @@ function getTopicManualMismatchWarning(): string {
 
 .render-audio-block .row-label {
   min-width: 110px;
-  font-size: 12px;
-  opacity: 0.75;
+  font-size: 0.75rem;
+  color: var(--text-muted);
 }
 
 .render-audio-block .checkbox,
@@ -1060,93 +1079,98 @@ function getTopicManualMismatchWarning(): string {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  accent-color: var(--arc-400);
 }
 
 .render-audio-block .checkbox.disabled {
-  opacity: 0.55;
+  opacity: 0.45;
 }
 
 .render-audio-block .hint {
   margin: 0;
-  font-size: 12px;
-  opacity: 0.65;
-  color: #111827;
+  font-size: 0.75rem;
+  color: var(--text-muted);
 }
 
-/* Quick Start / Advanced (minimal UI, product-friendly) */
+/* ===== Quick Start / Advanced ===== */
 .quickStart {
   margin: 6px auto 0;
-  max-width: 760px;
 }
 
 .quickStartTitle {
   text-align: left;
-  margin: 2px 0 8px 0;
-  color: #111827;
-  font-size: 12px;
+  margin: 2px 0 8px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
   font-weight: 600;
-  opacity: 0.85;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 .quickStartRow {
   display: grid;
-  grid-template-columns: repeat(3, minmax(140px, 180px));
-  gap: 10px;
-  justify-content: center;
-  margin: 0 0 10px 0;
+  grid-template-columns: repeat(3, minmax(120px, 1fr));
+  gap: 8px;
+  margin: 0 0 10px;
 }
 
 .chipBtn {
   width: 100%;
-  border: 1px solid rgba(0, 0, 0, 0.12);
+  border: 1px solid rgba(255,255,255,0.10);
   border-radius: 999px;
   padding: 6px 12px;
-  font-size: 12px;
+  font-size: 0.75rem;
   cursor: pointer;
-  background: #fff;
+  background: rgba(0,0,0,0.20);
+  color: var(--text-secondary);
   white-space: nowrap;
   text-align: center;
-  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  font-family: inherit;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
 }
 
 .chipBtn:hover {
-  border-color: rgba(0, 0, 0, 0.22);
-  background: rgba(17, 24, 39, 0.03);
+  border-color: rgba(245,158,11,0.38);
+  color: var(--arc-300);
+  background: rgba(245,158,11,0.09);
 }
 
 .chipBtn.active {
-  border-color: #111827;
-  background: #111827;
-  color: #ffffff;
+  border-color: var(--arc-400);
+  background: rgba(245,158,11,0.15);
+  color: var(--arc-200);
+  box-shadow: 0 0 8px rgba(245,158,11,0.20);
 }
 
 .chipBtn.subtle {
-  opacity: 0.85;
+  opacity: 0.75;
 }
 
 .advancedBox {
-  max-width: 760px;
   margin-top: 6px;
-  margin-left: auto;
-  margin-right: auto;
-  border: 1px dashed rgba(0, 0, 0, 0.18);
-  border-radius: 12px;
-  padding: 10px 10px;
-  background: rgba(255, 255, 255, 0.7);
+  border: 1px dashed rgba(255,255,255,0.10);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(0,0,0,0.15);
 }
 
 .advancedSummary {
   cursor: pointer;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
-  color: #111827;
-  opacity: 0.85;
+  color: var(--text-muted);
   text-align: left;
+  list-style: none;
 }
 
+.advancedSummary::-webkit-details-marker { display: none; }
+
 .advancedBox:hover {
-  border-color: rgba(0, 0, 0, 0.24);
+  border-color: rgba(245,158,11,0.20);
 }
+
 .advancedBody {
   margin-top: 10px;
 }
@@ -1158,18 +1182,18 @@ function getTopicManualMismatchWarning(): string {
 
 .advancedHint {
   margin-top: 8px;
-  font-size: 12px;
-  color: #111827;
-  opacity: 0.7;
+  font-size: 0.75rem;
+  color: var(--text-muted);
 }
+
 .warn {
-  margin: 6px 0 0 0;
+  margin: 6px 0 0;
   padding: 10px 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(220, 38, 38, 0.35);
-  background: rgba(220, 38, 38, 0.06);
-  color: #991b1b;
-  font-size: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(251,113,133,0.30);
+  background: rgba(251,113,133,0.07);
+  color: #fca5a5;
+  font-size: 0.75rem;
   line-height: 1.4;
 }
 </style>

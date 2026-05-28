@@ -283,7 +283,12 @@ class RunnerAudioRenderSupport:
             shot_id = line.get("shot_id")
 
             char_count = max(1, len(text))
-            duration_estimate_sec = max(2, min(12, char_count // 8))
+            # Chinese children's story TTS narrates at ~5 chars/sec (slower,
+            # clearer pronunciation). The story plan calibrates: 280 chars/60s,
+            # 650/120s, 960/180s → 4.7–5.4 chars/sec. Using 5.0 as the
+            # estimate so the ±30% speed-retry threshold is not triggered on
+            # normal narration segments and speed adjustment stays a fine-tune.
+            duration_estimate_sec = max(2, min(20, round(char_count / 5)))
             duration_sec = float(duration_estimate_sec)
             duration_source = "estimate"
 
@@ -333,8 +338,17 @@ class RunnerAudioRenderSupport:
                     # speed. Content (text) is never changed here — only TTS rate.
                     # Story-level text expansion/compression happens earlier in
                     # run_story() via story_retry_policy before images are generated.
+                    #
+                    # Skip speed adjustment when the story came from template_fallback.
+                    # Template text is pre-calibrated to the target duration, so
+                    # adjusting speed here would only compound the calibration and
+                    # produce a shorter video than intended.
+                    story_generation_source = str(
+                        (outputs.get("story") or {}).get("generation_source") or ""
+                    )
+                    speed_adjustment_allowed = story_generation_source != "template_fallback"
                     duration_retry_meta: Dict[str, Any] = {}
-                    if actual_duration_sec is not None and duration_estimate_sec > 0:
+                    if actual_duration_sec is not None and duration_estimate_sec > 0 and speed_adjustment_allowed:
                         retry_speed: Optional[float] = None
                         if actual_duration_sec < duration_estimate_sec * 0.70:
                             # Too short: slow down to fill the scene slot
