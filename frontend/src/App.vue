@@ -2346,10 +2346,7 @@ async function runWorkflow() {
 .review-section-title {
   font-size: 0.875rem;
   font-weight: 700;
-  background: linear-gradient(90deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.75) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--text-primary);
   flex: 1;
   letter-spacing: 0.02em;
 }

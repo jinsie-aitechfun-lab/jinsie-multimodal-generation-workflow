@@ -870,37 +870,37 @@ function getTopicManualMismatchWarning(): string {
 .input {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid rgba(245,158,11,0.20);
+  border: 1px solid var(--input-border);
   border-radius: 10px;
   padding: 10px 12px;
   margin-bottom: 14px;
   font-size: 0.875rem;
   color: var(--text-primary);
-  background: rgba(0,0,0,0.30);
+  background: var(--input-bg);
   font-family: inherit;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, background 0.2s, box-shadow 0.15s;
 }
 
 .textarea {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid rgba(245,158,11,0.20);
+  border: 1px solid var(--input-border);
   border-radius: 10px;
   padding: 10px 12px;
   font-size: 0.9375rem;
   line-height: 1.5;
   resize: vertical;
-  background: rgba(0,0,0,0.30);
+  background: var(--input-bg);
   color: var(--text-primary);
   font-family: inherit;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, background 0.2s, box-shadow 0.15s;
 }
 
 .input:focus,
 .textarea:focus {
   outline: none;
-  border-color: var(--arc-400);
-  box-shadow: 0 0 0 2px rgba(245,158,11,0.12);
+  border-color: var(--input-focus-border);
+  box-shadow: var(--input-focus-shadow);
 }
 
 /* Placeholder text color */
@@ -920,8 +920,8 @@ function getTopicManualMismatchWarning(): string {
   margin-top: 1rem;
   padding: 1rem;
   border-radius: 0.875rem;
-  background: rgba(0,0,0,0.20);
-  border: 1px solid rgba(255,255,255,0.06);
+  background: var(--surface-overlay-mid);
+  border: 1px solid var(--border-glass);
 }
 
 .config-grid {
@@ -970,9 +970,9 @@ function getTopicManualMismatchWarning(): string {
   display: flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid rgba(255,255,255,0.08);
+  border: 1px solid var(--border-glass);
   border-radius: 10px;
-  background: rgba(0,0,0,0.20);
+  background: var(--surface-overlay-soft);
   padding: 9px 10px;
   font-size: 0.8125rem;
   color: var(--text-secondary);
@@ -991,22 +991,24 @@ function getTopicManualMismatchWarning(): string {
 
 .btn {
   margin-top: 1rem;
-  border: none;
+  border: 1px solid var(--cta-border, rgba(245,158,11,0.45));
   border-radius: 10px;
-  background: linear-gradient(90deg, var(--arc-400), var(--prism-500));
-  color: #fff;
+  background: var(--cta-bg, linear-gradient(135deg, var(--arc-400), var(--arc-300)));
+  color: var(--cta-fg, #fff);
   padding: 11px 18px;
   font-size: 0.9375rem;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: 0.02em;
   cursor: pointer;
   font-family: inherit;
-  transition: opacity 0.15s, box-shadow 0.15s;
-  box-shadow: 0 4px 16px rgba(245,158,11,0.25);
+  transition: filter 0.18s, box-shadow 0.18s, transform 0.18s;
+  box-shadow: var(--cta-shadow, 0 4px 18px rgba(245,158,11,0.35));
 }
 
 .btn:hover:not(:disabled) {
-  opacity: 0.9;
-  box-shadow: 0 6px 20px rgba(245,158,11,0.38);
+  filter: brightness(1.05);
+  transform: translateY(-1px);
+  box-shadow: var(--cta-shadow-hover, 0 6px 24px rgba(245,158,11,0.48));
 }
 
 .btn:disabled {
@@ -1018,12 +1020,8 @@ function getTopicManualMismatchWarning(): string {
   position: sticky;
   bottom: 16px;
   margin-top: 14px;
-  padding: 10px;
-  border-radius: 14px;
-  border: 1px solid rgba(245,158,11,0.15);
-  background: rgba(6,11,26,0.90);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  padding: 0;
+  background: transparent;
   z-index: 20;
 }
 
@@ -1047,10 +1045,10 @@ function getTopicManualMismatchWarning(): string {
 /* ===== Render & Audio block ===== */
 .render-audio-block {
   grid-column: 1 / -1;
-  border: 1px solid rgba(255,255,255,0.07);
+  border: 1px solid var(--border-glass);
   border-radius: 10px;
   padding: 12px;
-  background: rgba(0,0,0,0.15);
+  background: var(--surface-overlay-soft);
 }
 
 .render-audio-block .block-title {
@@ -1118,12 +1116,12 @@ function getTopicManualMismatchWarning(): string {
 
 .chipBtn {
   width: 100%;
-  border: 1px solid rgba(255,255,255,0.10);
+  border: 1px solid var(--border-glass);
   border-radius: 999px;
   padding: 6px 12px;
   font-size: 0.75rem;
   cursor: pointer;
-  background: rgba(0,0,0,0.20);
+  background: var(--surface-overlay-soft);
   color: var(--text-secondary);
   white-space: nowrap;
   text-align: center;
@@ -1132,16 +1130,16 @@ function getTopicManualMismatchWarning(): string {
 }
 
 .chipBtn:hover {
-  border-color: rgba(245,158,11,0.38);
+  border-color: var(--border-arc);
   color: var(--arc-300);
-  background: rgba(245,158,11,0.09);
+  background: var(--chip-hover-bg);
 }
 
 .chipBtn.active {
   border-color: var(--arc-400);
-  background: rgba(245,158,11,0.15);
+  background: var(--chip-active-bg);
   color: var(--arc-200);
-  box-shadow: 0 0 8px rgba(245,158,11,0.20);
+  box-shadow: var(--chip-active-shadow);
 }
 
 .chipBtn.subtle {
@@ -1150,10 +1148,10 @@ function getTopicManualMismatchWarning(): string {
 
 .advancedBox {
   margin-top: 6px;
-  border: 1px dashed rgba(255,255,255,0.10);
+  border: 1px dashed var(--border-glass);
   border-radius: 10px;
   padding: 10px;
-  background: rgba(0,0,0,0.15);
+  background: var(--surface-overlay-soft);
 }
 
 .advancedSummary {

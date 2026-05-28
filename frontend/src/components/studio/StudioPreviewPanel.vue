@@ -702,7 +702,7 @@ const progressSteps = computed(() => {
   flex-shrink: 0;
   padding: 0.875rem 1.25rem 1rem;
   border-top: 1px solid rgba(245,158,11,0.08);
-  background: rgba(0,0,0,0.15);
+  background: var(--surface-overlay-soft);
 }
 
 .pp-history-header {
@@ -779,7 +779,7 @@ const progressSteps = computed(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0,0,0,0.30);
+  background: var(--surface-overlay-strong);
   opacity: 0;
   transition: opacity 0.18s;
 }

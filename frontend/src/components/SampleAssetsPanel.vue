@@ -528,7 +528,7 @@ code {
   padding: 10px 12px;
   border-radius: 10px;
   border: 1px solid rgba(245,158,11,0.10);
-  background: rgba(0,0,0,0.25);
+  background: var(--surface-overlay-strong);
   color: var(--text-secondary);
   font-size: 12px;
   line-height: 1.6;

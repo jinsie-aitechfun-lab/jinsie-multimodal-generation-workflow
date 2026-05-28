@@ -40,6 +40,33 @@
   --shadow-float:   0 24px 64px rgba(0,0,0,0.80), 0 0 0 1px rgba(251,191,36,0.06);
   --shadow-glass:   0 8px 32px rgba(0,0,0,0.55), inset 0 1px 0 rgba(251,191,36,0.06);
 
+  /* Input field tokens (dark themes default) */
+  --input-bg:           rgba(4, 8, 22, 0.55);
+  --input-border:       rgba(255, 255, 255, 0.08);
+  --input-focus-border: rgba(245, 158, 11, 0.50);
+  --input-focus-shadow: 0 0 0 3px rgba(245, 158, 11, 0.10);
+  --input-placeholder:  rgba(255, 255, 255, 0.35);
+
+  /* Nested surface overlay (sub-panels, option cards, inset boxes)
+     Dark themes use a subtle black fill; light theme replaces with a
+     warm pearl tint so it doesn't look grey on white. */
+  --surface-overlay-strong: rgba(0,0,0,0.25);
+  --surface-overlay-mid:    rgba(0,0,0,0.18);
+  --surface-overlay-soft:   rgba(0,0,0,0.12);
+
+  /* Chip button (template selectors etc) */
+  --chip-hover-bg:    rgba(245,158,11,0.09);
+  --chip-active-bg:   rgba(245,158,11,0.15);
+  --chip-active-shadow: 0 0 8px rgba(245,158,11,0.20);
+
+  /* Primary CTA button (开始创作 etc) */
+  --cta-bg:           linear-gradient(135deg, #f59e0b 0%, #fb923c 100%);
+  --cta-fg:           #fff;
+  --cta-border:       rgba(245,158,11,0.50);
+  --cta-shadow:       0 6px 22px rgba(245,158,11,0.45), inset 0 1px 0 rgba(255,255,255,0.20);
+  --cta-shadow-hover: 0 8px 28px rgba(245,158,11,0.60), inset 0 1px 0 rgba(255,255,255,0.25);
+
+
   /* Page background — themeable via overrides */
   --page-bg-color:  #09090b;
   --page-bg-image:
@@ -101,71 +128,112 @@
 
 /* ═══════════════════════════════════════════════
    珍珠晨光 · Pearl Dawn — light theme
-   Soft warm cream → cool pearl gradient with champagne gold accents.
+   Pearl white pages, champagne gold accents, ice blue highlights.
 ═══════════════════════════════════════════════ */
 :root[data-theme="pearl"] {
   color-scheme: light;
 
-  /* Accent — champagne gold + ice blue, slightly cooler than V1 */
+  /* Accent — champagne gold + ice blue */
   --arc-400:        #c89a55;   /* champagne gold — main */
-  --arc-300:        #b18638;
-  --arc-200:        #8b6722;   /* darker for badge text on light bg */
+  --arc-300:        #a87f3a;   /* darker so text/icon reads on white */
+  --arc-200:        #8b6722;   /* deepest for badge text */
   --prism-400:      #5b9cce;   /* ice blue accent */
   --prism-500:      #3f80b6;
 
-  /* Text — deep grey on light, target #333~#444 */
-  --text-primary:   rgba(34, 38, 46, 0.94);   /* ~#22262e */
-  --text-secondary: rgba(60, 66, 76, 0.70);   /* ~#3c424c */
-  --text-muted:     rgba(96, 104, 115, 0.55); /* ~#606873 */
+  /* Text — exact targets from spec */
+  --text-primary:   #2E2A22;
+  --text-secondary: #6F6A5F;
+  --text-muted:     #9E978A;
 
-  /* Background tones — bright whites with the faintest cream */
+  /* Background tones */
   --bg-void:        #ffffff;
-  --bg-deep:        #fbfaf6;
-  --bg-surface:     #f6f3eb;
+  --bg-deep:        #fdfcf7;
+  --bg-surface:     #f7f4ec;
   --bg-elevated:    #efece1;
   --bg-float:       #e7e3d4;
 
-  /* Borders + glass — bright white glass with champagne gold edges */
+  /* Borders + glass — translucent white so the flowing light glows through */
   --border-subtle:  rgba(200, 154, 85, 0.10);
   --border-glass:   rgba(200, 154, 85, 0.18);
   --border-arc:     rgba(200, 154, 85, 0.48);
-  --glass-bg:       rgba(255, 255, 255, 0.82);
-  --glass-bg-light: rgba(255, 255, 255, 0.90);
+  --glass-bg:       rgba(255, 253, 247, 0.62);   /* was 0.82 — let aurora bleed through */
+  --glass-bg-light: rgba(255, 254, 250, 0.74);
   --glass-border:   rgba(200, 154, 85, 0.18);
 
-  /* Glow + shadow — soft lift, no heavy black */
-  --glow-arc:       0 0 22px rgba(200, 154, 85, 0.32),
-                    0 0 44px rgba(200, 154, 85, 0.12);
-  --glow-prism:     0 0 22px rgba( 91, 156, 206, 0.28),
-                    0 0 44px rgba( 91, 156, 206, 0.10);
-  --shadow-float:   0 18px 48px rgba(100, 90, 60, 0.16),
-                    0 4px 12px  rgba(100, 90, 60, 0.08),
-                    0 0 0 1px   rgba(200, 154, 85, 0.10);
-  --shadow-glass:   0 8px 26px  rgba(100, 90, 60, 0.10),
-                    0 2px 6px   rgba(100, 90, 60, 0.04),
-                    inset 0 1px 0 rgba(255, 255, 255, 0.80);
+  /* Glow + shadow — layered warm lift, with crisp inner highlight */
+  --glow-arc:       0 0 24px rgba(200, 154, 85, 0.40),
+                    0 0 48px rgba(200, 154, 85, 0.16),
+                    0 0 80px rgba(255, 220, 150, 0.08);
+  --glow-prism:     0 0 24px rgba( 91, 156, 206, 0.34),
+                    0 0 48px rgba( 91, 156, 206, 0.14);
+  --shadow-float:   0 24px 56px rgba(120, 90, 50, 0.18),
+                    0 8px 20px  rgba(120, 90, 50, 0.10),
+                    0 2px 4px   rgba(120, 90, 50, 0.06),
+                    0 0 0 1px   rgba(200, 154, 85, 0.14);
+  --shadow-glass:   0 12px 32px rgba(120, 90, 50, 0.12),
+                    0 4px 10px  rgba(120, 90, 50, 0.06),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+                    inset 0 -1px 1px rgba(180, 140, 70, 0.06);
 
-  /* Page background — soft warm cream → cool pearl diagonal */
-  --page-bg-color:  #fafaf3;
+  /* Input field tokens — white inputs, champagne gold edges */
+  --input-bg:           rgba(255, 255, 255, 0.82);
+  --input-border:       rgba(200, 154, 85, 0.30);
+  --input-focus-border: rgba(200, 154, 85, 0.70);
+  --input-focus-shadow: 0 0 0 3px rgba(200, 154, 85, 0.14);
+  --input-placeholder:  rgba(158, 151, 138, 0.85);
+
+  /* Nested surface overlays — warm pearl on white, NEVER grey */
+  --surface-overlay-strong: rgba(255, 250, 235, 0.85);
+  --surface-overlay-mid:    rgba(255, 252, 244, 0.70);
+  --surface-overlay-soft:   rgba(255, 254, 248, 0.55);
+
+  /* Chip button — pearl-tinted, refined */
+  --chip-hover-bg:      linear-gradient(135deg, rgba(255,243,212,0.85) 0%, rgba(255,237,196,0.65) 100%);
+  --chip-active-bg:     linear-gradient(135deg, rgba(255,232,178,0.90) 0%, rgba(255,219,150,0.75) 100%);
+  --chip-active-shadow: 0 2px 12px rgba(214,179,90,0.22), inset 0 1px 0 rgba(255,255,255,0.70);
+
+  /* Primary CTA — refined champagne gold, no harsh blue jump */
+  --cta-bg:           linear-gradient(135deg, #d8a861 0%, #c89a55 60%, #b8843e 100%);
+  --cta-fg:           #fff;
+  --cta-border:       rgba(184, 132, 62, 0.42);
+  --cta-shadow:       0 6px 22px rgba(184, 132, 62, 0.35), inset 0 1px 0 rgba(255, 248, 230, 0.60);
+  --cta-shadow-hover: 0 8px 28px rgba(184, 132, 62, 0.48), inset 0 1px 0 rgba(255, 248, 230, 0.75);
+
+
+  /* Page background — multi-layer warm dawn light with cool blue cast */
+  --page-bg-color:  #fdfcf7;
   --page-bg-image:
-    /* Top-left: warm cream/champagne breath */
-    radial-gradient(ellipse 70% 55% at 10% 8%,
-                    rgba(255, 226, 168, 0.55) 0%,
-                    rgba(255, 226, 168, 0.22) 30%,
-                    transparent 70%),
-    /* Bottom-right: cool ice-blue tint */
-    radial-gradient(ellipse 65% 55% at 92% 96%,
-                    rgba(180, 210, 235, 0.40) 0%,
-                    rgba(180, 210, 235, 0.16) 35%,
+    /* Top-left: bright golden sunrise halo */
+    radial-gradient(ellipse 78% 60% at 8% 6%,
+                    rgba(255, 218, 145, 0.78) 0%,
+                    rgba(255, 226, 168, 0.32) 28%,
+                    rgba(255, 235, 195, 0.10) 56%,
+                    transparent 78%),
+    /* Top-right: subtle ice-blue contrast */
+    radial-gradient(ellipse 50% 40% at 95% 14%,
+                    rgba(160, 200, 230, 0.30) 0%,
+                    rgba(180, 215, 235, 0.10) 36%,
+                    transparent 74%),
+    /* Bottom-right: cool pearl-blue mist */
+    radial-gradient(ellipse 75% 60% at 94% 96%,
+                    rgba(140, 185, 220, 0.45) 0%,
+                    rgba(170, 205, 230, 0.20) 32%,
+                    rgba(200, 220, 235, 0.06) 60%,
+                    transparent 80%),
+    /* Bottom-left: rosy cream undertone */
+    radial-gradient(ellipse 50% 40% at 8% 92%,
+                    rgba(255, 220, 195, 0.28) 0%,
+                    rgba(255, 230, 210, 0.10) 38%,
                     transparent 72%),
-    /* Centre: very subtle gold sun */
-    radial-gradient(ellipse 45% 32% at 58% 42%,
-                    rgba(255, 233, 175, 0.22) 0%,
-                    transparent 65%);
-  --noise-opacity:  0.014;
+    /* Centre: warm gold sun halo */
+    radial-gradient(ellipse 42% 30% at 56% 44%,
+                    rgba(255, 235, 175, 0.30) 0%,
+                    rgba(255, 240, 195, 0.10) 38%,
+                    transparent 70%);
+  --noise-opacity:  0.006;
   --noise-blend:    multiply;
-  --scrollbar-color: rgba(200, 154, 85, 0.40);
-  --scrollbar-hover: rgba(200, 154, 85, 0.65);
+  --scrollbar-color: rgba(200, 154, 85, 0.42);
+  --scrollbar-hover: rgba(200, 154, 85, 0.68);
   --selection-bg:   rgba(200, 154, 85, 0.28);
   --selection-fg:   #1c1812;
 }
@@ -223,6 +291,82 @@ body::before {
 
 /* Selection */
 ::selection { background: var(--selection-bg); color: var(--selection-fg); }
+
+/* ─── Custom form controls — Pearl Dawn ONLY ─────────────────────
+   Dark themes (gold/blue/purple) keep native browser controls with
+   accent-color tinted per theme — unchanged.
+─────────────────────────────────────────────────────────────────── */
+:root[data-theme="pearl"] input[type="radio"],
+:root[data-theme="pearl"] input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex-shrink: 0;
+  background: rgba(255,255,255,0.85);
+  border: 1.5px solid rgba(184, 132, 62, 0.40);
+  cursor: pointer;
+  position: relative;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+:root[data-theme="pearl"] input[type="radio"]    { border-radius: 50%; }
+:root[data-theme="pearl"] input[type="checkbox"] { border-radius: 4px;  }
+
+:root[data-theme="pearl"] input[type="radio"]:hover,
+:root[data-theme="pearl"] input[type="checkbox"]:hover {
+  border-color: rgba(184, 132, 62, 0.65);
+}
+
+:root[data-theme="pearl"] input[type="radio"]:focus-visible,
+:root[data-theme="pearl"] input[type="checkbox"]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(184, 132, 62, 0.20);
+}
+
+/* ── Radio checked: golden dot with glow ── */
+:root[data-theme="pearl"] input[type="radio"]:checked {
+  border-color: #b8843e;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(184, 132, 62, 0.25);
+}
+:root[data-theme="pearl"] input[type="radio"]:checked::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #d8a861, #b8843e);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 6px rgba(184, 132, 62, 0.55), inset 0 1px 0 rgba(255,248,230,0.50);
+}
+
+/* ── Checkbox checked: gold fill + white check ── */
+:root[data-theme="pearl"] input[type="checkbox"]:checked {
+  border-color: #b8843e;
+  background: linear-gradient(135deg, #d8a861, #b8843e);
+  box-shadow: 0 2px 8px rgba(184, 132, 62, 0.30), inset 0 1px 0 rgba(255,248,230,0.55);
+}
+:root[data-theme="pearl"] input[type="checkbox"]:checked::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 9px;
+  height: 5px;
+  border-left: 1.8px solid #fff;
+  border-bottom: 1.8px solid #fff;
+  transform: translate(-50%, -65%) rotate(-45deg);
+}
+
+:root[data-theme="pearl"] input[type="radio"]:disabled,
+:root[data-theme="pearl"] input[type="checkbox"]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 
 /* ─── Utility component classes ───────────────────────────────── */
 @layer components {
@@ -295,21 +439,21 @@ body::before {
 
   /* Studio input */
   .studio-input {
-    background: rgba(4,8,22,0.55);
+    background: var(--input-bg);
     backdrop-filter: blur(8px);
-    border: 1px solid rgba(255,255,255,0.08);
+    border: 1px solid var(--input-border);
     border-radius: 0.625rem;
     color: var(--text-primary);
     padding: 0.625rem 0.875rem;
     width: 100%;
-    transition: border-color 0.2s, box-shadow 0.2s;
+    transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
     font-size: 0.875rem;
     outline: none;
   }
-  .studio-input::placeholder { color: var(--text-muted); }
+  .studio-input::placeholder { color: var(--input-placeholder); }
   .studio-input:focus {
-    border-color: rgba(245,158,11,0.50);
-    box-shadow: 0 0 0 3px rgba(245,158,11,0.10);
+    border-color: var(--input-focus-border);
+    box-shadow: var(--input-focus-shadow);
   }
 
   /* Studio button — primary */

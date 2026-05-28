@@ -896,7 +896,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 .asset-code-wrap {
   padding: 10px 12px;
   border-radius: 8px;
-  background: rgba(0,0,0,0.25);
+  background: var(--surface-overlay-strong);
 }
 
 .asset-code-wrap-compact {
@@ -922,25 +922,25 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 .review-scene-card {
   padding: 14px;
   border-radius: 16px;
-  background: linear-gradient(160deg, rgba(20,15,5,0.82) 0%, rgba(14,11,4,0.78) 100%);
-  border: 1px solid rgba(245,158,11,0.10);
-  box-shadow: 0 4px 16px rgba(0,0,0,0.35), inset 0 1px 0 rgba(251,191,36,0.06);
+  background: var(--glass-bg);
+  border: 1px solid var(--border-glass);
+  box-shadow: var(--shadow-glass);
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .review-scene-card:hover {
-  border-color: rgba(245,158,11,0.22);
-  box-shadow: 0 4px 24px rgba(0,0,0,0.40), 0 0 0 1px rgba(245,158,11,0.08);
+  border-color: var(--border-arc);
+  box-shadow: var(--shadow-glass), 0 0 0 1px var(--border-glass);
 }
 
 .review-scene-card-placeholder {
-  background: linear-gradient(160deg, rgba(16,12,4,0.88) 0%, rgba(12,9,3,0.84) 100%);
-  border-color: rgba(245,158,11,0.12);
+  background: var(--glass-bg-light);
+  border-color: var(--border-glass);
 }
 
 .review-scene-card-refreshing {
-  border-color: rgba(245,158,11,0.32);
-  box-shadow: 0 4px 24px rgba(0,0,0,0.35), 0 0 20px rgba(245,158,11,0.10);
+  border-color: var(--border-arc);
+  box-shadow: var(--shadow-glass), var(--glow-arc);
 }
 
 .review-scene-card-failed {
@@ -982,7 +982,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   padding: 10px;
   border-radius: 14px;
   background: var(--glass-bg);
-  border: 1px solid rgba(245,158,11,0.08);
+  border: 1px solid var(--border-glass);
 }
 
 .preview-card-selected,
@@ -995,8 +995,8 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   aspect-ratio: 16 / 9;
   border-radius: 12px;
   overflow: hidden;
-  border: 1px solid rgba(255,255,255,0.10);
-  background: rgba(0,0,0,0.40);
+  border: 1px solid var(--border-glass);
+  background: var(--surface-overlay-strong);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1170,8 +1170,8 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 
 .asset-select-card {
   appearance: none;
-  border: 1px solid rgba(255,255,255,0.08);
-  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border-glass);
+  background: var(--surface-overlay-soft);
   border-radius: 14px;
   padding: 0;
   text-align: left;
@@ -1209,7 +1209,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   max-width: 100%;
   padding: 3px 7px;
   border-radius: 5px;
-  background: rgba(0,0,0,0.30);
+  background: var(--surface-overlay-strong);
   color: var(--text-muted);
   font-size: 0.6875rem;
   line-height: 1.35;
@@ -1399,6 +1399,49 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   animation: reviewShimmer 1.6s linear infinite;
   pointer-events: none;
 }
+
+/* ─── Pearl Dawn — stronger shimmer overlay (generation in progress) ─── */
+:root[data-theme="pearl"] .shimmer-active::after {
+  background: linear-gradient(
+    110deg,
+    rgba(255, 193, 80, 0) 12%,
+    rgba(255, 193, 80, 0.40) 45%,
+    rgba(255, 215, 130, 0.55) 50%,
+    rgba(255, 193, 80, 0.40) 55%,
+    rgba(255, 193, 80, 0) 88%
+  );
+  mix-blend-mode: normal;
+}
+
+/* ─── Pearl Dawn — replace deep brown landscape with cream-gold ─── */
+:root[data-theme="pearl"] .placeholder-card {
+  background: linear-gradient(160deg, #fdf9eb 0%, #faf3df 100%);
+}
+:root[data-theme="pearl"] .placeholder-canvas {
+  background: #fdf6df;
+  border: 1px solid rgba(200,154,85,0.20);
+}
+:root[data-theme="pearl"] .placeholder-sky {
+  background: linear-gradient(180deg, #fff5d8 0%, #fdebc2 100%);
+}
+:root[data-theme="pearl"] .placeholder-cloud,
+:root[data-theme="pearl"] .placeholder-cloud::before,
+:root[data-theme="pearl"] .placeholder-cloud::after {
+  background: rgba(255,255,255,0.85);
+}
+:root[data-theme="pearl"] .placeholder-hill-back  { background: #f0d89a; }
+:root[data-theme="pearl"] .placeholder-hill-front { background: #e6c478; }
+:root[data-theme="pearl"] .placeholder-water {
+  background: linear-gradient(180deg, #fbe6b3 0%, #f4d68c 100%);
+}
+:root[data-theme="pearl"] .placeholder-sun {
+  background: rgba(255,193,80,0.55);
+  box-shadow: 0 0 0 6px rgba(255,193,80,0.20), 0 0 22px rgba(255,193,80,0.32);
+}
+:root[data-theme="pearl"] .placeholder-tree,
+:root[data-theme="pearl"] .placeholder-tree::before { background: #c89a55; }
+:root[data-theme="pearl"] .placeholder-caption-bar { background: rgba(200,154,85,0.18); }
+
 
 .review-waiting-card {
   display: grid;

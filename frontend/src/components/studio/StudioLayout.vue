@@ -103,13 +103,15 @@
         </button>
       </nav>
 
-      <!-- Footer: theme switcher + slot + dev -->
+      <!-- Footer: header-actions slot + dev toggle -->
       <div class="sb-footer">
         <slot name="header-actions"/>
-        <ThemeSwitcher/>
         <button v-if="devMode" class="sb-dev-btn" title="Dev mode" @click="$emit('toggle-dev')">⚙</button>
       </div>
     </aside>
+
+    <!-- Floating theme switcher — fixed to viewport top-right -->
+    <ThemeSwitcher/>
 
     <!-- ═══════════════════════════════════
          CONTENT AREA
@@ -665,12 +667,12 @@ watch(() => props.modelValue, () => {
   --item-active-border: rgba(200,154,85,0.55);
   --item-glow:          rgba(200,154,85,0.22);
 
-  /* Aurora orbs — pastel soft */
-  --orb-a1: rgba(255,226,168,0.36);
-  --orb-a2: rgba(220,180,100,0.10);
-  --orb-b1: rgba(180,210,235,0.32);
-  --orb-b2: rgba(120,170,210,0.10);
-  --orb-c1: rgba(255,233,175,0.18);
+  /* Aurora orbs — brighter, more visible warm-cool blooms on pearl bg */
+  --orb-a1: rgba(255,210,130,0.55);
+  --orb-a2: rgba(220,170,80,0.18);
+  --orb-b1: rgba(150,190,225,0.50);
+  --orb-b2: rgba(90,150,200,0.18);
+  --orb-c1: rgba(255,225,160,0.30);
 
   --dot-color:  rgba(200,154,85,0.16);
   --dc-color:   rgba(200,154,85,0.85);
@@ -695,6 +697,60 @@ watch(() => props.modelValue, () => {
 /* Soft white highlight on active item */
 .s-root[data-theme="pearl"] .sb-item.is-active {
   box-shadow: 0 4px 18px var(--item-glow), inset 0 1px 0 rgba(255,255,255,0.85);
+}
+
+/* ═══════════════════════════════════════════════
+   Pearl Dawn — drifting flowing light layer
+   Below content but above page bg. Strong, visible bloom that
+   slowly rotates → "morning light streaming through the room".
+═══════════════════════════════════════════════ */
+.s-root[data-theme="pearl"]::before {
+  content: '';
+  position: fixed;
+  inset: -30%;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    conic-gradient(
+      from 0deg at 28% 32%,
+      transparent 0deg,
+      rgba(255, 198, 110, 0.50) 50deg,
+      rgba(255, 222, 165, 0.28) 110deg,
+      transparent 190deg,
+      rgba(160, 205, 235, 0.42) 270deg,
+      rgba(190, 220, 240, 0.20) 320deg,
+      transparent 360deg
+    );
+  filter: blur(60px);
+  animation: pearlFlow 26s linear infinite;
+  will-change: transform;
+  mix-blend-mode: normal;
+}
+
+.s-root[data-theme="pearl"]::after {
+  content: '';
+  position: fixed;
+  inset: -20%;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    conic-gradient(
+      from 180deg at 75% 68%,
+      transparent 0deg,
+      rgba(255, 210, 140, 0.38) 70deg,
+      transparent 170deg,
+      rgba(195, 220, 235, 0.32) 250deg,
+      rgba(255, 205, 145, 0.22) 320deg,
+      transparent 360deg
+    );
+  filter: blur(70px);
+  animation: pearlFlow 36s linear infinite reverse;
+  will-change: transform;
+}
+
+@keyframes pearlFlow {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
 }
 
 /* ── Responsive ── */

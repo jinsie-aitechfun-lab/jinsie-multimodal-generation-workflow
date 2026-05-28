@@ -13,8 +13,10 @@ export interface ThemeMeta {
   tagline: string
   /** Whether the theme is dark-on-light or light-on-dark */
   mode: 'dark' | 'light'
-  /** Three swatch colors for the preview chip (CSS color strings) */
+  /** Three solid swatch colors — used as fallback for tinted UI accents */
   swatches: [string, string, string]
+  /** Three CSS gradient strings — preview chips render with these for premium feel */
+  gradients: [string, string, string]
 }
 
 export const THEMES: Record<ThemeKey, ThemeMeta> = {
@@ -25,6 +27,11 @@ export const THEMES: Record<ThemeKey, ThemeMeta> = {
     tagline: '黑金科技 · 专业工作台',
     mode: 'dark',
     swatches: ['#f59e0b', '#fb923c', '#fbbf24'],
+    gradients: [
+      'linear-gradient(135deg, #8A5A14, #F0B23A)',
+      'linear-gradient(135deg, #FF8A3D, #FFCF5A)',
+      'linear-gradient(135deg, #D6B35A, #FFE7A3)',
+    ],
   },
   blue: {
     key: 'blue',
@@ -33,6 +40,11 @@ export const THEMES: Record<ThemeKey, ThemeMeta> = {
     tagline: '深空冷光 · 科技未来感',
     mode: 'dark',
     swatches: ['#0ea5e9', '#6366f1', '#38bdf8'],
+    gradients: [
+      'linear-gradient(135deg, #0EA5E9, #67E8F9)',
+      'linear-gradient(135deg, #6366F1, #A5B4FC)',
+      'linear-gradient(135deg, #22D3EE, #BAE6FD)',
+    ],
   },
   purple: {
     key: 'purple',
@@ -41,6 +53,11 @@ export const THEMES: Record<ThemeKey, ThemeMeta> = {
     tagline: '神秘星芒 · 极致创作',
     mode: 'dark',
     swatches: ['#a855f7', '#f43f5e', '#c084fc'],
+    gradients: [
+      'linear-gradient(135deg, #A855F7, #D8B4FE)',
+      'linear-gradient(135deg, #F43F5E, #FDA4AF)',
+      'linear-gradient(135deg, #C084FC, #F0ABFC)',
+    ],
   },
   pearl: {
     key: 'pearl',
@@ -49,6 +66,11 @@ export const THEMES: Record<ThemeKey, ThemeMeta> = {
     tagline: '香槟金 · 浅色高级',
     mode: 'light',
     swatches: ['#c2914a', '#4f8fc0', '#e9cb83'],
+    gradients: [
+      'linear-gradient(135deg, #D6B35A, #F7E3A1)',
+      'linear-gradient(135deg, #8EC5FF, #DDEBFF)',
+      'linear-gradient(135deg, #F3DF9D, #FFF7D6)',
+    ],
   },
 }
 

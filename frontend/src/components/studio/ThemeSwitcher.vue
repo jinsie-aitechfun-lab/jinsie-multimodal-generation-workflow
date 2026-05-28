@@ -10,10 +10,10 @@
     >
       <span class="ts-trigger-swatches" aria-hidden="true">
         <span
-          v-for="(c, i) in themeMeta.swatches"
+          v-for="(g, i) in themeMeta.gradients"
           :key="i"
           class="ts-trigger-dot"
-          :style="{ background: c }"
+          :style="{ background: g }"
         />
       </span>
       <span class="ts-trigger-label">{{ themeMeta.short }}</span>
@@ -38,10 +38,10 @@
           <!-- Color swatches -->
           <span class="ts-swatches" aria-hidden="true">
             <span
-              v-for="(c, i) in themes[key].swatches"
+              v-for="(g, i) in themes[key].gradients"
               :key="i"
               class="ts-swatch"
-              :style="{ background: c }"
+              :style="{ background: g }"
             />
           </span>
 
@@ -98,92 +98,97 @@ const vClickOutside: Directive<HTMLElement, () => void> = {
 </script>
 
 <style scoped>
+/* Fixed top-right floating switcher — never affects layout flow */
 .ts-root {
-  position: relative;
+  position: fixed;
+  top: 14px;
+  right: 18px;
+  z-index: 80;
   display: inline-block;
 }
 
-/* ── Trigger pill ── */
+/* ── Trigger pill (horizontal capsule) ── */
 .ts-trigger {
-  display: flex;
-  flex-direction: column;
+  display: inline-flex;
   align-items: center;
-  gap: 5px;
-  width: 56px;
-  padding: 8px 4px;
-  border-radius: 12px;
-  border: 1px solid var(--sidebar-border, rgba(245,158,11,0.14));
-  background: transparent;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--sidebar-border, rgba(245,158,11,0.18));
+  background: var(--glass-bg-light, rgba(20,16,8,0.78));
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
   cursor: pointer;
   font-family: inherit;
   transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.22);
 }
 
 .ts-trigger:hover {
-  background: var(--item-hover-bg, rgba(245,158,11,0.08));
-  border-color: var(--item-active-border, rgba(245,158,11,0.30));
+  background: var(--item-hover-bg, rgba(245,158,11,0.10));
+  border-color: var(--item-active-border, rgba(245,158,11,0.36));
 }
 
 .ts-trigger[aria-expanded='true'] {
-  background: var(--item-active-bg, rgba(245,158,11,0.14));
-  border-color: var(--item-active-border, rgba(245,158,11,0.42));
-  box-shadow: 0 0 14px var(--item-glow, rgba(245,158,11,0.18));
+  background: var(--item-active-bg, rgba(245,158,11,0.16));
+  border-color: var(--item-active-border, rgba(245,158,11,0.50));
+  box-shadow: 0 0 18px var(--item-glow, rgba(245,158,11,0.22)),
+              0 4px 14px rgba(0,0,0,0.20);
 }
 
-/* Three mini swatches in trigger */
+/* Three mini gradient chips in trigger — bare, no tray */
 .ts-trigger-swatches {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 3px;
 }
 
 .ts-trigger-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  box-shadow: 0 0 4px currentColor;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.08);
 }
 
 .ts-trigger-label {
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  color: var(--text-muted, rgba(255,255,255,0.40));
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary, rgba(255,255,255,0.70));
 }
 
-/* ── Popover panel ── */
+/* ── Popover panel — opens downward, right-aligned ── */
 .ts-panel {
   position: absolute;
-  bottom: calc(100% + 10px);
-  left: 50%;
-  transform: translateX(-50%);
-  width: 240px;
-  padding: 8px;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 260px;
+  padding: 10px;
   border-radius: 14px;
-  background: var(--glass-bg-light, rgba(20,16,8,0.92));
-  backdrop-filter: blur(24px) saturate(160%);
-  -webkit-backdrop-filter: blur(24px) saturate(160%);
-  border: 1px solid var(--glass-border, rgba(245,158,11,0.16));
+  background: var(--glass-bg-light, rgba(20,16,8,0.94));
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
+  border: 1px solid var(--glass-border, rgba(245,158,11,0.18));
   box-shadow:
-    0 14px 40px rgba(0,0,0,0.50),
-    0 0 0 1px var(--glass-border, rgba(245,158,11,0.08)),
+    0 18px 48px rgba(0,0,0,0.55),
+    0 0 0 1px var(--glass-border, rgba(245,158,11,0.10)),
     inset 0 1px 0 rgba(255,255,255,0.10);
-  z-index: 80;
+  z-index: 81;
 }
 
-/* Arrow tip pointing down */
+/* Arrow tip pointing up (panel below the button) */
 .ts-panel::after {
   content: '';
   position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
+  bottom: 100%;
+  right: 22px;
   width: 0;
   height: 0;
   border-left: 7px solid transparent;
   border-right: 7px solid transparent;
-  border-top: 7px solid var(--glass-bg-light, rgba(20,16,8,0.92));
-  filter: drop-shadow(0 1px 1px rgba(0,0,0,0.30));
+  border-bottom: 7px solid var(--glass-bg-light, rgba(20,16,8,0.94));
+  filter: drop-shadow(0 -1px 1px rgba(0,0,0,0.30));
 }
 
 .ts-panel-header {
@@ -235,22 +240,29 @@ const vClickOutside: Directive<HTMLElement, () => void> = {
   border-color: var(--item-active-border, rgba(245,158,11,0.38));
 }
 
+/* Palette tray (option row) — glass card, NOT grey plastic */
 .ts-swatches {
   display: inline-flex;
   flex-shrink: 0;
-  gap: 3px;
-  padding: 3px 5px;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
   border-radius: 6px;
-  background: rgba(0,0,0,0.25);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  transition: opacity 0.18s;
 }
 
+/* No special hover/active for swatch tray — keeps focus on dots themselves */
+
+/* Individual chip — tiny flat circle */
 .ts-swatch {
   display: block;
   width: 10px;
-  height: 16px;
-  border-radius: 2px;
-  box-shadow: 0 0 4px currentColor;
+  height: 10px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.06);
 }
 
 .ts-text {
@@ -287,7 +299,7 @@ const vClickOutside: Directive<HTMLElement, () => void> = {
   color: var(--arc-300, #fbbf24);
 }
 
-/* ── Fade animation ── */
+/* ── Fade animation (drop-down) ── */
 .ts-fade-enter-active,
 .ts-fade-leave-active {
   transition: opacity 0.18s ease, transform 0.18s ease;
@@ -295,6 +307,6 @@ const vClickOutside: Directive<HTMLElement, () => void> = {
 .ts-fade-enter-from,
 .ts-fade-leave-to {
   opacity: 0;
-  transform: translateX(-50%) translateY(4px);
+  transform: translateY(-6px);
 }
 </style>

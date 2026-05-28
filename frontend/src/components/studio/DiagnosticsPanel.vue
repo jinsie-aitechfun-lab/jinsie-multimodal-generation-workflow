@@ -117,7 +117,7 @@ const generationSourceBadge = computed(() => {
 .diag-field__val {
   font-family: var(--font-mono, monospace);
   color: var(--text-secondary);
-  background: rgba(0,0,0,0.30);
+  background: var(--surface-overlay-strong);
   padding: 0.1rem 0.4rem;
   border-radius: 0.25rem;
   font-size: 0.7rem;
@@ -126,8 +126,8 @@ const generationSourceBadge = computed(() => {
 .diag-field__val--warn { color: #fbbf24; }
 
 .diag-json {
-  background: rgba(0,0,0,0.40);
-  border: 1px solid rgba(255,255,255,0.05);
+  background: var(--surface-overlay-strong);
+  border: 1px solid var(--border-glass);
   border-radius: 0.5rem;
   padding: 0.625rem;
   font-family: monospace;
