@@ -8,6 +8,14 @@
     </div>
     <!-- Dot grid -->
     <div class="dot-grid" aria-hidden="true" />
+    <!-- Water ripple layer -->
+    <div class="ripple-layer" aria-hidden="true">
+      <div class="ripple ripple-1" />
+      <div class="ripple ripple-2" />
+      <div class="ripple ripple-3" />
+      <div class="ripple ripple-4" />
+      <div class="ripple ripple-5" />
+    </div>
 
     <!-- Top bar -->
     <header class="topbar">
@@ -90,23 +98,20 @@ function animateContentIn() {
   const container = mainRef.value
   if (!container) return
 
-  // Fade + rise the entire content area
+  // Pure fade — no translate, no scale
   animate(container, {
     opacity: [0, 1],
-    translateY: [20, 0],
-    duration: 420,
+    duration: 340,
     easing: 'easeOutCubic',
   })
 
-  // Stagger-animate each glass-card inside
+  // Stagger-fade each glass-card inside, no scale/translate
   const cards = container.querySelectorAll<HTMLElement>('.glass-card, .glass-card-vivid')
   if (cards.length) {
     animate(Array.from(cards), {
       opacity: [0, 1],
-      translateY: [28, 0],
-      scale: [0.97, 1],
-      duration: 500,
-      delay: (_el: HTMLElement, i: number) => i * 55,
+      duration: 420,
+      delay: (_el: HTMLElement, i: number) => i * 45,
       easing: 'easeOutCubic',
     })
   }
@@ -238,16 +243,45 @@ watch(() => props.modelValue, () => {
 }
 
 /* ═══════════════════════════════════════════════
-   Top bar — frosted glass that tints with the body gradient
+   Top bar — frosted glass with metallic sheen
 ═══════════════════════════════════════════════ */
 .topbar {
   position: sticky;
   top: 0;
   z-index: 50;
-  background: rgba(9, 7, 3, 0.78);
+  background:
+    /* metallic diagonal sheen sweep */
+    linear-gradient(
+      118deg,
+      transparent 0%,
+      rgba(255,220,100,0.04) 38%,
+      rgba(255,255,255,0.07) 50%,
+      rgba(255,220,100,0.03) 62%,
+      transparent 100%
+    ),
+    rgba(9, 7, 3, 0.82);
   backdrop-filter: blur(28px) saturate(160%);
   -webkit-backdrop-filter: blur(28px) saturate(160%);
   flex-shrink: 0;
+}
+
+/* Animated metallic sheen that slowly sweeps across */
+.topbar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    118deg,
+    transparent 0%,
+    transparent 30%,
+    rgba(255,230,120,0.06) 50%,
+    transparent 70%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: metalSheen 8s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 0;
 }
 
 /* Gold glow line at bottom of header */
@@ -265,6 +299,13 @@ watch(() => props.modelValue, () => {
     rgba(251, 146, 60, 0.55) 72%,
     transparent 100%
   );
+  z-index: 1;
+}
+
+@keyframes metalSheen {
+  0%   { background-position: -100% 0; }
+  50%  { background-position:  200% 0; }
+  100% { background-position: -100% 0; }
 }
 
 .topbar-inner {
@@ -276,6 +317,8 @@ watch(() => props.modelValue, () => {
   max-width: 1440px;
   margin: 0 auto;
   width: 100%;
+  position: relative;
+  z-index: 2;
 }
 
 /* ── Brand ── */
@@ -442,6 +485,39 @@ watch(() => props.modelValue, () => {
   margin: 0 auto;
   width: 100%;
   box-sizing: border-box;
+}
+
+/* ═══════════════════════════════════════════════
+   Water ripple layer
+═══════════════════════════════════════════════ */
+.ripple-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.ripple {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid rgba(245,158,11,0.12);
+  animation: rippleExpand 8s ease-out infinite;
+  transform: translate(-50%, -50%) scale(0);
+  opacity: 0;
+}
+
+/* Different origin points for each ring */
+.ripple-1 { top: 18%;  left: 22%;  width: 600px; height: 600px; animation-delay: 0s;    animation-duration: 9s; }
+.ripple-2 { top: 70%;  left: 75%;  width: 500px; height: 500px; animation-delay: 2.5s;  animation-duration: 8s; border-color: rgba(249,115,22,0.10); }
+.ripple-3 { top: 45%;  left: 55%;  width: 700px; height: 700px; animation-delay: 5s;    animation-duration: 11s; }
+.ripple-4 { top: 82%;  left: 18%;  width: 450px; height: 450px; animation-delay: 1.2s;  animation-duration: 7s; border-color: rgba(251,191,36,0.08); }
+.ripple-5 { top: 12%;  left: 78%;  width: 550px; height: 550px; animation-delay: 3.8s;  animation-duration: 10s; }
+
+@keyframes rippleExpand {
+  0%   { transform: translate(-50%, -50%) scale(0.05); opacity: 0; }
+  12%  { opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1);    opacity: 0; }
 }
 
 /* ── Responsive ── */
