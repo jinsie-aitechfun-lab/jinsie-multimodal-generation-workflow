@@ -303,46 +303,38 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   >
     <h2 class="section-title">画面审核</h2>
 
-    <div v-if="progressText" class="review-progress">
-      <div class="review-progress-head">
-        <div class="review-progress-copy">{{ progressText }}</div>
-        <button
-          v-if="canCancel"
-          type="button"
-          class="cancel-refresh-button"
-          @click="onCancelRefresh"
-        >
-          停止生成
-        </button>
-      </div>
-      <div class="review-progress-track" aria-hidden="true">
-        <div
-          class="review-progress-fill"
-          :style="{ width: `${Math.max(0, Math.min(100, progressPercent || 0))}%` }"
-        ></div>
-      </div>
+    <!-- Progress text only — bar is shown in the global sticky header -->
+    <div v-if="progressText" class="review-progress-inline">
+      <span class="review-progress-copy">{{ progressText }}</span>
+      <button
+        v-if="canCancel"
+        type="button"
+        class="cancel-refresh-button"
+        @click="onCancelRefresh"
+      >
+        停止生成
+      </button>
     </div>
 
     <article v-if="showWaitingCard && renderEntries.length === 0" class="review-waiting-card">
-      <div class="waiting-preview-frame">
-        <div class="placeholder-card shimmer-active">
-          <div class="placeholder-art">
-            <div class="placeholder-badge">PLACEHOLDER</div>
-
-            <div class="placeholder-canvas">
-              <div class="placeholder-sky"></div>
-              <div class="placeholder-sun"></div>
-              <div class="placeholder-cloud placeholder-cloud-left"></div>
-              <div class="placeholder-cloud placeholder-cloud-right"></div>
-              <div class="placeholder-hill placeholder-hill-back"></div>
-              <div class="placeholder-hill placeholder-hill-front"></div>
-              <div class="placeholder-water"></div>
-              <div class="placeholder-tree placeholder-tree-left"></div>
-              <div class="placeholder-tree placeholder-tree-right"></div>
-              <div class="placeholder-caption-bar"></div>
-            </div>
-          </div>
-        </div>
+      <!-- Illustration -->
+      <div class="waiting-illus">
+        <svg class="waiting-svg" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <!-- Photo frame -->
+          <rect x="10" y="16" width="80" height="68" rx="8" stroke="currentColor" stroke-width="1.8" stroke-opacity="0.55"/>
+          <!-- Top bar -->
+          <rect x="10" y="16" width="80" height="16" rx="8" fill="currentColor" fill-opacity="0.07"/>
+          <!-- Landscape mountains -->
+          <path d="M10 70 L32 45 L48 60 L65 38 L90 70 V84 H10 Z" fill="currentColor" fill-opacity="0.12"/>
+          <path d="M10 78 L32 55 L48 68 L65 48 L90 78" stroke="currentColor" stroke-width="1.4" stroke-opacity="0.40" stroke-linecap="round" stroke-linejoin="round"/>
+          <!-- Sun / circle -->
+          <circle cx="74" cy="32" r="8" stroke="currentColor" stroke-width="1.6" stroke-opacity="0.50"/>
+          <circle cx="74" cy="32" r="4" fill="currentColor" fill-opacity="0.30"/>
+          <!-- Shimmer lines -->
+          <line x1="24" y1="24" x2="50" y2="24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-opacity="0.35"/>
+          <line x1="24" y1="24" x2="36" y2="24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-opacity="0.55"/>
+        </svg>
+        <div class="waiting-illus-glow"/>
       </div>
 
       <div class="waiting-copy">
@@ -851,18 +843,17 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   text-align: left;
 }
 
-.review-progress {
-  margin: 0 0 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.review-progress-head {
+/* Inline progress — just text + cancel, no duplicate bar */
+.review-progress-inline {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(245,158,11,0.06);
+  border: 1px solid rgba(245,158,11,0.12);
 }
 
 .review-progress-copy {
@@ -870,24 +861,8 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   min-width: 0;
   color: var(--arc-300);
   font-size: 0.8125rem;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.4;
-  text-align: left;
-}
-
-.review-progress-track {
-  width: 100%;
-  height: 6px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.06);
-}
-
-.review-progress-fill {
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, var(--arc-400), var(--prism-400));
-  transition: width 180ms ease;
 }
 
 .summary-status {
@@ -1076,8 +1051,8 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 }
 
 .preview-state-tag-done {
-  background: rgba(52,211,153,0.15);
-  color: #34d399;
+  background: rgba(245,158,11,0.14);
+  color: var(--arc-300);
 }
 
 .preview-state-tag-waiting {
@@ -1427,23 +1402,43 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 
 .review-waiting-card {
   display: grid;
-  grid-template-columns: 180px 1fr;
-  gap: 20px;
+  grid-template-columns: 140px 1fr;
+  gap: 24px;
   align-items: center;
-  padding: 18px;
+  padding: 24px 20px;
   border-radius: 16px;
   background: rgba(245,158,11,0.04);
   border: 1px solid rgba(245,158,11,0.14);
 }
 
-.waiting-preview-frame {
-  width: 180px;
-  height: 220px;
-  border-radius: 16px;
-  border: 1px solid rgba(245,158,11,0.14);
-  background: rgba(0,0,0,0.30);
-  overflow: hidden;
+.waiting-illus {
   position: relative;
+  width: 110px;
+  height: 110px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.waiting-svg {
+  width: 100px;
+  height: 100px;
+  color: var(--arc-300);
+  filter: drop-shadow(0 0 14px rgba(245,158,11,0.35));
+  animation: waitingPulse 3s ease-in-out infinite;
+}
+
+.waiting-illus-glow {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(245,158,11,0.10) 0%, transparent 70%);
+  animation: waitingPulse 3s ease-in-out infinite;
+}
+
+@keyframes waitingPulse {
+  0%,100% { opacity: 0.70; transform: scale(1); }
+  50%      { opacity: 1.00; transform: scale(1.04); }
 }
 
 .waiting-copy {

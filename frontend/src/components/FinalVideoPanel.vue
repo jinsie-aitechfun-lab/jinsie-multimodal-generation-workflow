@@ -12,6 +12,30 @@
       />
 
       <div v-else class="final-placeholder">
+        <!-- Illustration icon -->
+        <div class="ph-illus">
+          <svg v-if="finalStatus !== 'rendering' && !renderInFlight" class="ph-svg" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <!-- Film frame outer -->
+            <rect x="8" y="18" width="64" height="44" rx="8" stroke="currentColor" stroke-width="1.8" stroke-opacity="0.6"/>
+            <!-- Clapperboard top stripe -->
+            <rect x="8" y="18" width="64" height="14" rx="8" fill="currentColor" fill-opacity="0.08" stroke="currentColor" stroke-width="1.8" stroke-opacity="0.6"/>
+            <!-- Film sprocket holes top -->
+            <circle cx="20" cy="25" r="3" fill="currentColor" fill-opacity="0.45"/>
+            <circle cx="32" cy="25" r="3" fill="currentColor" fill-opacity="0.45"/>
+            <circle cx="44" cy="25" r="3" fill="currentColor" fill-opacity="0.45"/>
+            <circle cx="56" cy="25" r="3" fill="currentColor" fill-opacity="0.45"/>
+            <!-- Play triangle -->
+            <path d="M34 42 L50 50 L34 58 Z" fill="currentColor" fill-opacity="0.55" stroke="currentColor" stroke-width="1.2" stroke-opacity="0.7" stroke-linejoin="round"/>
+          </svg>
+          <svg v-else class="ph-svg ph-svg-spin" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <!-- Render spinning arc -->
+            <circle cx="40" cy="40" r="28" stroke="currentColor" stroke-opacity="0.12" stroke-width="4"/>
+            <path d="M40 12 A28 28 0 0 1 68 40" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-opacity="0.85"/>
+            <!-- Center film icon -->
+            <circle cx="40" cy="40" r="8" stroke="currentColor" stroke-width="1.6" stroke-opacity="0.55"/>
+            <circle cx="40" cy="40" r="3" fill="currentColor" fill-opacity="0.55"/>
+          </svg>
+        </div>
         <div class="ph-title">{{ placeholderTitle }}</div>
         <div class="ph-desc">{{ placeholderDesc }}</div>
 
@@ -33,7 +57,7 @@
       </div>
     </div>
 
-    <pre v-if="finalVideoText" class="final-json">{{ finalVideoText }}</pre>
+    <!-- JSON only shown in dev/debug context, hidden in main view -->
   </section>
 </template>
 
@@ -199,9 +223,35 @@ const placeholderDesc = computed(() => {
 }
 
 .final-placeholder {
-  padding: 36px 20px 28px;
+  padding: 32px 20px 28px;
   text-align: center;
   color: var(--text-primary);
+}
+
+.ph-illus {
+  margin: 0 auto 20px;
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ph-svg {
+  width: 80px;
+  height: 80px;
+  color: var(--arc-300);
+  filter: drop-shadow(0 0 12px rgba(245,158,11,0.40));
+}
+
+.ph-svg-spin {
+  animation: phSpin 2s linear infinite;
+  transform-origin: 50% 50%;
+}
+
+@keyframes phSpin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
 }
 
 .ph-title {

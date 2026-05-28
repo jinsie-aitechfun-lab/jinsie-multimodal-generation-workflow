@@ -306,7 +306,7 @@ body::before {
   }
   .badge-arc   { background: rgba(245,158,11,0.12); color: var(--arc-300); border: 1px solid rgba(245,158,11,0.28); }
   .badge-prism { background: rgba(139,92,246,0.12); color: var(--prism-400); border: 1px solid rgba(139,92,246,0.25); }
-  .badge-ok    { background: rgba(52,211,153,0.12); color: #34d399; border: 1px solid rgba(52,211,153,0.25); }
+  .badge-ok    { background: rgba(245,158,11,0.12); color: var(--arc-300); border: 1px solid rgba(245,158,11,0.28); }
   .badge-warn  { background: rgba(251,191,36,0.12); color: #fbbf24; border: 1px solid rgba(251,191,36,0.25); }
   .badge-err   { background: rgba(248,113,113,0.12); color: #f87171; border: 1px solid rgba(248,113,113,0.25); }
 
