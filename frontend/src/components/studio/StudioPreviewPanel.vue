@@ -280,6 +280,8 @@ const historyListRef = ref<HTMLElement | null>(null)
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* ── Header ── */
@@ -299,8 +301,8 @@ const historyListRef = ref<HTMLElement | null>(null)
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 0;
-  overflow: hidden;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 /* ── Main player ── */
@@ -580,10 +582,9 @@ const historyListRef = ref<HTMLElement | null>(null)
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 2rem 2rem 2.5rem;
+  padding: 1.5rem 1.75rem 2rem;
   text-align: center;
   gap: 0.5rem;
-  min-height: 420px;
 }
 
 /* SVG illustration — floats gently */

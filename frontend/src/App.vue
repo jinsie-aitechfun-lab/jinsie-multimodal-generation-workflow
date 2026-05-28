@@ -2294,9 +2294,22 @@ async function runWorkflow() {
   align-items: start;
 }
 
+/* Right column (preview panel) stays visible while form scrolls */
+.studio-home-grid > :nth-child(2) {
+  position: sticky;
+  top: 1rem;
+  max-height: calc(100vh - 2rem);
+  display: flex;
+  flex-direction: column;
+}
+
 @media (max-width: 960px) {
   .studio-home-grid {
     grid-template-columns: 1fr;
+  }
+  .studio-home-grid > :nth-child(2) {
+    position: static;
+    max-height: none;
   }
 }
 
