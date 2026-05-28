@@ -1,6 +1,6 @@
 <template>
   <section class="final-hero">
-    <h3 class="final-title">Final Video</h3>
+    <h3 class="final-title">最终视频</h3>
 
     <div class="final-shell" :class="{ ready: Boolean(finalVideoUrl) }">
       <video
@@ -171,6 +171,10 @@ const placeholderDesc = computed(() => {
   text-align: center;
   font-weight: 700;
   margin: 8px 0 12px;
+  font-size: 0.875rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 
 .final-shell {
@@ -178,116 +182,109 @@ const placeholderDesc = computed(() => {
   max-width: 1100px;
   margin: 0 auto;
   border-radius: 18px;
-  background: linear-gradient(180deg, #0b1220 0%, #0b152b 100%);
+  background: linear-gradient(160deg, rgba(20,15,5,0.85) 0%, rgba(12,9,3,0.80) 100%);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
   overflow: hidden;
-  border: 1px solid rgba(17, 24, 39, 0.12);
+  border: 1px solid rgba(245,158,11,0.14);
+  box-shadow: 0 8px 40px rgba(0,0,0,0.50), inset 0 1px 0 rgba(251,191,36,0.06);
 }
 
 .final-video {
   width: 100%;
   display: block;
-  background: transparent;
+  background: #000;
   object-fit: contain;
   max-height: 72vh;
 }
 
 .final-placeholder {
-  padding: 28px 16px 22px;
+  padding: 36px 20px 28px;
   text-align: center;
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--text-primary);
 }
 
 .ph-title {
-  font-size: 22px;
+  font-size: 1.375rem;
   font-weight: 800;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
+  background: linear-gradient(120deg, var(--arc-200) 0%, var(--arc-300) 50%, var(--prism-400) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .ph-desc {
-  font-size: 14px;
-  opacity: 0.85;
-  margin-bottom: 18px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  margin-bottom: 22px;
+  max-width: 560px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .ph-progress {
-  max-width: 720px;
+  max-width: 680px;
   margin: 0 auto;
 }
 
 .ph-bar {
-  height: 10px;
-  background: rgba(255, 255, 255, 0.14);
-  border-radius: 999px;
-  overflow: hidden;
-}
-
-.ph-bar-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #6ea8fe 0%, #9f7aea 60%, #a78bfa 100%);
-  border-radius: 999px;
-  transition: width 180ms ease-out;
-}
-
-.ph-bar {
-  height: 10px;
-  background: rgba(255, 255, 255, 0.12);
+  height: 6px;
+  background: rgba(255,255,255,0.08);
   border-radius: 999px;
   overflow: hidden;
   position: relative;
 }
 
-/* ✅ 企业风格：全宽的 indeterminate 背景 shimmer */
+/* Gold indeterminate shimmer */
 .ph-bar.indeterminate::before {
   content: '';
   position: absolute;
   inset: 0;
-  /* 低对比度、低饱和：不抢真实进度 */
   background: linear-gradient(
     90deg,
-    rgba(255, 255, 255, 0.06) 0%,
-    rgba(255, 255, 255, 0.14) 20%,
-    rgba(255, 255, 255, 0.06) 40%,
-    rgba(255, 255, 255, 0.06) 100%
+    rgba(245,158,11,0.04) 0%,
+    rgba(245,158,11,0.18) 35%,
+    rgba(251,191,36,0.22) 50%,
+    rgba(245,158,11,0.18) 65%,
+    rgba(245,158,11,0.04) 100%
   );
   background-size: 240px 100%;
-  animation: ph-indeterminate 1.1s linear infinite;
+  animation: ph-indeterminate 1.4s linear infinite;
 }
 
-/* ✅ 真实进度条仍然用 fill（你原来的渐变） */
+/* Gold progress fill */
 .ph-bar-fill {
   height: 100%;
-  background: linear-gradient(90deg, #6ea8fe 0%, #9f7aea 60%, #a78bfa 100%);
+  background: linear-gradient(90deg, var(--arc-400) 0%, var(--prism-400) 100%);
+  box-shadow: 0 0 8px rgba(245,158,11,0.55);
   border-radius: 999px;
-  transition: width 180ms ease-out;
+  transition: width 220ms ease-out;
   position: relative;
   z-index: 1;
 }
 
-/* ✅ indeterminate 时，不显示 fill（避免“假进度”） */
 .ph-bar.indeterminate .ph-bar-fill {
   width: 0 !important;
 }
 
 @keyframes ph-indeterminate {
-  from {
-    background-position: -240px 0;
-  }
-  to {
-    background-position: 240px 0;
-  }
+  from { background-position: -240px 0; }
+  to   { background-position:  240px 0; }
 }
 
 .ph-meta {
   margin-top: 10px;
-  font-size: 13px;
-  opacity: 0.9;
+  font-size: 12px;
+  color: var(--text-muted);
   display: flex;
   justify-content: center;
   gap: 8px;
 }
 
 .ph-dot {
-  opacity: 0.6;
+  opacity: 0.5;
 }
 
 .render-button {
