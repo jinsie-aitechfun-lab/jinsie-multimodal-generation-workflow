@@ -2423,7 +2423,7 @@ async function runWorkflow() {
 
 .copy-diag-btn {
   border: 1px solid rgba(245,158,11,0.18);
-  background: rgba(14,11,5,0.60);
+  background: var(--glass-bg);
   color: var(--text-secondary);
   border-radius: 8px;
   padding: 6px 14px;
@@ -2549,7 +2549,7 @@ async function runWorkflow() {
   max-width: 520px;
   border-radius: 10px;
   border: 1px solid rgba(245,158,11,0.10);
-  background: rgba(14,11,5,0.60);
+  background: var(--glass-bg);
   margin-top: 8px;
 }
 
@@ -2586,7 +2586,7 @@ async function runWorkflow() {
   padding: 10px;
   border: 1px solid rgba(245,158,11,0.10);
   border-radius: 10px;
-  background: rgba(10,8,3,0.50);
+  background: var(--glass-bg);
 }
 
 .review-scene-grid {
@@ -2597,7 +2597,7 @@ async function runWorkflow() {
 .review-scene-card {
   padding: 16px;
   border-radius: 14px;
-  background: rgba(14,11,5,0.60);
+  background: var(--glass-bg);
   border: 1px solid rgba(245,158,11,0.10);
 }
 
@@ -2624,7 +2624,7 @@ async function runWorkflow() {
   padding: 12px;
   border-radius: 12px;
   border: 1px solid rgba(245,158,11,0.18);
-  background: rgba(10,8,3,0.50);
+  background: var(--glass-bg);
   cursor: pointer;
   text-align: left;
 }
@@ -2652,7 +2652,7 @@ async function runWorkflow() {
   padding: 12px;
   border-radius: 10px;
   border: 1px solid rgba(245,158,11,0.10);
-  background: rgba(10,8,3,0.50);
+  background: var(--glass-bg);
   color: var(--text-primary);
   font-size: 13px;
   line-height: 1.6;
@@ -2671,7 +2671,7 @@ async function runWorkflow() {
   padding: 14px;
   border: 1px solid rgba(245,158,11,0.10);
   border-radius: 12px;
-  background: rgba(10,8,3,0.50);
+  background: var(--glass-bg);
 }
 
 .mock-audio-label {
@@ -2689,7 +2689,7 @@ async function runWorkflow() {
   border: 1px solid rgba(245,158,11,0.10);
   border-radius: 14px;
   padding: 16px;
-  background: rgba(14,11,5,0.60);
+  background: var(--glass-bg);
 }
 
 .mock-audio-scene-head {
@@ -2716,7 +2716,7 @@ async function runWorkflow() {
   gap: 12px;
   padding: 12px 14px;
   border-radius: 12px;
-  background: rgba(10,8,3,0.50);
+  background: var(--glass-bg);
   border: 1px solid rgba(245,158,11,0.10);
 }
 

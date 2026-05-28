@@ -77,7 +77,7 @@ defineProps<{
   margin-top: 16px;
   padding: 18px 20px;
   border-radius: 14px;
-  background: rgba(14,11,5,0.65);
+  background: var(--glass-bg);
   backdrop-filter: blur(20px) saturate(150%);
   -webkit-backdrop-filter: blur(20px) saturate(150%);
   border: 1px solid rgba(245,158,11,0.12);

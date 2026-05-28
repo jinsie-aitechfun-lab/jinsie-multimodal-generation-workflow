@@ -150,14 +150,15 @@ defineEmits<{
 }>()
 
 // ── Theme system ────────────────────────────────
-type ThemeKey = 'gold' | 'blue' | 'purple'
+type ThemeKey = 'gold' | 'blue' | 'purple' | 'pearl'
 
 const THEMES: Record<ThemeKey, { label: string; short: string; a: string; b: string; c: string }> = {
   gold:   { label: '沉金暗调', short: '金',  a: '245,158,11', b: '249,115,22', c: '251,191,36' },
   blue:   { label: '极夜蓝调', short: '蓝',  a: '14,165,233', b: '99,102,241', c: '56,189,248' },
   purple: { label: '暗紫星芒', short: '紫',  a: '168,85,247', b: '244,63,94',  c: '192,132,252' },
+  pearl:  { label: '珍珠晨光', short: '珠',  a: '194,145,74', b: '79,143,192', c: '233,203,131' },
 }
-const THEME_ORDER: ThemeKey[] = ['gold', 'blue', 'purple']
+const THEME_ORDER: ThemeKey[] = ['gold', 'blue', 'purple', 'pearl']
 
 const currentTheme = ref<ThemeKey>(
   (localStorage.getItem('studio_theme') as ThemeKey | null) ?? 'gold'
@@ -335,11 +336,11 @@ watch(() => props.modelValue, () => {
   padding: 20px 0 16px;
   gap: 0;
 
-  background: rgba(7,5,2,0.88);
+  background: var(--sidebar-bg, rgba(7,5,2,0.88));
   backdrop-filter: blur(28px) saturate(150%);
   -webkit-backdrop-filter: blur(28px) saturate(150%);
   border-right: 1px solid var(--sidebar-border, rgba(245,158,11,0.10));
-  box-shadow: 4px 0 32px rgba(0,0,0,0.55), inset -1px 0 0 var(--sidebar-border, rgba(245,158,11,0.06));
+  box-shadow: var(--sidebar-shadow, 4px 0 32px rgba(0,0,0,0.55)), inset -1px 0 0 var(--sidebar-border, rgba(245,158,11,0.06));
 }
 
 /* ── Brand ── */
@@ -545,7 +546,7 @@ watch(() => props.modelValue, () => {
   top: 0;
   z-index: 40;
   padding: 0.45rem 1.75rem 0.35rem;
-  background: rgba(9,7,3,0.82);
+  background: var(--sidebar-bg, rgba(9,7,3,0.82));
   backdrop-filter: blur(24px) saturate(150%);
   -webkit-backdrop-filter: blur(24px) saturate(150%);
   border-bottom: 1px solid var(--sidebar-border, rgba(245,158,11,0.10));
@@ -713,6 +714,54 @@ watch(() => props.modelValue, () => {
   --pt-glow-a: rgba(192,132,252,0.95);
   --pt-glow-b: rgba(233,213,255,0.95);
   --pt-glow-c: rgba(233,213,255,1);
+}
+
+/* ═══════════════════════════════════════════════
+   珍珠晨光 · Pearl Dawn (light theme)
+═══════════════════════════════════════════════ */
+.s-root[data-theme="pearl"] {
+  --accent-a:           rgba(194,145,74,0.70);
+  --accent-c:           rgba(233,203,131,0.80);
+  --accent-a-solid:     #c2914a;
+  --brand-glow:         rgba(194,145,74,0.55);
+  --sidebar-bg:         rgba(255,253,247,0.86);
+  --sidebar-border:     rgba(194,145,74,0.16);
+  --sidebar-shadow:     4px 0 32px rgba(120,90,40,0.10);
+  --item-hover-bg:      rgba(194,145,74,0.10);
+  --item-hover-border:  rgba(194,145,74,0.28);
+  --item-active-bg:     rgba(194,145,74,0.18);
+  --item-active-border: rgba(194,145,74,0.50);
+  --item-glow:          rgba(194,145,74,0.22);
+  /* Soft pearl orbs */
+  --orb-a1: rgba(194,145,74,0.22);
+  --orb-a2: rgba(140,100,40,0.08);
+  --orb-b1: rgba(79,143,192,0.20);
+  --orb-b2: rgba(40,90,140,0.08);
+  --orb-c1: rgba(233,203,131,0.16);
+  --dot-color:  rgba(194,145,74,0.18);
+  --dc-color:   rgba(194,145,74,0.90);
+  --pt-a:       #c2914a;
+  --pt-b:       #e9cb83;
+  --pt-c:       #d6b06a;
+  --pt-glow-a:  rgba(194,145,74,0.85);
+  --pt-glow-b:  rgba(233,203,131,0.85);
+  --pt-glow-c:  rgba(194,145,74,1);
+}
+
+/* Sidebar nav items — text reversal for light theme */
+.s-root[data-theme="pearl"] .sb-icon          { color: rgba(50,44,34,0.50); }
+.s-root[data-theme="pearl"] .sb-item:hover:not(.is-active) .sb-icon { color: rgba(50,44,34,0.78); }
+.s-root[data-theme="pearl"] .sb-label         { color: rgba(50,44,34,0.45); }
+.s-root[data-theme="pearl"] .sb-item:hover:not(.is-active) .sb-label { color: rgba(50,44,34,0.78); }
+.s-root[data-theme="pearl"] .sb-item.is-active .sb-icon,
+.s-root[data-theme="pearl"] .sb-item.is-active .sb-label { color: var(--arc-300, #b8843e); }
+.s-root[data-theme="pearl"] .sb-dev-btn       { color: rgba(50,44,34,0.45); background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.08); }
+.s-root[data-theme="pearl"] .sb-dev-btn:hover { color: rgba(50,44,34,0.75); background: rgba(0,0,0,0.08); }
+.s-root[data-theme="pearl"] .sb-theme-label   { color: rgba(50,44,34,0.50); }
+
+/* Lighten the dark inset highlight in light mode */
+.s-root[data-theme="pearl"] .sb-item.is-active {
+  box-shadow: 0 0 18px var(--item-glow), inset 0 1px 0 rgba(255,255,255,0.50);
 }
 
 /* ── Responsive ── */

@@ -981,7 +981,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   align-items: stretch;
   padding: 10px;
   border-radius: 14px;
-  background: rgba(10,8,3,0.62);
+  background: var(--glass-bg);
   border: 1px solid rgba(245,158,11,0.08);
 }
 
