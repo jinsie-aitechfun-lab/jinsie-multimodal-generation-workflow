@@ -2294,10 +2294,13 @@ async function runWorkflow() {
   align-items: start;
 }
 
-/* Right column (preview panel) stays visible while form scrolls */
+/* Right column (preview panel) stays visible while form scrolls.
+   align-self:start + height:auto so panel fits content instead of
+   stretching to viewport — avoids huge whitespace below short content. */
 .studio-home-grid > :nth-child(2) {
   position: sticky;
   top: 1rem;
+  align-self: start;
   max-height: calc(100vh - 2rem);
   display: flex;
   flex-direction: column;

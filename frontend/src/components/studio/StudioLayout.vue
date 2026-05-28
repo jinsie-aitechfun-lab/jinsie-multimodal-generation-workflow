@@ -471,23 +471,24 @@ watch(() => props.modelValue, () => {
   z-index: 1;
 }
 
-/* Progress bar — sticky top strip with glass background */
+/* Progress bar wrapper — transparent so it disappears when child is hidden.
+   Visual (bg/border/padding) lives in .studio-progress inside StudioProgress
+   component, which uses v-if="visible". */
 .s-progress {
   position: sticky;
   top: 0;
   z-index: 40;
-  padding: 0.45rem 1.75rem 0.35rem;
-  background: var(--sidebar-bg, rgba(9,7,3,0.82));
-  backdrop-filter: blur(24px) saturate(150%);
-  -webkit-backdrop-filter: blur(24px) saturate(150%);
-  border-bottom: 1px solid var(--sidebar-border, rgba(245,158,11,0.10));
+  background: transparent;
   flex-shrink: 0;
 }
 
 /* Main content */
 .s-main {
   flex: 1;
-  padding: 1.5rem 1.75rem;
+  /* Tighter left padding so cards sit closer to the sidebar.
+     Pearl theme's lighter bg makes any whitespace look bigger; this
+     also subtly tightens dark themes (1.75rem → 1.25rem). */
+  padding: 1.5rem 1.5rem 1.5rem 1.25rem;
   max-width: 1440px;
   width: 100%;
   box-sizing: border-box;
@@ -699,13 +700,10 @@ watch(() => props.modelValue, () => {
   box-shadow: 0 4px 18px var(--item-glow), inset 0 1px 0 rgba(255,255,255,0.85);
 }
 
-.s-root[data-theme="pearl"] .s-progress {
-  padding-top: 0.32rem;
-  padding-bottom: 0.22rem;
-  background:
-    linear-gradient(90deg, rgba(255,255,255,0.42), rgba(238,247,255,0.30));
-  border-bottom-color: rgba(214, 179, 90, 0.10);
-  box-shadow: 0 8px 22px rgba(90, 110, 130, 0.025);
+/* Pearl bg is light so any whitespace looks bigger than the same px
+   on the dark themes. Tighten s-main left padding visually. */
+.s-root[data-theme="pearl"] .s-main {
+  padding-left: 0.7rem;
 }
 
 /* ═══════════════════════════════════════════════

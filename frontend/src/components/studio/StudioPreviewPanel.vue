@@ -895,7 +895,7 @@ const progressSteps = computed(() => {
 }
 
 :global(:root[data-theme="pearl"]) .pp-empty {
-  margin: 1rem 1.25rem 1.25rem;
+  /* margin: 1rem 1.25rem 1.25rem; */
   border-radius: 18px;
 }
 

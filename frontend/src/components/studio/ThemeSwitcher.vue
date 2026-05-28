@@ -98,12 +98,12 @@ const vClickOutside: Directive<HTMLElement, () => void> = {
 </script>
 
 <style scoped>
-/* Fixed top-right floating switcher — never affects layout flow */
+/* Fixed bottom-right floating switcher — never affects layout flow */
 .ts-root {
   position: fixed;
-  top: 56px;
+  bottom: 24px;
   right: 24px;
-  z-index: 120;
+  z-index: 9999;
   display: inline-block;
 }
 
@@ -158,12 +158,15 @@ const vClickOutside: Directive<HTMLElement, () => void> = {
   color: var(--text-secondary, rgba(255,255,255,0.70));
 }
 
-/* ── Popover panel — opens downward, right-aligned ── */
+/* ── Popover panel — opens upward, right-aligned ── */
 .ts-panel {
   position: absolute;
-  top: calc(100% + 10px);
   right: 0;
-  width: 260px;
+  bottom: calc(100% + 12px);
+  width: 248px;
+  max-height: min(420px, calc(100vh - 96px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 10px;
   border-radius: 14px;
   background: var(--glass-bg-light, rgba(20,16,8,0.94));
@@ -174,21 +177,21 @@ const vClickOutside: Directive<HTMLElement, () => void> = {
     0 18px 48px rgba(0,0,0,0.55),
     0 0 0 1px var(--glass-border, rgba(245,158,11,0.10)),
     inset 0 1px 0 rgba(255,255,255,0.10);
-  z-index: 121;
+  z-index: 10000;
 }
 
-/* Arrow tip pointing up (panel below the button) */
+/* Arrow tip pointing down (panel above the button) */
 .ts-panel::after {
   content: '';
   position: absolute;
-  bottom: 100%;
+  top: 100%;
   right: 22px;
   width: 0;
   height: 0;
   border-left: 7px solid transparent;
   border-right: 7px solid transparent;
-  border-bottom: 7px solid var(--glass-bg-light, rgba(20,16,8,0.94));
-  filter: drop-shadow(0 -1px 1px rgba(0,0,0,0.30));
+  border-top: 7px solid var(--glass-bg-light, rgba(20,16,8,0.94));
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,0.30));
 }
 
 .ts-panel-header {
@@ -307,7 +310,7 @@ const vClickOutside: Directive<HTMLElement, () => void> = {
 .ts-fade-enter-from,
 .ts-fade-leave-to {
   opacity: 0;
-  transform: translateY(-6px);
+  transform: translateY(6px);
 }
 
 /* Pearl Dawn: lighter acrylic switcher, no grey capsule feel */
@@ -350,14 +353,19 @@ const vClickOutside: Directive<HTMLElement, () => void> = {
 }
 
 :global(:root[data-theme="pearl"]) .ts-panel::after {
-  border-bottom-color: rgba(255,255,255,0.82);
-  filter: drop-shadow(0 -1px 1px rgba(214,179,90,0.12));
+  border-top-color: rgba(255,255,255,0.82);
+  filter: drop-shadow(0 1px 1px rgba(214,179,90,0.12));
 }
 
 @media (max-width: 768px) {
   .ts-root {
-    top: 54px;
+    bottom: 18px;
     right: 14px;
+  }
+
+  .ts-panel {
+    width: min(248px, calc(100vw - 28px));
+    max-height: min(420px, calc(100vh - 78px));
   }
 }
 </style>
