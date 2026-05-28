@@ -539,10 +539,16 @@ watch(() => props.modelValue, () => {
   z-index: 1;
 }
 
-/* Progress bar strip */
+/* Progress bar — sticky top strip with glass background */
 .s-progress {
-  padding: 0.5rem 1.75rem 0.25rem;
-  border-bottom: 1px solid rgba(255,255,255,0.04);
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  padding: 0.45rem 1.75rem 0.35rem;
+  background: rgba(9,7,3,0.82);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  border-bottom: 1px solid var(--sidebar-border, rgba(245,158,11,0.10));
   flex-shrink: 0;
 }
 
