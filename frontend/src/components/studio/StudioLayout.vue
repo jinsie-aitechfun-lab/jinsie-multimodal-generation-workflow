@@ -667,12 +667,12 @@ watch(() => props.modelValue, () => {
   --item-active-border: rgba(200,154,85,0.55);
   --item-glow:          rgba(200,154,85,0.22);
 
-  /* Aurora orbs — brighter, more visible warm-cool blooms on pearl bg */
-  --orb-a1: rgba(255,210,130,0.55);
-  --orb-a2: rgba(220,170,80,0.18);
-  --orb-b1: rgba(150,190,225,0.50);
-  --orb-b2: rgba(90,150,200,0.18);
-  --orb-c1: rgba(255,225,160,0.30);
+  /* Aurora orbs — cool pearl-dominant, gold only as small warm accent */
+  --orb-a1: rgba(230,210,160,0.32);   /* champagne whisper */
+  --orb-a2: rgba(200,180,140,0.10);
+  --orb-b1: rgba(155,195,225,0.55);   /* ice blue (dominant) */
+  --orb-b2: rgba(100,160,210,0.20);
+  --orb-c1: rgba(220,230,238,0.30);   /* pearl white centre */
 
   --dot-color:  rgba(200,154,85,0.16);
   --dc-color:   rgba(200,154,85,0.85);
@@ -699,10 +699,19 @@ watch(() => props.modelValue, () => {
   box-shadow: 0 4px 18px var(--item-glow), inset 0 1px 0 rgba(255,255,255,0.85);
 }
 
+.s-root[data-theme="pearl"] .s-progress {
+  padding-top: 0.32rem;
+  padding-bottom: 0.22rem;
+  background:
+    linear-gradient(90deg, rgba(255,255,255,0.42), rgba(238,247,255,0.30));
+  border-bottom-color: rgba(214, 179, 90, 0.10);
+  box-shadow: 0 8px 22px rgba(90, 110, 130, 0.025);
+}
+
 /* ═══════════════════════════════════════════════
    Pearl Dawn — drifting flowing light layer
-   Below content but above page bg. Strong, visible bloom that
-   slowly rotates → "morning light streaming through the room".
+   Cool-dominant: ice blue + pearl white major notes, gold minor accent.
+   No more "土黄 sweep" — see color ratio note in style.css.
 ═══════════════════════════════════════════════ */
 .s-root[data-theme="pearl"]::before {
   content: '';
@@ -714,17 +723,16 @@ watch(() => props.modelValue, () => {
     conic-gradient(
       from 0deg at 28% 32%,
       transparent 0deg,
-      rgba(255, 198, 110, 0.50) 50deg,
-      rgba(255, 222, 165, 0.28) 110deg,
+      rgba(160, 200, 230, 0.42) 50deg,
+      rgba(195, 220, 235, 0.24) 110deg,
       transparent 190deg,
-      rgba(160, 205, 235, 0.42) 270deg,
-      rgba(190, 220, 240, 0.20) 320deg,
+      rgba(232, 215, 175, 0.22) 270deg,
+      rgba(240, 230, 210, 0.10) 320deg,
       transparent 360deg
     );
-  filter: blur(60px);
-  animation: pearlFlow 26s linear infinite;
+  filter: blur(70px);
+  animation: pearlFlow 28s linear infinite;
   will-change: transform;
-  mix-blend-mode: normal;
 }
 
 .s-root[data-theme="pearl"]::after {
@@ -737,14 +745,14 @@ watch(() => props.modelValue, () => {
     conic-gradient(
       from 180deg at 75% 68%,
       transparent 0deg,
-      rgba(255, 210, 140, 0.38) 70deg,
+      rgba(180, 210, 230, 0.36) 70deg,
       transparent 170deg,
-      rgba(195, 220, 235, 0.32) 250deg,
-      rgba(255, 205, 145, 0.22) 320deg,
+      rgba(220, 228, 238, 0.30) 250deg,
+      rgba(232, 215, 175, 0.18) 320deg,
       transparent 360deg
     );
-  filter: blur(70px);
-  animation: pearlFlow 36s linear infinite reverse;
+  filter: blur(80px);
+  animation: pearlFlow 38s linear infinite reverse;
   will-change: transform;
 }
 

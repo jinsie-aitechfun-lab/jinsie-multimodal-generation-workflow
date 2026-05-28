@@ -48,4 +48,14 @@ defineProps<{
   flex: 1;
   overflow-y: auto;
 }
+
+:global(:root[data-theme="pearl"]) .create-panel__header {
+  border-bottom-color: rgba(214,179,90,0.14);
+  background: linear-gradient(180deg, rgba(255,255,255,0.42), rgba(255,255,255,0));
+}
+
+:global(:root[data-theme="pearl"]) .create-panel__icon {
+  color: #c89a55;
+  filter: drop-shadow(0 0 8px rgba(214,179,90,0.18));
+}
 </style>

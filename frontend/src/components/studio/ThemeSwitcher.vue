@@ -101,9 +101,9 @@ const vClickOutside: Directive<HTMLElement, () => void> = {
 /* Fixed top-right floating switcher — never affects layout flow */
 .ts-root {
   position: fixed;
-  top: 14px;
-  right: 18px;
-  z-index: 80;
+  top: 56px;
+  right: 24px;
+  z-index: 120;
   display: inline-block;
 }
 
@@ -174,7 +174,7 @@ const vClickOutside: Directive<HTMLElement, () => void> = {
     0 18px 48px rgba(0,0,0,0.55),
     0 0 0 1px var(--glass-border, rgba(245,158,11,0.10)),
     inset 0 1px 0 rgba(255,255,255,0.10);
-  z-index: 81;
+  z-index: 121;
 }
 
 /* Arrow tip pointing up (panel below the button) */
@@ -308,5 +308,56 @@ const vClickOutside: Directive<HTMLElement, () => void> = {
 .ts-fade-leave-to {
   opacity: 0;
   transform: translateY(-6px);
+}
+
+/* Pearl Dawn: lighter acrylic switcher, no grey capsule feel */
+:global(:root[data-theme="pearl"]) .ts-trigger {
+  background:
+    linear-gradient(145deg, rgba(255,255,255,0.86), rgba(255,255,255,0.62));
+  border-color: rgba(214,179,90,0.24);
+  box-shadow:
+    0 12px 34px rgba(46,42,34,0.08),
+    0 4px 14px rgba(142,197,255,0.08),
+    inset 0 1px 0 rgba(255,255,255,0.88);
+}
+
+:global(:root[data-theme="pearl"]) .ts-trigger:hover,
+:global(:root[data-theme="pearl"]) .ts-trigger[aria-expanded='true'] {
+  background:
+    linear-gradient(145deg, rgba(255,255,255,0.92), rgba(240,248,255,0.68));
+  border-color: rgba(214,179,90,0.34);
+  box-shadow:
+    0 16px 40px rgba(46,42,34,0.09),
+    0 0 22px rgba(142,197,255,0.10),
+    inset 0 1px 0 rgba(255,255,255,0.92);
+}
+
+:global(:root[data-theme="pearl"]) .ts-trigger-dot,
+:global(:root[data-theme="pearl"]) .ts-swatch {
+  box-shadow:
+    0 0 0 1px rgba(214,179,90,0.18),
+    0 2px 6px rgba(46,42,34,0.10);
+}
+
+:global(:root[data-theme="pearl"]) .ts-panel {
+  background:
+    linear-gradient(145deg, rgba(255,255,255,0.90), rgba(255,255,255,0.70));
+  border-color: rgba(214,179,90,0.22);
+  box-shadow:
+    0 24px 60px rgba(46,42,34,0.12),
+    0 8px 24px rgba(142,197,255,0.08),
+    inset 0 1px 0 rgba(255,255,255,0.88);
+}
+
+:global(:root[data-theme="pearl"]) .ts-panel::after {
+  border-bottom-color: rgba(255,255,255,0.82);
+  filter: drop-shadow(0 -1px 1px rgba(214,179,90,0.12));
+}
+
+@media (max-width: 768px) {
+  .ts-root {
+    top: 54px;
+    right: 14px;
+  }
 }
 </style>

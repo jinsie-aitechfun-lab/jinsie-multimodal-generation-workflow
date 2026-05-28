@@ -46,35 +46,21 @@
             </button>
           </div>
         </div>
-      </template>
-
-      <!-- ════ B: Render in flight ════ -->
-      <div v-else-if="renderInFlight" class="pp-state">
-        <svg class="pp-state-svg pp-spin" viewBox="0 0 60 60" fill="none">
-          <circle cx="30" cy="30" r="24" stroke="currentColor" stroke-opacity="0.15" stroke-width="4"/>
-          <path d="M30 6 A24 24 0 0 1 54 30" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
-        </svg>
-        <div class="pp-state-title">视频合成中…</div>
-        <div class="pp-state-desc">画面、音频与字幕正在拼接渲染</div>
-      </div>
-
-      <!-- ════ C: Workflow processing ════ -->
-      <div v-else-if="isProcessing" class="pp-state pp-state--proc">
-        <div class="pp-steps">
-          <div
-            v-for="step in progressSteps"
-            :key="step.id"
-            :class="['pp-step', `pp-step--${step.state}`]"
-          >
-            <span class="pp-step-dot"/>
-            <span class="pp-step-label">{{ step.label }}</span>
-            <span v-if="step.state === 'active'" class="pp-step-pulse"/>
+        <div v-else class="pp-trail">
+          <div class="pp-trail-icon" aria-hidden="true">
+            <span class="pp-trail-book"></span>
+            <span class="pp-trail-play"></span>
+            <span class="pp-trail-star pp-trail-star--a"></span>
+            <span class="pp-trail-star pp-trail-star--b"></span>
+          </div>
+          <div class="pp-trail-copy">
+            <div class="pp-trail-title">创作记录将在这里沉淀</div>
+            <p class="pp-trail-desc">继续生成后，分镜、画面、配音与字幕将在这里形成完整创作记录。</p>
           </div>
         </div>
-        <div v-if="statusLabel" class="pp-status-label">{{ statusLabel }}</div>
-      </div>
+      </template>
 
-      <!-- ════ D: Has history but no current — history as main content ════ -->
+      <!-- ════ B: Has history but no current — history as main content ════ -->
       <div v-else-if="allVideoUrls.length > 0" class="pp-hist-main">
         <div class="pp-hist-main-header">
           <span class="pp-hist-main-title">历史视频</span>
@@ -96,6 +82,32 @@
             <div class="pp-hist-card-label">视频 {{ idx + 1 }}</div>
           </button>
         </div>
+      </div>
+
+      <!-- ════ C: Render in flight ════ -->
+      <div v-else-if="renderInFlight" class="pp-state">
+        <svg class="pp-state-svg pp-spin" viewBox="0 0 60 60" fill="none">
+          <circle cx="30" cy="30" r="24" stroke="currentColor" stroke-opacity="0.15" stroke-width="4"/>
+          <path d="M30 6 A24 24 0 0 1 54 30" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+        </svg>
+        <div class="pp-state-title">视频合成中…</div>
+        <div class="pp-state-desc">画面、音频与字幕正在拼接渲染</div>
+      </div>
+
+      <!-- ════ D: Workflow processing ════ -->
+      <div v-else-if="isProcessing" class="pp-state pp-state--proc">
+        <div class="pp-steps">
+          <div
+            v-for="step in progressSteps"
+            :key="step.id"
+            :class="['pp-step', `pp-step--${step.state}`]"
+          >
+            <span class="pp-step-dot"/>
+            <span class="pp-step-label">{{ step.label }}</span>
+            <span v-if="step.state === 'active'" class="pp-step-pulse"/>
+          </div>
+        </div>
+        <div v-if="statusLabel" class="pp-status-label">{{ statusLabel }}</div>
       </div>
 
       <!-- ════ E: Completely empty — illustrated empty state ════ -->
@@ -738,6 +750,172 @@ const progressSteps = computed(() => {
 .pp-history-list::-webkit-scrollbar        { height: 3px; }
 .pp-history-list::-webkit-scrollbar-track  { background: transparent; }
 .pp-history-list::-webkit-scrollbar-thumb  { background: rgba(245,158,11,0.25); border-radius: 2px; }
+
+/* ── Subtle single-video follow-up panel ── */
+.pp-trail {
+  flex: 1;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.875rem;
+  align-items: center;
+  min-height: 190px;
+  margin: 1rem 1.25rem 1.25rem;
+  padding: 1rem 1.125rem;
+  border-radius: 16px;
+  border: 1px solid rgba(245,158,11,0.12);
+  background:
+    linear-gradient(135deg, rgba(255,255,255,0.06), rgba(245,158,11,0.035)),
+    var(--surface-overlay-soft);
+}
+
+.pp-trail-icon {
+  position: relative;
+  width: 58px;
+  height: 58px;
+  border-radius: 18px;
+  border: 1px solid rgba(245,158,11,0.16);
+  background: rgba(255,255,255,0.045);
+}
+
+.pp-trail-book {
+  position: absolute;
+  left: 15px;
+  top: 15px;
+  width: 26px;
+  height: 28px;
+  border: 1.5px solid var(--arc-400);
+  border-radius: 4px 8px 8px 4px;
+  opacity: 0.72;
+}
+
+.pp-trail-book::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: -1.5px;
+  width: 1.5px;
+  height: 28px;
+  background: var(--arc-400);
+  opacity: 0.35;
+}
+
+.pp-trail-play {
+  position: absolute;
+  left: 27px;
+  top: 24px;
+  width: 0;
+  height: 0;
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  border-left: 9px solid var(--prism-400);
+  opacity: 0.68;
+}
+
+.pp-trail-star {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--arc-400);
+  opacity: 0.55;
+}
+
+.pp-trail-star--a { right: 11px; top: 11px; }
+.pp-trail-star--b { left: 11px; bottom: 12px; background: var(--prism-400); }
+
+.pp-trail-copy {
+  min-width: 0;
+}
+
+.pp-trail-title {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.pp-trail-desc {
+  margin: 0.35rem 0 0;
+  max-width: 320px;
+  font-size: 0.75rem;
+  line-height: 1.65;
+  color: var(--text-muted);
+}
+
+/* Pearl Dawn: refined acrylic preview surface */
+:global(:root[data-theme="pearl"]) .preview-panel {
+  border-color: rgba(214, 179, 90, 0.20);
+  box-shadow:
+    0 26px 72px rgba(46,42,34,0.085),
+    0 10px 26px rgba(142,197,255,0.075),
+    inset 0 1px 0 rgba(255,255,255,0.92);
+}
+
+:global(:root[data-theme="pearl"]) .pp-header {
+  border-bottom-color: rgba(214, 179, 90, 0.14);
+  background: linear-gradient(180deg, rgba(255,255,255,0.42), rgba(255,255,255,0));
+}
+
+:global(:root[data-theme="pearl"]) .pp-player-wrap {
+  border: 1px solid rgba(214,179,90,0.18);
+  box-shadow:
+    0 24px 64px rgba(46,42,34,0.10),
+    0 8px 28px rgba(142,197,255,0.08),
+    inset 0 1px 0 rgba(255,255,255,0.82);
+}
+
+:global(:root[data-theme="pearl"]) .pp-current-label {
+  background:
+    linear-gradient(90deg, rgba(255,255,255,0.66), rgba(238,247,255,0.50));
+  border-bottom-color: rgba(214,179,90,0.12);
+  backdrop-filter: blur(14px) saturate(1.08);
+  -webkit-backdrop-filter: blur(14px) saturate(1.08);
+}
+
+:global(:root[data-theme="pearl"]) .pp-current-tag {
+  background: linear-gradient(135deg, rgba(248,232,198,0.78), rgba(229,242,255,0.56));
+  border-color: rgba(214,179,90,0.28);
+  color: #8b6722;
+  box-shadow:
+    0 0 14px rgba(214,179,90,0.12),
+    inset 0 1px 0 rgba(255,255,255,0.78);
+}
+
+:global(:root[data-theme="pearl"]) .pp-trail,
+:global(:root[data-theme="pearl"]) .pp-empty {
+  background:
+    radial-gradient(circle at 12% 18%, rgba(246, 222, 166, 0.20), transparent 28%),
+    radial-gradient(circle at 86% 78%, rgba(142, 197, 255, 0.16), transparent 36%),
+    linear-gradient(145deg, rgba(255,255,255,0.72), rgba(247,250,252,0.54));
+  border: 1px solid rgba(214,179,90,0.18);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.86),
+    0 18px 46px rgba(46,42,34,0.06);
+  backdrop-filter: blur(18px) saturate(1.08);
+  -webkit-backdrop-filter: blur(18px) saturate(1.08);
+}
+
+:global(:root[data-theme="pearl"]) .pp-empty {
+  margin: 1rem 1.25rem 1.25rem;
+  border-radius: 18px;
+}
+
+:global(:root[data-theme="pearl"]) .pp-trail-icon {
+  background:
+    linear-gradient(145deg, rgba(255,255,255,0.78), rgba(238,247,255,0.44));
+  border-color: rgba(214,179,90,0.22);
+  box-shadow:
+    0 12px 30px rgba(46,42,34,0.06),
+    inset 0 1px 0 rgba(255,255,255,0.82);
+}
+
+:global(:root[data-theme="pearl"]) .pp-trail-title {
+  color: rgba(46,42,34,0.82);
+}
+
+:global(:root[data-theme="pearl"]) .pp-trail-desc,
+:global(:root[data-theme="pearl"]) .pp-current-url {
+  color: rgba(111,106,95,0.76);
+}
 
 /* Thumbnail button */
 .pp-thumb {

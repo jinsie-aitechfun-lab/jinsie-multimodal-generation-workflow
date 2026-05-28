@@ -48,4 +48,21 @@ defineProps<{
   background: linear-gradient(90deg, #34d399 0%, var(--arc-400) 100%);
   box-shadow: 0 0 8px rgba(52,211,153,0.60);
 }
+
+:global(:root[data-theme="pearl"]) .studio-progress__pct {
+  color: rgba(138, 112, 64, 0.72);
+}
+
+:global(:root[data-theme="pearl"]) .studio-progress__label {
+  color: rgba(111, 106, 95, 0.68);
+}
+
+:global(:root[data-theme="pearl"]) .studio-progress--complete .progress-fill {
+  background: linear-gradient(
+    90deg,
+    rgba(196, 216, 228, 0.58) 0%,
+    rgba(218, 188, 124, 0.54) 100%
+  );
+  box-shadow: 0 0 6px rgba(188, 215, 232, 0.14);
+}
 </style>
