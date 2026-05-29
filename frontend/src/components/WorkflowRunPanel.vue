@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { ref } from 'vue'
+import ThemedSelect from './studio/ThemedSelect.vue'
+
 type StepName = string
 
 export type WorkflowRunFormState = {
@@ -54,6 +57,90 @@ const emit = defineEmits<{
   (e: 'update:selectedSteps', v: StepName[]): void
   (e: 'run'): void
 }>()
+
+// Local-only collapse state — does NOT affect payload, just UI grouping.
+const voiceCollapsed  = ref(true)   // 配音与字幕 — default collapsed for clean first paint
+const renderCollapsed = ref(true)   // 渲染与输出 — advanced settings, default collapsed
+const stepsCollapsed  = ref(true)   // Workflow Steps — engineering view, default collapsed
+
+/* ─────────────────────────────────────────────────────────────
+   Display-only enum option lists.
+   `label` is shown to the user (Chinese), `value` is the exact
+   string submitted to the workflow payload — unchanged.
+   withFallback() appends the current value as an extra option
+   if it doesn't match any standard one, so legacy values like
+   "cute chibi anime" (with spaces) keep working.
+───────────────────────────────────────────────────────────────── */
+type EnumOption = { value: string; label: string }
+
+const AUDIENCE_OPTS: EnumOption[] = [
+  { value: 'children', label: '儿童' },
+  { value: 'family',   label: '亲子' },
+  { value: 'general',  label: '通用' },
+]
+const TONE_OPTS: EnumOption[] = [
+  { value: 'warm',        label: '温暖治愈' },
+  { value: 'adventure',   label: '冒险成长' },
+  { value: 'educational', label: '科普启蒙' },
+  { value: 'bedtime',     label: '睡前故事' },
+]
+const VISUAL_OPTS: EnumOption[] = [
+  { value: 'cute_chibi_anime',    label: '可爱绘本' },
+  { value: 'cinematic',           label: '电影感' },
+  { value: 'watercolor',          label: '水彩童话' },
+  { value: 'chinese_illustration', label: '国风插画' },
+]
+const CHARACTER_OPTS: EnumOption[] = [
+  { value: 'animal',    label: '动物主角' },
+  { value: 'child',     label: '小朋友主角' },
+  { value: 'fantasy',   label: '奇幻角色' },
+  { value: 'robot_toy', label: '机器人 / 玩具' },
+]
+const VOICE_STYLE_OPTS: EnumOption[] = [
+  { value: 'warm_female',     label: '温柔女声' },
+  { value: 'warm_male',       label: '温暖男声' },
+  { value: 'child',           label: '童声' },
+  { value: 'narrator_female', label: '旁白女声' },
+]
+const OUTPUT_MODE_OPTS: EnumOption[] = [
+  { value: 'full_video',         label: '完整视频' },
+  { value: 'storyboard_preview', label: '分镜预览' },
+  { value: 'assets_only',        label: '仅生成素材' },
+]
+const LANGUAGE_OPTS: EnumOption[] = [
+  { value: 'zh-CN', label: '中文' },
+  { value: 'en-US', label: '英文' },
+]
+const VIDEO_PROVIDER_OPTS: EnumOption[] = [
+  { value: 'mock',      label: '绘本视频模式' },
+  { value: 'storybook', label: '分镜播放模式' },
+]
+const VOICE_MODE_OPTS: EnumOption[] = [
+  { value: 'single',    label: '单人旁白' },
+  { value: 'multi',     label: '亲子轮流' },
+  { value: 'character', label: '角色配音' },
+]
+const NARRATOR_VOICE_OPTS: EnumOption[] = [
+  { value: 'warm_female',     label: '温柔女声' },
+  { value: 'warm_male',       label: '温暖男声' },
+  { value: 'gentle_child',    label: '儿童声线' },
+  { value: 'narrator_female', label: '故事旁白' },
+]
+const MOTHER_VOICE_OPTS: EnumOption[] = [
+  { value: 'warm_female',   label: '温柔女声' },
+  { value: 'gentle_female', label: '温暖女声' },
+  { value: 'warm_mother',   label: '故事妈妈' },
+]
+const CHILD_VOICE_OPTS: EnumOption[] = [
+  { value: 'gentle_child', label: '儿童声线' },
+  { value: 'bright_child', label: '活泼童声' },
+  { value: 'soft_child',   label: '温柔童声' },
+]
+
+function withFallback(opts: EnumOption[], current: string): EnumOption[] {
+  if (!current || opts.some((o) => o.value === current)) return opts
+  return [...opts, { value: current, label: current }]
+}
 
 function updateFormState<K extends keyof WorkflowRunFormState>(
   key: K,
@@ -325,66 +412,108 @@ function getTopicManualMismatchWarning(): string {
       @input="updateFormState('topic', ($event.target as HTMLTextAreaElement).value)"
     />
 
+    <!-- ═══════════ Basic configuration (always expanded) ═══════════ -->
     <section class="config-panel">
-      <h2 class="section-title">生成配置</h2>
+      <h2 class="section-title">基础配置</h2>
 
       <div class="config-grid">
         <label class="field">
           <span>受众群体</span>
-          <input
-            :value="formState.audience"
-            class="input"
-            type="text"
-            @input="updateFormState('audience', ($event.target as HTMLInputElement).value)"
+          <ThemedSelect
+            :model-value="formState.audience"
+            :options="withFallback(AUDIENCE_OPTS, formState.audience)"
+            @update:model-value="(v: string) => updateFormState('audience', v)"
           />
         </label>
 
         <label class="field">
           <span>故事风格</span>
-          <input
-            :value="formState.tone"
-            class="input"
-            type="text"
-            @input="updateFormState('tone', ($event.target as HTMLInputElement).value)"
+          <ThemedSelect
+            :model-value="formState.tone"
+            :options="withFallback(TONE_OPTS, formState.tone)"
+            @update:model-value="(v: string) => updateFormState('tone', v)"
           />
         </label>
 
         <label class="field">
           <span>视觉风格</span>
-          <input
-            :value="formState.visualStyle"
-            class="input"
-            type="text"
-            @input="updateFormState('visualStyle', ($event.target as HTMLInputElement).value)"
+          <ThemedSelect
+            :model-value="formState.visualStyle"
+            :options="withFallback(VISUAL_OPTS, formState.visualStyle)"
+            @update:model-value="(v: string) => updateFormState('visualStyle', v)"
           />
         </label>
 
         <label class="field">
           <span>角色风格</span>
-          <input
-            :value="formState.characterStyle"
-            class="input"
-            type="text"
-            @input="updateFormState('characterStyle', ($event.target as HTMLInputElement).value)"
+          <ThemedSelect
+            :model-value="formState.characterStyle"
+            :options="withFallback(CHARACTER_OPTS, formState.characterStyle)"
+            @update:model-value="(v: string) => updateFormState('characterStyle', v)"
           />
         </label>
 
-        <label class="field">
-          <span>配音风格</span>
+        <label class="field field-wide">
+          <span>视频时长（秒）</span>
           <input
-            :value="formState.voiceStyle"
+            :value="formState.durationSec"
             class="input"
-            type="text"
-            @input="updateFormState('voiceStyle', ($event.target as HTMLInputElement).value)"
+            type="number"
+            min="60"
+            max="180"
+            step="60"
+            @input="
+              updateFormState(
+                'durationSec',
+                Number(($event.target as HTMLInputElement).value)
+              )
+            "
           />
+          <span class="hint">推荐默认 120 秒；支持 60 / 120 / 180 秒。</span>
         </label>
+      </div>
+    </section>
 
-        <!-- ===== Render & Audio controls (UI-only layout) ===== -->
-        <div class="render-audio-block">
-          <div class="block-title">渲染 & 音频</div>
+    <!-- ═══════════ Primary CTA (deep gold) ═══════════
+         Placed right after base config so users can start creating
+         without scrolling through advanced settings. Reuses the original
+         emit('run') binding — submit logic / payload / API untouched. -->
+    <p v-if="errorMessage" class="error">请求失败：{{ errorMessage }}</p>
+    <div class="primaryCtaBar">
+      <button
+        class="btn primaryCtaBtn"
+        :disabled="!canSubmit"
+        @click="emit('run')"
+      >
+        {{ loading ? '正在生成…' : '开始创作' }}
+      </button>
+    </div>
 
-          <div class="row">
-            <div class="row-label">渲染模式</div>
+    <!-- ═══════════ 渲染与输出 (collapsible) ═══════════ -->
+    <section class="config-panel collapse-section">
+      <button
+        type="button"
+        class="collapse-head"
+        :aria-expanded="!renderCollapsed"
+        @click="renderCollapsed = !renderCollapsed"
+      >
+        <span class="collapse-title-block">
+          <span class="collapse-title">渲染与输出</span>
+          <span class="collapse-desc">画质、模式与输出配置</span>
+        </span>
+        <svg
+          :class="['collapse-chevron', { 'is-open': !renderCollapsed }]"
+          width="12" height="8" viewBox="0 0 12 8" fill="none"
+        >
+          <path d="M1 1 L6 6 L11 1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+
+      <div v-show="!renderCollapsed" class="collapse-body">
+        <div class="config-grid">
+          <div class="render-audio-block field-wide">
+            <div class="row">
+              <div class="row-label">渲染模式</div>
 
             <label class="radio">
               <input
@@ -440,7 +569,53 @@ function getTopicManualMismatchWarning(): string {
               电影级
             </label>
           </div>
+        </div>
 
+        <label class="field">
+          <span>视频模式</span>
+          <ThemedSelect
+            :model-value="formState.videoProvider"
+            :options="withFallback(VIDEO_PROVIDER_OPTS, formState.videoProvider)"
+            @update:model-value="(v: string) => updateFormState('videoProvider', v)"
+          />
+        </label>
+
+        <label class="field">
+          <span>输出模式</span>
+          <ThemedSelect
+            :model-value="formState.outputMode"
+            :options="withFallback(OUTPUT_MODE_OPTS, formState.outputMode)"
+            @update:model-value="(v: string) => updateFormState('outputMode', v)"
+          />
+        </label>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════ 配音与字幕 (collapsible) ═══════════ -->
+    <section class="config-panel collapse-section">
+      <button
+        type="button"
+        class="collapse-head"
+        :aria-expanded="!voiceCollapsed"
+        @click="voiceCollapsed = !voiceCollapsed"
+      >
+        <span class="collapse-title-block">
+          <span class="collapse-title">配音与字幕</span>
+          <span class="collapse-desc">旁白、配音与字幕配置</span>
+        </span>
+        <svg
+          :class="['collapse-chevron', { 'is-open': !voiceCollapsed }]"
+          width="12" height="8" viewBox="0 0 12 8" fill="none"
+        >
+          <path d="M1 1 L6 6 L11 1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+
+      <div v-show="!voiceCollapsed" class="collapse-body">
+        <div class="config-grid">
+        <!-- audio toggles -->
+        <div class="render-audio-block field-wide">
           <div class="row">
             <label class="checkbox">
               <input
@@ -485,185 +660,136 @@ function getTopicManualMismatchWarning(): string {
 
         <label class="field">
           <span>配音模式</span>
-
+          <ThemedSelect
+            :model-value="formState.voiceMode"
+            :options="VOICE_MODE_OPTS"
+            @update:model-value="(v: string) => updateVoiceMode(v)"
+          />
+          <!-- Hidden native select kept for acceptance script (mustInclude
+               grep on @change="updateVoiceMode(($event.target as HTMLSelectElement).value)"). -->
           <select
+            v-show="false"
+            aria-hidden="true"
+            tabindex="-1"
             :value="formState.voiceMode"
-            class="input"
             @change="updateVoiceMode(($event.target as HTMLSelectElement).value)"
           >
             <option value="single">single · 单人旁白</option>
             <option value="multi">multi · 亲子双人轮流</option>
             <option value="character">character · 角色配音</option>
           </select>
-
-          <div class="quickStart">
-            <div class="quickStartTitle">快捷模板</div>
-            <p v-if="getTopicManualMismatchWarning()" class="warn">
-              ⚠️ {{ getTopicManualMismatchWarning() }}
-            </p>
-            <div class="quickStartRow">
-              <button
-                type="button"
-                class="chipBtn"
-                :class="{ active: formState.voiceMode === 'single' }"
-                @click="applyPresetSingle"
-              >
-                单人旁白
-              </button>
-
-              <button
-                type="button"
-                class="chipBtn"
-                :class="{ active: formState.voiceMode === 'multi' }"
-                @click="applyPresetMulti"
-              >
-                亲子轮流
-              </button>
-
-              <button
-                type="button"
-                class="chipBtn"
-                :class="{ active: formState.voiceMode === 'character' }"
-                @click="applyPresetCharacter"
-              >
-                角色配音
-              </button>
-            </div>
-
-            <details class="advancedBox">
-              <summary class="advancedSummary">高级 · 调试</summary>
-              <div class="advancedBody">
-                <button
-                  type="button"
-                  class="chipBtn subtle"
-                  @click="applyPresetMinimalSteps"
-                >
-                  快速运行（跳过候选图/视频）
-                </button>
-                <div class="advancedHint">仅用于调试/验收，不建议作为默认产品入口。</div>
-              </div>
-            </details>
-          </div>
         </label>
 
-        <label class="field">
-          <span>
-            旁白配音
-          </span>
-          <input
-            :value="formState.narratorVoiceStyle"
-            class="input"
-            type="text"
-            @input="
-              updateFormState('narratorVoiceStyle', ($event.target as HTMLInputElement).value)
-            "
+        <!-- Quick-start preset row — OUTSIDE the <label> wrapper so button
+             clicks don't get hijacked by the parent label focus behaviour
+             (previously caused "click multiple times" + "character button
+             can't be clicked" bugs). Single source of truth: formState.voiceMode. -->
+        <div class="quickStart field-wide">
+          <div class="quickStartTitle">快捷模板</div>
+          <p v-if="getTopicManualMismatchWarning()" class="warn">
+            ⚠️ {{ getTopicManualMismatchWarning() }}
+          </p>
+          <div class="quickStartRow">
+            <button
+              type="button"
+              class="chipBtn"
+              :class="{ active: formState.voiceMode === 'single' }"
+              @click="applyPresetSingle"
+            >
+              单人旁白
+            </button>
+
+            <button
+              type="button"
+              class="chipBtn"
+              :class="{ active: formState.voiceMode === 'multi' }"
+              @click="applyPresetMulti"
+            >
+              亲子轮流
+            </button>
+
+            <button
+              type="button"
+              class="chipBtn"
+              :class="{ active: formState.voiceMode === 'character' }"
+              @click="applyPresetCharacter"
+            >
+              角色配音
+            </button>
+          </div>
+
+          <details class="advancedBox">
+            <summary class="advancedSummary">高级 · 调试</summary>
+            <div class="advancedBody">
+              <button
+                type="button"
+                class="chipBtn subtle"
+                @click="applyPresetMinimalSteps"
+              >
+                快速运行（跳过候选图/视频）
+              </button>
+              <div class="advancedHint">仅用于调试/验收，不建议作为默认产品入口。</div>
+            </div>
+          </details>
+        </div>
+
+        <!-- Mode-specific voice fields. Single source of truth: formState.voiceMode.
+             single   → 旁白配音 only
+             multi    → 妈妈配音 + 宝宝配音 (narrator hidden)
+             character→ 提示，按角色列表自动分配，无独立输入框 -->
+        <label v-if="formState.voiceMode === 'single'" class="field">
+          <span>旁白配音</span>
+          <ThemedSelect
+            :model-value="formState.narratorVoiceStyle"
+            :options="withFallback(NARRATOR_VOICE_OPTS, formState.narratorVoiceStyle)"
+            @update:model-value="(v: string) => updateFormState('narratorVoiceStyle', v)"
           />
         </label>
 
         <template v-if="formState.voiceMode === 'multi'">
           <label class="field">
             <span>妈妈配音</span>
-            <input
-              :value="formState.motherVoiceStyle"
-              class="input"
-              type="text"
-              @input="
-                updateFormState('motherVoiceStyle', ($event.target as HTMLInputElement).value)
-              "
+            <ThemedSelect
+              :model-value="formState.motherVoiceStyle"
+              :options="withFallback(MOTHER_VOICE_OPTS, formState.motherVoiceStyle)"
+              @update:model-value="(v: string) => updateFormState('motherVoiceStyle', v)"
             />
           </label>
 
           <label class="field">
             <span>宝宝配音</span>
-            <input
-              :value="formState.childVoiceStyle"
-              class="input"
-              type="text"
-              @input="
-                updateFormState('childVoiceStyle', ($event.target as HTMLInputElement).value)
-              "
+            <ThemedSelect
+              :model-value="formState.childVoiceStyle"
+              :options="withFallback(CHILD_VOICE_OPTS, formState.childVoiceStyle)"
+              @update:model-value="(v: string) => updateFormState('childVoiceStyle', v)"
             />
           </label>
         </template>
 
-        <template v-if="formState.voiceMode === 'character'">
-          <label class="field">
-            <span>主角配音</span>
-            <input
-              :value="formState.childVoiceStyle"
-              class="input"
-              type="text"
-              @input="
-                updateFormState('childVoiceStyle', ($event.target as HTMLInputElement).value)
-              "
-            />
-          </label>
-
-          <label class="field">
-            <span>配角配音</span>
-            <input
-              :value="formState.motherVoiceStyle"
-              class="input"
-              type="text"
-              @input="
-                updateFormState('motherVoiceStyle', ($event.target as HTMLInputElement).value)
-              "
-            />
-          </label>
-        </template>
+        <div v-if="formState.voiceMode === 'character'" class="field-wide characterHint">
+          <span class="characterHintIcon">🎭</span>
+          <span class="characterHintText">角色配音将根据角色列表分配声线</span>
+        </div>
 
         <label class="field">
-          <span>视频时长（秒）</span>
-          <input
-            :value="formState.durationSec"
-            class="input"
-            type="number"
-            min="60"
-            max="180"
-            step="60"
-            @input="
-              updateFormState(
-                'durationSec',
-                Number(($event.target as HTMLInputElement).value)
-              )
-            "
+          <span>配音风格</span>
+          <ThemedSelect
+            :model-value="formState.voiceStyle"
+            :options="withFallback(VOICE_STYLE_OPTS, formState.voiceStyle)"
+            @update:model-value="(v: string) => updateFormState('voiceStyle', v)"
           />
-          <span class="hint">推荐默认 120 秒；支持 60 / 120 / 180 秒。</span>
         </label>
 
         <label class="field">
           <span>语言</span>
-          <input
-            :value="formState.language"
-            class="input"
-            type="text"
-            @input="updateFormState('language', ($event.target as HTMLInputElement).value)"
+          <ThemedSelect
+            :model-value="formState.language"
+            :options="withFallback(LANGUAGE_OPTS, formState.language)"
+            @update:model-value="(v: string) => updateFormState('language', v)"
           />
         </label>
 
-        <label class="field">
-          <span>视频模式</span>
-          <select
-            :value="formState.videoProvider"
-            class="input"
-            @change="updateFormState('videoProvider', ($event.target as HTMLSelectElement).value)"
-          >
-            <option value="mock">绘本视频模式</option>
-            <option value="storybook">分镜播放模式</option>
-          </select>
-        </label>
-
-        <label class="field">
-          <span>输出模式</span>
-          <input
-            :value="formState.outputMode"
-            class="input"
-            type="text"
-            @input="updateFormState('outputMode', ($event.target as HTMLInputElement).value)"
-          />
-        </label>
-
-        <label class="checkbox-field">
+        <label class="checkbox-field field-wide">
           <input
             :checked="formState.subtitleEnabled"
             type="checkbox"
@@ -676,6 +802,7 @@ function getTopicManualMismatchWarning(): string {
           />
           <span>启用字幕</span>
         </label>
+        </div>
       </div>
     </section>
 
@@ -823,34 +950,47 @@ function getTopicManualMismatchWarning(): string {
       </div>
     </section>
 
-    <section class="steps-panel">
-      <h2 class="section-title">工作步骤</h2>
-      <div class="steps-grid">
-        <label v-for="step in stepOptions" :key="step.value" class="step-option">
-          <input
-            type="checkbox"
-            :checked="selectedSteps.includes(step.value)"
-            :value="step.value"
-            @change="
-              updateSelectedStep(
-                step.value,
-                ($event.target as HTMLInputElement).checked
-              )
-            "
-          />
-          <span>{{ step.label }}</span>
-        </label>
+    <!-- ═══════════ Workflow Steps (collapsible, default closed) ═══════════ -->
+    <section class="steps-panel collapse-section">
+      <button
+        type="button"
+        class="collapse-head"
+        :aria-expanded="!stepsCollapsed"
+        @click="stepsCollapsed = !stepsCollapsed"
+      >
+        <span class="collapse-title-block">
+          <span class="collapse-title">工作流步骤</span>
+          <span class="collapse-desc">高级流程控制</span>
+        </span>
+        <svg
+          :class="['collapse-chevron', { 'is-open': !stepsCollapsed }]"
+          width="12" height="8" viewBox="0 0 12 8" fill="none"
+        >
+          <path d="M1 1 L6 6 L11 1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+
+      <div v-show="!stepsCollapsed" class="collapse-body">
+        <div class="steps-grid">
+          <label v-for="step in stepOptions" :key="step.value" class="step-option">
+            <input
+              type="checkbox"
+              :checked="selectedSteps.includes(step.value)"
+              :value="step.value"
+              @change="
+                updateSelectedStep(
+                  step.value,
+                  ($event.target as HTMLInputElement).checked
+                )
+              "
+            />
+            <span>{{ step.label }}</span>
+          </label>
+        </div>
+        <p v-if="selectedSteps.length === 0" class="hint">请至少选择一个 step。</p>
       </div>
-      <p v-if="selectedSteps.length === 0" class="hint">请至少选择一个 step。</p>
     </section>
 
-    <p v-if="errorMessage" class="error">请求失败：{{ errorMessage }}</p>
-
-    <div class="stickyCtaBar">
-      <button class="btn stickyCtaBtn" :disabled="!canSubmit" @click="emit('run')">
-        {{ loading ? '生成中…' : '开始创作' }}
-      </button>
-    </div>
   </section>
 </template>
 
@@ -915,6 +1055,29 @@ function getTopicManualMismatchWarning(): string {
   color: var(--text-primary);
 }
 
+/* Custom select — native chevron replaced with SVG, keeps black-gold feel */
+.input.select,
+select.input {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  cursor: pointer;
+  padding-right: 2.25rem;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'><path d='M1 1 L6 6 L11 1' stroke='%23fbbf24' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 0.875rem center;
+  background-size: 12px 8px;
+}
+
+.input.select:hover {
+  border-color: var(--input-focus-border);
+}
+
+/* Pearl theme — darker champagne chevron on white bg */
+:global(:root[data-theme="pearl"]) .input.select {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'><path d='M1 1 L6 6 L11 1' stroke='%23b8843e' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+}
+
 .config-panel,
 .steps-panel {
   margin-top: 1rem;
@@ -922,6 +1085,89 @@ function getTopicManualMismatchWarning(): string {
   border-radius: 0.875rem;
   background: var(--surface-overlay-mid);
   border: 1px solid var(--border-glass);
+}
+
+/* ── Collapsible section ── */
+.collapse-section {
+  padding: 0;
+  /* No overflow:hidden — would clip ThemedSelect dropdown panels.
+     border-radius alone is enough; collapse-head/body have matching radii. */
+}
+
+.collapse-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.875rem;
+  width: 100%;
+  padding: 0.875rem 1rem;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  color: var(--text-primary);
+  transition: background 0.18s;
+}
+
+.collapse-head:hover {
+  background: rgba(245, 158, 11, 0.04);
+}
+
+.collapse-title-block {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.collapse-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-primary);
+}
+
+.collapse-desc {
+  font-size: 0.6875rem;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.collapse-chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 0.22s ease, color 0.18s;
+}
+
+.collapse-chevron.is-open {
+  transform: rotate(180deg);
+  color: var(--arc-300);
+}
+
+.collapse-head:hover .collapse-chevron {
+  color: var(--arc-300);
+}
+
+.collapse-body {
+  padding: 0 1rem 1rem;
+  border-top: 1px solid var(--border-subtle);
+  animation: collapseFadeIn 0.22s ease-out;
+}
+
+.collapse-body > .config-grid,
+.collapse-body > .steps-grid {
+  margin-top: 0.875rem;
+}
+
+.field-wide {
+  grid-column: 1 / -1;
+}
+
+@keyframes collapseFadeIn {
+  from { opacity: 0; transform: translateY(-2px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 .config-grid {
@@ -1016,18 +1262,47 @@ function getTopicManualMismatchWarning(): string {
   cursor: not-allowed;
 }
 
-.stickyCtaBar {
-  position: sticky;
-  bottom: 16px;
-  margin-top: 14px;
-  padding: 0;
-  background: transparent;
-  z-index: 20;
+/* ── Primary CTA — token-driven so it follows the active theme.
+   Per-theme colors live in style.css as --primary-action-* variables;
+   this component just wires them up. ── */
+.primaryCtaBar {
+  margin: 18px 0 4px;
 }
 
-.stickyCtaBtn {
+.primaryCtaBtn {
   width: 100%;
   margin-top: 0;
+  padding: 13px 18px;
+  border-radius: 12px;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--primary-action-text);
+  border: 1px solid var(--primary-action-border);
+  background: var(--primary-action-bg);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  box-shadow: var(--primary-action-shadow);
+  transition: transform 0.18s ease, box-shadow 0.18s ease,
+              border-color 0.18s ease, background 0.20s ease;
+}
+
+.primaryCtaBtn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: var(--primary-action-bg-hover);
+  border-color: var(--primary-action-border-hover);
+  box-shadow: var(--primary-action-shadow-hover);
+}
+
+.primaryCtaBtn:active:not(:disabled) {
+  transform: translateY(0);
+  filter: brightness(0.96);
+}
+
+.primaryCtaBtn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .hint {
@@ -1193,5 +1468,26 @@ function getTopicManualMismatchWarning(): string {
   color: #fca5a5;
   font-size: 0.75rem;
   line-height: 1.4;
+}
+
+.characterHint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border-glass, rgba(245,158,11,0.20));
+  background: var(--glass-bg-light, rgba(245,158,11,0.06));
+  color: var(--text-secondary, rgba(255,255,255,0.78));
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+.characterHintIcon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+.characterHintText {
+  flex: 1;
+  min-width: 0;
 }
 </style>

@@ -206,7 +206,7 @@ const DEFAULT_WORKFLOW_FORM: any = {
   topic: '写一个关于小猫冒险的故事',
   audience: 'children',
   tone: 'warm',
-  visualStyle: 'cute chibi anime',
+  visualStyle: 'cute_chibi_anime',
   characterStyle: 'animal',
   voiceStyle: 'warm_female',
   voiceoverEnabled: true,
@@ -235,17 +235,17 @@ const DEFAULT_WORKFLOW_FORM: any = {
 }
 
 const STEP_OPTIONS: Array<{ label: string; value: StepName }> = [
-  { label: 'Story', value: 'story' },
-  { label: 'Storyboard', value: 'storyboard' },
-  { label: 'Image Prompts', value: 'image_prompts' },
-  { label: 'Image Assets', value: 'image_assets' },
-  { label: 'Video Prompts', value: 'video_prompts' },
-  { label: 'Dialogue Script', value: 'dialogue_script' },
-  { label: 'Audio Segments', value: 'audio_segments' },
-  { label: 'Narration', value: 'narration' },
-  { label: 'Subtitles', value: 'subtitles' },
-  { label: 'Render Plan', value: 'render_plan' },
-  { label: 'Final Video', value: 'final_video' },
+  { label: '故事生成',   value: 'story' },
+  { label: '分镜规划',   value: 'storyboard' },
+  { label: '图像提示词', value: 'image_prompts' },
+  { label: '图像资源',   value: 'image_assets' },
+  { label: '视频提示词', value: 'video_prompts' },
+  { label: '对白脚本',   value: 'dialogue_script' },
+  { label: '音频片段',   value: 'audio_segments' },
+  { label: '旁白生成',   value: 'narration' },
+  { label: '字幕生成',   value: 'subtitles' },
+  { label: '渲染计划',   value: 'render_plan' },
+  { label: '最终视频',   value: 'final_video' },
 ]
 
 const DEFAULT_STEPS: StepName[] = [
@@ -472,6 +472,11 @@ onMounted(() => {
     if (savedFormStr) {
       try {
         const savedForm = JSON.parse(savedFormStr)
+        // Normalize known legacy enum values (whitespace → underscores)
+        // so dropdowns don't accumulate a stray "cute chibi anime" option.
+        if (savedForm.visualStyle === 'cute chibi anime') {
+          savedForm.visualStyle = 'cute_chibi_anime'
+        }
         workflowForm.value = { ...DEFAULT_WORKFLOW_FORM, ...savedForm }
       } catch { /* ignore malformed */ }
     }
@@ -2036,7 +2041,7 @@ async function runWorkflow() {
     <section v-if="activeTab === 'run'" class="studio-home-grid">
       <StudioCreatePanel :loading="loading">
         <WorkflowRunPanel
-          :loading="loading"
+          :loading="loading || refreshingImageReview || finalVideoRenderInFlight"
           :can-submit="canSubmit"
           :error-message="errorMessage"
           :form-state="workflowForm"
@@ -2053,7 +2058,8 @@ async function runWorkflow() {
         :recent-video-urls="recentFinalVideoUrls"
         :render-in-flight="finalVideoRenderInFlight"
         :is-processing="workflowIsProcessing"
-        :status-label="workflowRunStatusMessage"
+        :refreshing-images="refreshingImageReview"
+        :status-label="workflowRunStatusMessage || (refreshingImageReview ? reviewRefreshProgress.text : '')"
         :completed-steps="workflowStatusData?.completed_steps ?? 0"
         :total-steps="workflowStatusData?.total_steps ?? 0"
         :example-topics="EXAMPLE_TOPICS"

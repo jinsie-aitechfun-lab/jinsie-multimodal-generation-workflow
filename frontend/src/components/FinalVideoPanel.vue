@@ -217,9 +217,10 @@ const placeholderDesc = computed(() => {
 }
 
 .final-shell {
+  position: relative;
   width: 100%;
   max-width: 1100px;
-  margin: 0 auto;
+  margin: 0 auto 30px;
   border-radius: 18px;
   background: var(--glass-bg);
   backdrop-filter: blur(20px) saturate(140%);
@@ -228,6 +229,36 @@ const placeholderDesc = computed(() => {
   border: 1px solid var(--border-glass);
   box-shadow: var(--shadow-glass);
 }
+/* Bottom gradient that softens the contrast between dark gold studio and
+   the white native progress bar. Only shown when a video is actually
+   loaded (.ready) so it never tints the placeholder illustration.
+   pointer-events:none → controls remain fully clickable. */
+.final-shell.ready::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 64px;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(8, 5, 2, 0) 0%,
+    rgba(8, 5, 2, 0.30) 55%,
+    rgba(8, 5, 2, 0.46) 100%
+  );
+  border-bottom-left-radius: 18px;
+  border-bottom-right-radius: 18px;
+}
+:global(:root[data-theme="pearl"]) .final-shell.ready::after {
+  height: 52px;
+  background: linear-gradient(
+    180deg,
+    rgba(46, 42, 34, 0) 0%,
+    rgba(46, 42, 34, 0.10) 60%,
+    rgba(46, 42, 34, 0.18) 100%
+  );
+}
 
 .final-video {
   width: 100%;
@@ -235,10 +266,14 @@ const placeholderDesc = computed(() => {
   background: #000;
   object-fit: contain;
   max-height: 72vh;
+  accent-color: var(--arc-300, #fbbf24);
+}
+:global(:root[data-theme="pearl"]) .final-video {
+  accent-color: #b8843e;
 }
 
 .final-placeholder {
-  padding: 32px 20px 28px;
+  padding: 32px 20px 45px;
   text-align: center;
   color: var(--text-primary);
 }

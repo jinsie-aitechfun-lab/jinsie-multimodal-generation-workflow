@@ -27,6 +27,46 @@
           <span v-else class="pp-current-tag pp-current-tag--hist">历史回放</span>
           <span class="pp-current-url">{{ shortUrl(displayUrl) }}</span>
         </div>
+        <!-- Current work card — workflow chain visualisation.
+             Always shown when a video is loaded so the user keeps the
+             timeline summary even after multiple generations. -->
+        <div class="pp-work">
+          <div class="pp-work-head">
+            <div class="pp-work-head-left">
+              <div class="pp-work-eyebrow">当前作品</div>
+              <div class="pp-work-filename">{{ shortUrl(displayUrl!) }}</div>
+            </div>
+            <span :class="['pp-work-badge', { 'pp-work-badge--live': workInProgress }]">
+              <span class="pp-work-badge-dot" aria-hidden="true"></span>
+              {{ workInProgress ? '生成中 · 工作流' : '已完成 · 完整视频' }}
+            </span>
+          </div>
+
+          <ol class="pp-work-flow" aria-label="生成链路">
+            <template v-for="(step, idx) in workflowChain" :key="step.id">
+              <li :class="['pp-flow-node', `pp-flow-node--${step.state}`]">
+                <span class="pp-flow-dot" aria-hidden="true"></span>
+                <span class="pp-flow-label">{{ step.label }}</span>
+              </li>
+              <li
+                v-if="idx < workflowChain.length - 1"
+                :class="['pp-flow-link', { 'pp-flow-link--done': step.state === 'done' }]"
+                aria-hidden="true"
+              ></li>
+            </template>
+          </ol>
+
+          <div class="pp-work-foot">
+            <span class="pp-work-foot-check" aria-hidden="true">✓</span>
+            <span class="pp-work-foot-text">
+              已完成 {{ doneCount }} / {{ workflowChain.length }} 步骤
+            </span>
+          </div>
+        </div>
+
+        <!-- History strip — independent of the work card so the user keeps
+             both the timeline summary AND a quick switcher for prior takes.
+             Hidden when only the current video exists (length === 1). -->
         <div v-if="allVideoUrls.length > 1" class="pp-history">
           <div class="pp-history-header">
             <span class="pp-history-title">历史视频</span>
@@ -46,16 +86,67 @@
             </button>
           </div>
         </div>
-        <div v-else class="pp-trail">
-          <div class="pp-trail-icon" aria-hidden="true">
-            <span class="pp-trail-book"></span>
-            <span class="pp-trail-play"></span>
-            <span class="pp-trail-star pp-trail-star--a"></span>
-            <span class="pp-trail-star pp-trail-star--b"></span>
+      </template>
+
+      <!-- ════ A2: Workflow running but no current video on screen.
+           Without this branch, B (history grid) wins and the user loses
+           any visual of the active workflow progress. ════ -->
+      <template v-else-if="workInProgress">
+        <div class="pp-work">
+          <div class="pp-work-head">
+            <div class="pp-work-head-left">
+              <div class="pp-work-eyebrow">本轮生成</div>
+              <div class="pp-work-filename">{{ statusLabel || '正在运行 Workflow' }}</div>
+            </div>
+            <span class="pp-work-badge pp-work-badge--live">
+              <span class="pp-work-badge-dot" aria-hidden="true"></span>
+              生成中 · 工作流
+            </span>
           </div>
-          <div class="pp-trail-copy">
-            <div class="pp-trail-title">创作记录将在这里沉淀</div>
-            <p class="pp-trail-desc">继续生成后，分镜、画面、配音与字幕将在这里形成完整创作记录。</p>
+
+          <ol class="pp-work-flow" aria-label="生成链路">
+            <template v-for="(step, idx) in workflowChain" :key="step.id">
+              <li :class="['pp-flow-node', `pp-flow-node--${step.state}`]">
+                <span class="pp-flow-dot" aria-hidden="true"></span>
+                <span class="pp-flow-label">{{ step.label }}</span>
+              </li>
+              <li
+                v-if="idx < workflowChain.length - 1"
+                :class="['pp-flow-link', { 'pp-flow-link--done': step.state === 'done' }]"
+                aria-hidden="true"
+              ></li>
+            </template>
+          </ol>
+
+          <div class="pp-work-foot">
+            <span class="pp-work-foot-check" aria-hidden="true">✓</span>
+            <span class="pp-work-foot-text">
+              已完成 {{ doneCount }} / {{ workflowChain.length }} 步骤
+            </span>
+          </div>
+        </div>
+
+        <!-- Keep the history grid below so users can still click a prior take. -->
+        <div v-if="allVideoUrls.length > 0" class="pp-hist-main">
+          <div class="pp-hist-main-header">
+            <span class="pp-hist-main-title">历史视频</span>
+            <span class="pp-hist-main-count">{{ allVideoUrls.length }} 个</span>
+          </div>
+          <div class="pp-hist-main-grid">
+            <button
+              v-for="(url, idx) in allVideoUrls"
+              :key="url"
+              class="pp-hist-card"
+              @click="selectVideo(url)"
+            >
+              <div class="pp-hist-card-frame">
+                <video class="pp-hist-card-video" :src="url" preload="metadata" :muted="true"/>
+                <div class="pp-hist-card-overlay">
+                  <span class="pp-hist-card-play">▶</span>
+                </div>
+              </div>
+              <div class="pp-hist-card-label">视频 {{ idx + 1 }}</div>
+            </button>
           </div>
         </div>
       </template>
@@ -209,6 +300,7 @@ const props = defineProps<{
   recentVideoUrls?: string[]
   renderInFlight?: boolean
   isProcessing?: boolean
+  refreshingImages?: boolean
   statusLabel?: string
   completedSteps?: number
   totalSteps?: number
@@ -263,13 +355,16 @@ function shortUrl(url: string): string {
 }
 
 // ── Processing steps ──
+// `label` is the Chinese label used by the in-progress state panel.
+// `flowLabel` is the short English caption used by the timeline rail in
+// the current-work card (a lighter, more "workflow product" feel).
 const STEP_DEFS = [
-  { id: 'story',      label: '故事生成' },
-  { id: 'storyboard', label: '分镜设计' },
-  { id: 'images',     label: '画面生成' },
-  { id: 'voice',      label: '配音生成' },
-  { id: 'subtitles',  label: '字幕生成' },
-  { id: 'video',      label: '视频合成' },
+  { id: 'story',      label: '故事生成', flowLabel: 'Story'      },
+  { id: 'storyboard', label: '分镜设计', flowLabel: 'Storyboard' },
+  { id: 'images',     label: '画面生成', flowLabel: 'Image'      },
+  { id: 'voice',      label: '配音生成', flowLabel: 'Voice'      },
+  { id: 'subtitles',  label: '字幕生成', flowLabel: 'Subtitle'   },
+  { id: 'video',      label: '视频合成', flowLabel: 'Video'      },
 ]
 
 const progressSteps = computed(() => {
@@ -282,6 +377,68 @@ const progressSteps = computed(() => {
     state: idx < activeIdx ? 'done' : idx === activeIdx ? 'active' : 'pending',
   }))
 })
+
+// Workflow chain for the current-work card — stage-aware:
+//   • renderInFlight     → all earlier steps done, video step active
+//   • refreshingImages   → story+storyboard done, image step active
+//   • isProcessing       → initial workflow run; derive from completedSteps
+//   • finalVideoUrl set  → fully done
+//   • otherwise          → derive from completedSteps / totalSteps
+// Stage indices into STEP_DEFS:
+//   0 story · 1 storyboard · 2 images · 3 voice · 4 subtitles · 5 video
+type FlowState = 'done' | 'active' | 'pending'
+
+function buildChainWithActive(activeIdx: number) {
+  return STEP_DEFS.map((step, idx) => ({
+    ...step,
+    state: (idx < activeIdx ? 'done' : idx === activeIdx ? 'active' : 'pending') as FlowState,
+  }))
+}
+
+const workflowChain = computed<{ id: string; label: string; flowLabel: string; state: FlowState }[]>(() => {
+  // Final-video render — every prior step is finished, only "视频合成" is live.
+  if (props.renderInFlight) return buildChainWithActive(5)
+
+  // Candidate image generation — Story + Storyboard are prerequisites and
+  // therefore already done; the image step is the live one.
+  if (props.refreshingImages) return buildChainWithActive(2)
+
+  // Initial workflow run — completedSteps drives the active index.
+  if (props.isProcessing) {
+    const completed = props.completedSteps ?? 0
+    const total = props.totalSteps ?? STEP_DEFS.length
+    const ratio = total > 0 ? completed / total : 0
+    const activeIdx = Math.min(
+      Math.floor(ratio * STEP_DEFS.length),
+      STEP_DEFS.length - 1,
+    )
+    return buildChainWithActive(activeIdx)
+  }
+
+  // Settled state with a finished video → mark everything done.
+  if (props.finalVideoUrl) {
+    return STEP_DEFS.map((step) => ({ ...step, state: 'done' as FlowState }))
+  }
+
+  // Idle / partial state — best-effort fallback.
+  const completed = props.completedSteps ?? 0
+  const total = props.totalSteps ?? STEP_DEFS.length
+  const ratio = total > 0 ? completed / total : 0
+  const activeIdx = Math.min(
+    Math.floor(ratio * STEP_DEFS.length),
+    STEP_DEFS.length - 1,
+  )
+  return buildChainWithActive(activeIdx)
+})
+
+// True whenever any workflow phase is in flight — drives badge wording,
+// dot pulse, and the A2 template branch in the right panel.
+const workInProgress = computed(
+  () => Boolean(props.isProcessing || props.renderInFlight || props.refreshingImages),
+)
+const doneCount = computed(
+  () => workflowChain.value.filter((s) => s.state === 'done').length,
+)
 
 </script>
 
@@ -322,8 +479,30 @@ const progressSteps = computed(() => {
 }
 
 .pp-player-wrap {
+  position: relative;
   width: 100%;
   background: #000;
+}
+/* Soft bottom gradient — frames native controls so the white progress bar
+   feels less jarring against the dark gold studio. pointer-events:none so
+   the player's hit-target is untouched. Height limited to ~52px so subtitles
+   above the controls aren't washed out. */
+.pp-player-wrap::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 52px;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(8, 5, 2, 0) 0%,
+    rgba(8, 5, 2, 0.28) 55%,
+    rgba(8, 5, 2, 0.42) 100%
+  );
+  border-bottom-left-radius: inherit;
+  border-bottom-right-radius: inherit;
 }
 
 .pp-video {
@@ -332,6 +511,7 @@ const progressSteps = computed(() => {
   max-height: 360px;
   object-fit: contain;
   background: #000;
+  accent-color: var(--arc-300, #fbbf24);
 }
 
 .pp-current-label {
@@ -751,94 +931,211 @@ const progressSteps = computed(() => {
 .pp-history-list::-webkit-scrollbar-track  { background: transparent; }
 .pp-history-list::-webkit-scrollbar-thumb  { background: rgba(245,158,11,0.25); border-radius: 2px; }
 
-/* ── Subtle single-video follow-up panel ── */
-.pp-trail {
-  flex: 1;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 0.875rem;
-  align-items: center;
-  min-height: 190px;
-  margin: 1rem 1.25rem 1.25rem;
-  padding: 1rem 1.125rem;
-  border-radius: 16px;
-  border: 1px solid rgba(245,158,11,0.12);
+/* ── Current work info + workflow summary
+   Theme-aware: all accent colours come from --arc-*, --border-glass,
+   --border-arc, --text-muted/secondary, --surface-overlay-soft. ── */
+.pp-work {
+  margin: 0.875rem 1.25rem 1.125rem;
+  padding: 0.875rem 1rem;
+  border-radius: 14px;
+  border: 1px solid var(--border-glass);
   background:
-    linear-gradient(135deg, rgba(255,255,255,0.06), rgba(245,158,11,0.035)),
+    linear-gradient(135deg, rgba(255,255,255,0.04), transparent),
     var(--surface-overlay-soft);
+  min-height: 160px;
+  max-height: 220px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
 }
 
-.pp-trail-icon {
-  position: relative;
-  width: 58px;
-  height: 58px;
-  border-radius: 18px;
-  border: 1px solid rgba(245,158,11,0.16);
-  background: rgba(255,255,255,0.045);
+.pp-work-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 
-.pp-trail-book {
-  position: absolute;
-  left: 15px;
-  top: 15px;
-  width: 26px;
-  height: 28px;
-  border: 1.5px solid var(--arc-400);
-  border-radius: 4px 8px 8px 4px;
-  opacity: 0.72;
-}
+.pp-work-head-left { min-width: 0; flex: 1; }
 
-.pp-trail-book::before {
-  content: '';
-  position: absolute;
-  left: 5px;
-  top: -1.5px;
-  width: 1.5px;
-  height: 28px;
-  background: var(--arc-400);
-  opacity: 0.35;
-}
-
-.pp-trail-play {
-  position: absolute;
-  left: 27px;
-  top: 24px;
-  width: 0;
-  height: 0;
-  border-top: 6px solid transparent;
-  border-bottom: 6px solid transparent;
-  border-left: 9px solid var(--prism-400);
-  opacity: 0.68;
-}
-
-.pp-trail-star {
-  position: absolute;
-  width: 4px;
-  height: 4px;
-  border-radius: 999px;
-  background: var(--arc-400);
-  opacity: 0.55;
-}
-
-.pp-trail-star--a { right: 11px; top: 11px; }
-.pp-trail-star--b { left: 11px; bottom: 12px; background: var(--prism-400); }
-
-.pp-trail-copy {
-  min-width: 0;
-}
-
-.pp-trail-title {
-  font-size: 0.8125rem;
+.pp-work-eyebrow {
+  font-size: 0.6875rem;
   font-weight: 700;
-  color: var(--text-secondary);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--arc-300);
+  opacity: 0.85;
 }
 
-.pp-trail-desc {
-  margin: 0.35rem 0 0;
-  max-width: 320px;
-  font-size: 0.75rem;
-  line-height: 1.65;
+.pp-work-filename {
+  margin-top: 2px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pp-work-badge {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-arc);
+  background: color-mix(in srgb, var(--arc-400) 10%, transparent);
+  color: var(--arc-300);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+}
+
+.pp-work-badge-dot {
+  display: inline-block;
+  width: 6px; height: 6px;
+  margin-right: 6px;
+  border-radius: 999px;
+  background: var(--arc-300);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--arc-400) 55%, transparent);
+}
+
+.pp-work-badge--live .pp-work-badge-dot {
+  animation: ppFlowPulse 1.6s ease-in-out infinite;
+}
+
+/* ═══════════════════════════════════════════════
+   Workflow Timeline — minimalist horizontal rail
+   • 6 stops along a continuous 1px gold rail
+   • Filled gold on the completed segment, faded after
+   • Short English caption below each stop
+═══════════════════════════════════════════════ */
+.pp-work-flow {
+  margin: 0;
+  padding: 8px 6px 22px;   /* bottom padding = room for absolute labels */
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.pp-flow-node {
+  position: relative;
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pp-flow-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  /* Hollow pending dot — interior uses theme glass, border uses theme accent */
+  background: var(--glass-bg);
+  border: 1.5px solid var(--border-arc);
+  box-sizing: border-box;
+  transition: background 0.2s ease, border-color 0.2s ease,
+              box-shadow 0.2s ease;
+}
+
+.pp-flow-node--done .pp-flow-dot {
+  background: var(--arc-300);
+  border-color: var(--arc-300);
+}
+
+.pp-flow-node--active .pp-flow-dot {
+  background: var(--arc-300);
+  border-color: var(--arc-300);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--arc-300) 20%, transparent),
+    0 0 10px color-mix(in srgb, var(--arc-300) 45%, transparent);
+  animation: ppFlowPulse 1.8s ease-in-out infinite;
+}
+
+.pp-flow-label {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
   color: var(--text-muted);
+  white-space: nowrap;
+  transition: color 0.2s ease;
+  font-feature-settings: "ss01" on;
+}
+
+.pp-flow-node--done .pp-flow-label {
+  color: color-mix(in srgb, var(--arc-300) 70%, transparent);
+}
+
+.pp-flow-node--active .pp-flow-label {
+  color: var(--arc-200);
+  font-weight: 600;
+}
+
+.pp-flow-link {
+  flex: 1;
+  min-width: 14px;
+  height: 1px;
+  background: var(--border-glass);
+  transition: background 0.25s ease;
+}
+
+.pp-flow-link--done {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--arc-300) 50%, transparent) 0%,
+    color-mix(in srgb, var(--arc-300) 50%, transparent) 80%,
+    color-mix(in srgb, var(--arc-300) 22%, transparent) 100%
+  );
+}
+
+@keyframes ppFlowPulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 3px color-mix(in srgb, var(--arc-300) 18%, transparent),
+      0 0 8px  color-mix(in srgb, var(--arc-300) 32%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 4px color-mix(in srgb, var(--arc-300) 28%, transparent),
+      0 0 14px color-mix(in srgb, var(--arc-300) 55%, transparent);
+  }
+}
+
+/* ── Footer summary ── */
+.pp-work-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.pp-work-foot-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border-arc);
+  background: color-mix(in srgb, var(--arc-400) 8%, transparent);
+  color: var(--arc-300);
+  font-size: 0.625rem;
+  font-weight: 700;
+}
+
+.pp-work-foot-text {
+  letter-spacing: 0.04em;
 }
 
 /* Pearl Dawn: refined acrylic preview surface */
@@ -862,6 +1159,16 @@ const progressSteps = computed(() => {
     0 8px 28px rgba(142,197,255,0.08),
     inset 0 1px 0 rgba(255,255,255,0.82);
 }
+/* Pearl theme — overlay is much lighter so the bright canvas stays bright. */
+:global(:root[data-theme="pearl"]) .pp-player-wrap::after {
+  height: 44px;
+  background: linear-gradient(
+    180deg,
+    rgba(46, 42, 34, 0) 0%,
+    rgba(46, 42, 34, 0.10) 60%,
+    rgba(46, 42, 34, 0.16) 100%
+  );
+}
 
 :global(:root[data-theme="pearl"]) .pp-current-label {
   background:
@@ -880,7 +1187,7 @@ const progressSteps = computed(() => {
     inset 0 1px 0 rgba(255,255,255,0.78);
 }
 
-:global(:root[data-theme="pearl"]) .pp-trail,
+:global(:root[data-theme="pearl"]) .pp-work,
 :global(:root[data-theme="pearl"]) .pp-empty {
   background:
     radial-gradient(circle at 12% 18%, rgba(246, 222, 166, 0.20), transparent 28%),
@@ -895,24 +1202,14 @@ const progressSteps = computed(() => {
 }
 
 :global(:root[data-theme="pearl"]) .pp-empty {
-  /* margin: 1rem 1.25rem 1.25rem; */
   border-radius: 18px;
 }
 
-:global(:root[data-theme="pearl"]) .pp-trail-icon {
-  background:
-    linear-gradient(145deg, rgba(255,255,255,0.78), rgba(238,247,255,0.44));
-  border-color: rgba(214,179,90,0.22);
-  box-shadow:
-    0 12px 30px rgba(46,42,34,0.06),
-    inset 0 1px 0 rgba(255,255,255,0.82);
+/* Pearl-only refinement — filename gets darker on the white surface to
+   keep text contrast (other states now flow from --arc-* tokens directly). */
+:global(:root[data-theme="pearl"]) .pp-work-filename {
+  color: rgba(46,42,34,0.92);
 }
-
-:global(:root[data-theme="pearl"]) .pp-trail-title {
-  color: rgba(46,42,34,0.82);
-}
-
-:global(:root[data-theme="pearl"]) .pp-trail-desc,
 :global(:root[data-theme="pearl"]) .pp-current-url {
   color: rgba(111,106,95,0.76);
 }
