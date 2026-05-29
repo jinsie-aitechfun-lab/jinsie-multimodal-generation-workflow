@@ -302,6 +302,17 @@ function pushRecentFinalVideoUrl(url: string) {
     u,
     ...recentFinalVideoUrls.value.filter((item) => item !== u),
   ].slice(0, 10)
+
+  // Persist the full list so refreshes don't drop earlier takes —
+  // STORAGE_KEY_VIDEO_URL only ever held the latest one.
+  try {
+    localStorage.setItem(
+      STORAGE_KEY_RECENT_VIDEOS,
+      JSON.stringify(recentFinalVideoUrls.value),
+    )
+  } catch {
+    /* quota / serialisation failures are non-fatal */
+  }
 }
 const finalVideoRendering = ref(false)
 const workflowForm = ref<any>({ ...DEFAULT_WORKFLOW_FORM })
@@ -414,6 +425,7 @@ watch(
 const STORAGE_KEY_TAB = 'jinsie_active_tab'
 const STORAGE_KEY_SESSION = 'jinsie_session_id'
 const STORAGE_KEY_VIDEO_URL = 'jinsie_last_video_url'
+const STORAGE_KEY_RECENT_VIDEOS = 'jinsie_recent_video_urls'
 const STORAGE_KEY_DEV = 'jinsie_dev_mode'
 const STORAGE_KEY_WORKFLOW = 'jinsie_workflow_id'
 const STORAGE_KEY_PAYLOAD = 'jinsie_workflow_payload'
@@ -494,6 +506,22 @@ onMounted(() => {
       } catch {
         // ignore malformed payload
       }
+    }
+  }
+
+  // Restore the full recent-videos list first (so multi-session history
+  // survives a refresh); then push the last video url for de-dup.
+  const savedRecentVideosStr = localStorage.getItem(STORAGE_KEY_RECENT_VIDEOS)
+  if (savedRecentVideosStr) {
+    try {
+      const parsed = JSON.parse(savedRecentVideosStr)
+      if (Array.isArray(parsed)) {
+        recentFinalVideoUrls.value = parsed
+          .filter((item): item is string => typeof item === 'string' && item.length > 0)
+          .slice(0, 10)
+      }
+    } catch {
+      /* corrupt JSON — fall back to empty list */
     }
   }
 
