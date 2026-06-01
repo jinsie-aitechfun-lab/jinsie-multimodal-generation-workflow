@@ -369,7 +369,7 @@ const studioTabs = computed(() => {
   const tabs: Array<{ id: string; label: string; icon: string; badge?: string }> = [
     { id: 'run', label: '创作故事', icon: '✦' },
     { id: 'review', label: '画面审核', icon: '◈' },
-    { id: 'assets', label: '参考素材', icon: '◇' },
+    { id: 'assets', label: '素材库', icon: '◇' },
   ]
   if (devMode.value) {
     tabs.push({ id: 'debug', label: '开发诊断', icon: '⚙' })
@@ -803,7 +803,7 @@ const reviewEmptyStateText = computed(() => {
   if (workflowIsProcessing.value) {
     return `${workflowRunStatusMessage.value} 故事和分镜生成完成后会自动在 Review 页展示选图和结果。`
   }
-  return '生成结果仅保留在当前页面会话中，刷新后需要重新生成。请切换到 Run 页签，输入主题后点击 Run Workflow 开始创作。'
+  return '生成结果仅保留在当前页面会话中，刷新后需要重新生成。请先在「创作故事」页签输入故事主题，并点击「开始创作」生成内容。'
 })
 
 

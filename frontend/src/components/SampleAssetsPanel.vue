@@ -94,20 +94,47 @@ function isVideoAsset(path?: string): boolean {
   const value = path.toLowerCase()
   return value.endsWith('.mp4') || value.endsWith('.webm') || value.endsWith('.mov')
 }
+
+function providerDisplayName(provider?: string): string {
+  if (!provider) return '-'
+  if (provider.toLowerCase() === 'kling') return '可灵'
+  return provider
+}
+
+function statusDisplayName(status?: string): string {
+  if (!status) return '-'
+  const normalized = status.toLowerCase()
+  if (normalized === 'archived') return '已归档'
+  if (normalized === 'ready') return '可用'
+  if (normalized === 'failed') return '失败'
+  return status
+}
+
+function latestSampleId(): string {
+  const stats = props.samplesSummary?.provider_stats || {}
+  const provider = (props.samplesSummary?.providers || [])[0]
+  return (provider && stats[provider]?.latest_sample_id) || '-'
+}
+
+function availableSceneIds(): string {
+  const stats = props.samplesSummary?.provider_stats || {}
+  const provider = (props.samplesSummary?.providers || [])[0]
+  return (provider && stats[provider]?.available_scene_ids?.join(', ')) || '-'
+}
 </script>
 
 <template>
   <section class="samples-panel">
     <div class="samples-panel-head">
       <div>
-        <h2 class="section-title">Real Sample Assets</h2>
+        <h2 class="section-title">真实样片库</h2>
         <p class="samples-desc">
-          展示项目四当前已归档的真实可灵样片，总览 / 列表 / 详情三层查询已接入。
+          沉淀真实样片素材，支持后续创作参考、风格复用与案例展示。
         </p>
       </div>
 
       <button class="secondary-btn" :disabled="samplesLoading" @click="emit('refresh')">
-        {{ samplesLoading ? 'Loading...' : 'Refresh Samples' }}
+        {{ samplesLoading ? '刷新中...' : '刷新素材' }}
       </button>
     </div>
 
@@ -117,28 +144,44 @@ function isVideoAsset(path?: string): boolean {
 
     <div v-if="samplesSummary" class="samples-summary-grid">
       <div class="samples-metric">
-        <span class="metric-label">Providers</span>
+        <span class="metric-label">素材来源</span>
         <strong class="metric-value">
-          {{ (samplesSummary.providers || []).join(', ') || '-' }}
+          {{ (samplesSummary.providers || []).map(providerDisplayName).join('、') || '-' }}
         </strong>
       </div>
 
       <div class="samples-metric">
-        <span class="metric-label">Total Samples</span>
+        <span class="metric-label">样片总数</span>
         <strong class="metric-value">
           {{ samplesSummary.total_sample_count ?? 0 }}
         </strong>
       </div>
 
-      <div class="samples-metric samples-metric-wide">
-        <span class="metric-label">Provider Stats</span>
-        <pre class="light-result compact-result">{{ providerStatsText }}</pre>
+      <div class="samples-metric">
+        <span class="metric-label">最近样片</span>
+        <strong class="metric-value metric-value-small">
+          {{ latestSampleId() }}
+        </strong>
+      </div>
+
+      <div class="samples-metric">
+        <span class="metric-label">覆盖场景</span>
+        <strong class="metric-value metric-value-small">
+          {{ availableSceneIds() }}
+        </strong>
+      </div>
+
+      <div class="samples-metric samples-metric-wide developer-info">
+        <details>
+          <summary>开发者信息</summary>
+          <pre class="light-result compact-result">{{ providerStatsText }}</pre>
+        </details>
       </div>
     </div>
 
     <div class="samples-layout">
       <section class="samples-list-panel">
-        <h3 class="subsection-title">Kling Sample List</h3>
+        <h3 class="subsection-title">样片列表</h3>
 
         <p v-if="klingSamples.length === 0" class="hint">
           当前没有可展示的样片记录。
@@ -152,37 +195,37 @@ function isVideoAsset(path?: string): boolean {
           @click="emit('select-sample', sample.sample_id || '')"
         >
           <strong>{{ sample.sample_id || 'unknown-sample' }}</strong>
-          <span>scene_id: {{ sample.scene_id || '-' }}</span>
-          <span>status: {{ sample.status || '-' }}</span>
+          <span>场景 ID：{{ sample.scene_id || '-' }}</span>
+          <span>状态：{{ statusDisplayName(sample.status) }}</span>
         </button>
       </section>
 
       <section class="sample-detail-panel">
-        <h3 class="subsection-title">Sample Detail</h3>
+        <h3 class="subsection-title">样片详情</h3>
 
         <div v-if="selectedSampleDetail" class="sample-detail-content">
           <div class="detail-row">
-            <span class="detail-label">sample_id</span>
+            <span class="detail-label">样片 ID</span>
             <code>{{ selectedSampleDetail.sample_id || '-' }}</code>
           </div>
 
           <div class="detail-row">
-            <span class="detail-label">scene_id</span>
+            <span class="detail-label">场景 ID</span>
             <code>{{ selectedSampleDetail.scene_id || '-' }}</code>
           </div>
 
           <div class="detail-row">
-            <span class="detail-label">generated_scene_id</span>
+            <span class="detail-label">生成场景 ID</span>
             <code>{{ selectedSampleDetail.generated_scene_id || '-' }}</code>
           </div>
 
           <div class="detail-row">
-            <span class="detail-label">status</span>
-            <code>{{ selectedSampleDetail.status || '-' }}</code>
+            <span class="detail-label">状态</span>
+            <code>{{ statusDisplayName(selectedSampleDetail.status) }}</code>
           </div>
 
           <div class="detail-block">
-            <span class="detail-label">notes</span>
+            <span class="detail-label">备注</span>
             <p class="detail-text">{{ selectedSampleDetail.notes || '-' }}</p>
             <a
               v-if="hasAssetLink(selectedSampleDetail.assets?.notes)"
@@ -191,18 +234,18 @@ function isVideoAsset(path?: string): boolean {
               target="_blank"
               rel="noreferrer"
             >
-              Open notes file
+              打开备注文件
             </a>
 
             <div class="notes-preview-block">
-              <span class="detail-label">notes preview</span>
-              <p v-if="selectedSampleNotesLoading" class="detail-text">Loading notes...</p>
+              <span class="detail-label">备注预览</span>
+              <p v-if="selectedSampleNotesLoading" class="detail-text">备注加载中...</p>
               <pre v-else class="notes-preview">{{ selectedSampleNotesText || '-' }}</pre>
             </div>
           </div>
 
           <div class="detail-block">
-            <span class="detail-label">clean_video</span>
+            <span class="detail-label">无水印视频</span>
             <code>{{ selectedSampleDetail.assets?.clean_video || '-' }}</code>
             <a
               v-if="hasAssetLink(selectedSampleDetail.assets?.clean_video)"
@@ -211,7 +254,7 @@ function isVideoAsset(path?: string): boolean {
               target="_blank"
               rel="noreferrer"
             >
-              Open clean video
+              打开无水印视频
             </a>
             <video
               v-if="isVideoAsset(selectedSampleDetail.assets?.clean_video)"
@@ -223,7 +266,7 @@ function isVideoAsset(path?: string): boolean {
           </div>
 
           <div class="detail-block">
-            <span class="detail-label">watermarked_video</span>
+            <span class="detail-label">带水印视频</span>
             <code>{{ selectedSampleDetail.assets?.watermarked_video || '-' }}</code>
             <a
               v-if="hasAssetLink(selectedSampleDetail.assets?.watermarked_video)"
@@ -232,12 +275,12 @@ function isVideoAsset(path?: string): boolean {
               target="_blank"
               rel="noreferrer"
             >
-              Open watermarked video
+              打开带水印视频
             </a>
           </div>
 
           <div class="detail-block">
-            <span class="detail-label">input_screenshot</span>
+            <span class="detail-label">输入截图</span>
             <code>{{ selectedSampleDetail.assets?.input_screenshot || '-' }}</code>
             <a
               v-if="isImageAsset(selectedSampleDetail.assets?.input_screenshot)"
@@ -255,7 +298,7 @@ function isVideoAsset(path?: string): boolean {
           </div>
 
           <div class="detail-block">
-            <span class="detail-label">result_screenshots</span>
+            <span class="detail-label">结果截图</span>
             <ul class="asset-list asset-grid-list">
               <li
                 v-for="path in selectedSampleDetail.assets?.result_screenshots || []"
@@ -365,6 +408,35 @@ function isVideoAsset(path?: string): boolean {
   color: var(--arc-300);
   font-size: 1.25rem;
   font-weight: 700;
+}
+
+.metric-value-small {
+  display: block;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.developer-info {
+  padding: 0;
+  overflow: hidden;
+}
+
+.developer-info details {
+  padding: 12px 16px;
+}
+
+.developer-info summary {
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  list-style-position: inside;
+}
+
+.developer-info summary:hover {
+  color: var(--arc-300);
 }
 
 .samples-layout {

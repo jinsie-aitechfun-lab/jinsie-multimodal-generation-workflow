@@ -206,7 +206,7 @@ const placeholderDesc = computed(() => {
     return '视频正在合成中，请稍候（音频/字幕/画面正在拼接）。'
   }
   if (!sceneCount.value) {
-    return '还没有可用的 storyboard。请在 Run 页签执行一次 workflow。'
+    return '还没有可用的分镜。请先在「创作故事」页签输入故事主题，并点击「开始创作」生成内容。'
   }
   if (!assetsReady.value) {
     return '系统正在准备每个场景的候选图，默认图生成后即可直接渲染，也可以手动改选。'
