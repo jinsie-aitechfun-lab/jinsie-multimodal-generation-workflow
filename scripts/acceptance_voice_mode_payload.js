@@ -81,7 +81,17 @@ function main() {
   // scripts/ is located at <repoRoot>/scripts, so repo root is one level up from this file.
   const repoRoot = path.resolve(__dirname, '..')
 
-  const appVuePath = path.join(repoRoot, 'frontend', 'src', 'App.vue')
+  // Payload assembly moved to StudioView.vue when the project adopted
+  // vue-router; App.vue is now a thin RouterView shell. Keep the legacy
+  // "App.vue: ..." labels in the assertions so historical CI output stays
+  // greppable.
+  const appVuePath = path.join(
+    repoRoot,
+    'frontend',
+    'src',
+    'views',
+    'StudioView.vue',
+  )
   const runPanelPath = path.join(
     repoRoot,
     'frontend',
