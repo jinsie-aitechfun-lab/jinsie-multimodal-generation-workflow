@@ -3,7 +3,11 @@
     <div class="create-panel__header">
       <span class="create-panel__icon" aria-hidden="true">✦</span>
       <span class="create-panel__title">创作故事</span>
-      <span v-if="loading" class="badge badge-arc" style="font-size:0.6rem;">生成中</span>
+      <span
+        v-if="loading"
+        class="badge badge-arc"
+        style="font-size:0.6rem;"
+      >{{ cancelRequested ? '取消中' : '生成中' }}</span>
     </div>
     <div class="create-panel__body">
       <slot />
@@ -14,6 +18,7 @@
 <script setup lang="ts">
 defineProps<{
   loading?: boolean
+  cancelRequested?: boolean
 }>()
 </script>
 

@@ -5,16 +5,41 @@
         <div class="progress-fill" :style="{ width: `${Math.min(100, percent)}%` }" />
       </div>
       <span class="studio-progress__pct">{{ Math.round(percent) }}%</span>
+      <!-- Global cancel entry — visible on every tab whenever a workflow
+           run is in flight. Reuses cancelWorkflow via @cancel emit; pure
+           UI, no new state. -->
+      <button
+        v-if="cancellable"
+        type="button"
+        class="studio-progress__cancel"
+        :disabled="cancelRequested"
+        @click="$emit('cancel')"
+      >
+        {{ cancelRequested ? '正在取消…' : '取消' }}
+      </button>
     </div>
-    <span v-if="label" class="studio-progress__label">{{ label }}</span>
+    <InlineStatusPulse
+      v-if="label"
+      class="studio-progress__label"
+      :variant="cancelRequested ? 'cancelling' : 'running'"
+      :text="label"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
+import InlineStatusPulse from './InlineStatusPulse.vue'
+
 defineProps<{
   percent: number
   label?: string
   visible?: boolean
+  cancellable?: boolean
+  cancelRequested?: boolean
+}>()
+
+defineEmits<{
+  (e: 'cancel'): void
 }>()
 </script>
 
@@ -57,6 +82,31 @@ defineProps<{
   font-size: 0.6875rem;
   color: var(--text-muted);
   letter-spacing: 0.03em;
+}
+
+/* Lightweight cancel link on the right of the global progress bar. */
+.studio-progress__cancel {
+  flex-shrink: 0;
+  appearance: none;
+  border: 1px solid color-mix(in srgb, var(--text-muted) 55%, transparent);
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-family: inherit;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: border-color 0.18s, color 0.18s, background 0.18s;
+}
+.studio-progress__cancel:hover:not(:disabled) {
+  border-color: rgba(248, 113, 133, 0.55);
+  color: #fca5a5;
+  background: rgba(248, 113, 133, 0.06);
+}
+.studio-progress__cancel:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
 }
 .studio-progress--complete .progress-fill {
   background: linear-gradient(90deg, #34d399 0%, var(--arc-400) 100%);

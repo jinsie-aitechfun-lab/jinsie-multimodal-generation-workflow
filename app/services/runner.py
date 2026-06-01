@@ -23,7 +23,12 @@ from app.schemas.workflow import (
 from app.services.runner_audio_render_support import RunnerAudioRenderSupport
 from app.services.runner_character_labels import RunnerCharacterLabelsSupport
 from app.services.runner_character_manifest import RunnerCharacterManifestSupport
-from app.services.runner_errors import UnknownStepError, UnknownVideoProviderError
+from app.services.cancellation import is_cancelled as _is_cancelled
+from app.services.runner_errors import (
+    UnknownStepError,
+    UnknownVideoProviderError,
+    WorkflowCancelledError,
+)
 from app.services.runner_image_asset_refs import RunnerImageAssetRefsSupport
 from app.services.runner_image_prompts_support import RunnerImagePromptsSupport
 from app.services.runner_image_review import RunnerImageReviewSupport
@@ -898,7 +903,24 @@ class WorkflowRunner:
             except Exception as error:
                 print(f"[WorkflowRunner] progress callback failed: {error}")
 
+        def _check_cancelled():
+            """Raise WorkflowCancelledError if the user has requested a
+            cancel. Best-effort persists partial outputs first so the
+            client can still see what was produced before the stop."""
+            if not _is_cancelled(req.workflow_id):
+                return
+            try:
+                out_dir = PROJECT_ROOT / "assets" / "mock" / str(req.workflow_id)
+                out_dir.mkdir(parents=True, exist_ok=True)
+                with open(out_dir / "outputs.json", "w", encoding="utf-8") as f:
+                    json.dump(aggregated_outputs, f, ensure_ascii=False, indent=2, default=str)
+            except Exception as error:  # noqa: BLE001
+                print(f"[WorkflowRunner] partial-output save on cancel failed: {error}")
+            raise WorkflowCancelledError(req.workflow_id, partial_outputs=aggregated_outputs)
+
         for step_index, step in enumerate(req.steps, start=1):
+            _check_cancelled()
+
             name = step.name.strip()
             handler = self._handlers.get(name)
             if handler is None:
@@ -914,6 +936,8 @@ class WorkflowRunner:
                 output = self._image_review.build_deferred_image_assets_output(ctx)
             else:
                 output = handler(ctx, aggregated_outputs)
+
+            _check_cancelled()
 
             step_results.append(
                 StepResult(name=name, status="COMPLETED", output=output)

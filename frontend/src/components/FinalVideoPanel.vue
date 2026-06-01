@@ -75,6 +75,7 @@ const props = defineProps<{
   renderInFlight: boolean
   loading: boolean
   refreshingImages?: boolean   // true when image review refresh is running (top bar already covers it)
+  cancelRequested?: boolean    // user has clicked "取消生成"; overrides running titles
   errorMessage?: string
   workflowStatusMessage?: string
   workflowStatusProgress?: number | null
@@ -167,6 +168,10 @@ const progressPct = computed(() => {
 })
 
 const progressLabel = computed(() => {
+  // Cancel state wins over every "running" label so the user doesn't see
+  // contradictory progress copy while the runner walks to its next
+  // checkpoint.
+  if (props.cancelRequested) return '正在取消生成…'
   if (hasBlockingError.value) return `候选图生成失败（${imageAssetCount.value}/${sceneCount.value || '?'}）`
   if (workflowInFlight.value) return '处理中…'
   if (indeterminate.value) return '准备中…'
@@ -178,6 +183,7 @@ const progressLabel = computed(() => {
 })
 
 const placeholderTitle = computed(() => {
+  if (props.cancelRequested) return '正在取消生成'
   if (hasBlockingError.value) return '候选图生成失败'
   if (workflowInFlight.value) return '正在生成分镜'
   if (props.renderInFlight || finalStatus.value === 'rendering') return '正在生成视频'
@@ -187,6 +193,9 @@ const placeholderTitle = computed(() => {
 })
 
 const placeholderDesc = computed(() => {
+  if (props.cancelRequested) {
+    return '已发送取消请求，等待当前步骤结束后会停止后续生成。'
+  }
   if (hasBlockingError.value) {
     return blockingErrorMessage.value
   }

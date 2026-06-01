@@ -26,7 +26,13 @@ from app.schemas.workflow import (
     WorkflowRunRequest,
     WorkflowRunResponse,
 )
+from app.services.cancellation import (
+    clear as _clear_cancel,
+    is_cancelled as _is_cancelled,
+    request_cancel as _request_cancel,
+)
 from app.services.runner import UnknownStepError, WorkflowRunner
+from app.services.runner_errors import WorkflowCancelledError
 
 app = FastAPI(title="jinsie-multimodal-generation-workflow", version="0.1.0")
 
@@ -165,16 +171,34 @@ def run_workflow(req: dict = Body(...)):
         with open(_workflow_outputs_path(workflow_id), "w", encoding="utf-8") as f:
             json.dump(outputs, f, ensure_ascii=False, indent=2)
         _write_workflow_status(workflow_id, "completed")
+        _clear_cancel(workflow_id)
         print(f"[AsyncRunner] workflow {workflow_id} completed.")
 
     def on_error(error: Exception):
+        # Distinguish user-initiated cancel from real failures so the
+        # client can tell them apart in the status UI.
+        if isinstance(error, WorkflowCancelledError):
+            _write_workflow_status(
+                workflow_id,
+                "cancelled",
+                detail={"message": "user cancelled"},
+            )
+            _clear_cancel(workflow_id)
+            print(f"[AsyncRunner] workflow {workflow_id} cancelled by user.")
+            return
         _write_workflow_status(
             workflow_id,
             "failed",
             detail={"message": str(error) or error.__class__.__name__},
         )
+        _clear_cancel(workflow_id)
 
     def on_progress(progress: dict):
+        # A cancel request might land before the runner reaches its next
+        # checkpoint — keep the file status as "cancel_requested" rather
+        # than letting later progress events overwrite it.
+        if _is_cancelled(workflow_id):
+            return
         _write_workflow_status(workflow_id, "processing", detail=progress)
 
     _runner._run_async(
@@ -185,6 +209,47 @@ def run_workflow(req: dict = Body(...)):
     )
 
     return {"workflow_id": workflow_id, "status": "processing"}
+
+
+@app.post("/v1/workflow/cancel")
+def cancel_workflow(req: dict = Body(...)):
+    """Mark an in-flight workflow for cancellation.
+
+    The runner polls the cancellation registry at each step boundary and
+    raises WorkflowCancelledError when the flag is set. This endpoint
+    only flips the flag and reflects the request in the status file;
+    actual cancellation takes effect at the next checkpoint, so the UI
+    should show "cancel_requested" until the runner reaches one.
+    """
+    workflow_id = str(req.get("workflow_id") or "").strip()
+    if not workflow_id:
+        raise HTTPException(status_code=400, detail="workflow_id is required")
+
+    # If the workflow already settled, there's nothing to cancel.
+    status_path = _workflow_status_path(workflow_id)
+    if status_path.exists():
+        try:
+            with open(status_path, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+            if content:
+                existing = json.loads(content)
+                existing_status = str(existing.get("status") or "").strip().lower()
+                if existing_status in {"completed", "failed", "cancelled"}:
+                    return {
+                        "workflow_id": workflow_id,
+                        "status": existing_status,
+                        "already_settled": True,
+                    }
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    _request_cancel(workflow_id)
+    _write_workflow_status(
+        workflow_id,
+        "cancel_requested",
+        detail={"message": "user requested cancel"},
+    )
+    return {"workflow_id": workflow_id, "status": "cancel_requested"}
 
 
 @app.get("/v1/workflow/status/{workflow_id}")
