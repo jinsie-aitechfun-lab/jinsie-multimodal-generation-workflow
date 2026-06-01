@@ -1055,6 +1055,31 @@ function extractMockAudioState(data: WorkflowRunResponse) {
     audioOutput?.directory_manifest ? stringifyPretty(audioOutput.directory_manifest) : ''
 }
 
+function sceneDisplayName(sceneId?: string): string {
+  const value = String(sceneId || '').trim()
+  const match = value.match(/(?:scene[-_]?|^)(\d+)/i)
+  if (match) {
+    return `场景 ${match[1].padStart(2, '0')}`
+  }
+  return value || '未命名场景'
+}
+
+function audioAssetTitle(index: number): string {
+  return `音频片段 ${String(index + 1).padStart(2, '0')}`
+}
+
+function formatAudioDuration(seconds?: number): string {
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0) {
+    return '时长待确认'
+  }
+  return `约 ${Math.round(seconds)} 秒`
+}
+
+function audioSpeakerLabel(speaker?: string): string {
+  const value = String(speaker || '').trim()
+  return value ? `配音：${value}` : '配音信息待确认'
+}
+
 function formatPreview(output?: Record<string, unknown>): string {
   if (!output) {
     return ''
@@ -2324,20 +2349,8 @@ async function runWorkflow() {
           v-if="mockAudioIndexUrl || mockAudioSceneGroups.length > 0 || mockAudioDirectoryText"
           class="result-panel"
         >
-          <h2 class="section-title">Mock Audio Assets</h2>
-
-          <div v-if="mockAudioIndexUrl" class="mock-audio-link-row">
-            <span class="mock-audio-label">Directory Index</span>
-            <a
-              class="asset-link"
-              :href="`${apiBaseUrl}${mockAudioIndexUrl}`"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Open index.json
-            </a>
-            <code>{{ mockAudioIndexUrl }}</code>
-          </div>
+          <h2 class="section-title">配音素材</h2>
+          <p class="mock-audio-intro">这里沉淀本次生成的配音片段，方便核对场景声音素材。</p>
 
           <div v-if="mockAudioSceneGroups.length > 0" class="mock-audio-scenes">
             <article
@@ -2346,20 +2359,20 @@ async function runWorkflow() {
               class="mock-audio-scene-card"
             >
               <div class="mock-audio-scene-head">
-                <strong>{{ group.scene_id || 'unknown-scene' }}</strong>
-                <span>{{ (group.assets || []).length }} asset(s)</span>
+                <strong>{{ sceneDisplayName(group.scene_id) }}</strong>
+                <span>{{ (group.assets || []).length }} 个片段</span>
               </div>
 
               <ul class="mock-audio-asset-list">
                 <li
-                  v-for="asset in group.assets || []"
+                  v-for="(asset, index) in group.assets || []"
                   :key="asset.asset_id || asset.segment_id || asset.file_name"
                   class="mock-audio-asset-item"
                 >
                   <div class="mock-audio-asset-main">
-                    <code>{{ asset.file_name || '-' }}</code>
+                    <strong>{{ audioAssetTitle(index) }}</strong>
                     <span class="mock-audio-meta">
-                      {{ asset.speaker || '-' }} · {{ asset.duration_estimate_sec ?? 0 }}s
+                      {{ audioSpeakerLabel(asset.speaker) }} · {{ formatAudioDuration(asset.duration_estimate_sec) }}
                     </span>
                   </div>
 
@@ -2370,16 +2383,46 @@ async function runWorkflow() {
                     target="_blank"
                     rel="noreferrer"
                   >
-                    Open asset path
+                    打开音频
                   </a>
                 </li>
               </ul>
             </article>
           </div>
 
-          <details v-if="mockAudioDirectoryText" class="mock-audio-details">
-            <summary>Directory Manifest JSON</summary>
-            <pre class="light-result compact-result">{{ mockAudioDirectoryText }}</pre>
+          <p v-else class="mock-audio-empty">暂无可展示的配音素材。</p>
+
+          <details
+            v-if="mockAudioIndexUrl || mockAudioSceneGroups.length > 0 || mockAudioDirectoryText"
+            class="mock-audio-details"
+          >
+            <summary>开发者信息</summary>
+            <div v-if="mockAudioIndexUrl" class="mock-audio-link-row">
+              <span class="mock-audio-label">索引文件</span>
+              <a
+                class="asset-link"
+                :href="`${apiBaseUrl}${mockAudioIndexUrl}`"
+                target="_blank"
+                rel="noreferrer"
+              >
+                打开 index.json
+              </a>
+              <code>{{ mockAudioIndexUrl }}</code>
+            </div>
+            <div
+              v-for="group in mockAudioSceneGroups"
+              :key="`${group.scene_id || 'unknown-scene'}-developer`"
+              class="mock-audio-link-row"
+            >
+              <span class="mock-audio-label">{{ group.scene_id || 'unknown-scene' }}</span>
+              <code
+                v-for="asset in group.assets || []"
+                :key="asset.asset_id || asset.segment_id || asset.file_name"
+              >
+                {{ asset.file_name || '-' }} · {{ asset.public_url || '-' }}
+              </code>
+            </div>
+            <pre v-if="mockAudioDirectoryText" class="light-result compact-result">{{ mockAudioDirectoryText }}</pre>
           </details>
         </section>
       </section>
@@ -2824,6 +2867,14 @@ async function runWorkflow() {
   background: var(--glass-bg);
 }
 
+.mock-audio-intro,
+.mock-audio-empty {
+  margin: 0 0 14px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .mock-audio-label {
   font-size: 13px;
   font-weight: 600;
@@ -2875,6 +2926,11 @@ async function runWorkflow() {
   flex-direction: column;
   gap: 6px;
   align-items: flex-start;
+}
+
+.mock-audio-asset-main strong {
+  color: var(--arc-300);
+  font-size: 13px;
 }
 
 .mock-audio-meta {
