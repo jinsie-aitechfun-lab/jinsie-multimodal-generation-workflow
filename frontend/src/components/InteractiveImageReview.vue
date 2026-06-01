@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import InlineStatusPulse from './studio/InlineStatusPulse.vue'
 
 type ImageAssetRef = {
   scene_id?: string
@@ -69,6 +70,13 @@ const props = defineProps<{
   progressText?: string
   progressPercent?: number
   canCancel?: boolean
+  // True after the user clicks "取消生成" on the workflow run — every
+  // "正在生成…" label inside this panel must switch to "正在取消生成…".
+  cancelRequested?: boolean
+  // True while a workflow run is still in flight at the App level. Drives
+  // the lightweight "取消生成" entry inside this panel so the user can
+  // cancel the whole workflow without leaving the review tab.
+  cancellable?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -83,6 +91,9 @@ const emit = defineEmits<{
   (e: 'retry-scene', sceneId: string): void
   (e: 'enhance-scene', sceneId: string): void
   (e: 'cancel-refresh'): void
+  // Top-level workflow cancel (uses App.vue cancelWorkflow). Distinct from
+  // 'cancel-refresh' which only stops the current image-refresh batch.
+  (e: 'cancel-workflow'): void
 }>()
 
 function toAssetHref(path?: string): string {
@@ -165,7 +176,7 @@ function onCancelRefresh() {
 
 function placeholderStatusText(state: 'waiting' | 'refreshing' | 'done' | 'failed'): string {
   if (state === 'refreshing') {
-    return '正在生成'
+    return props.cancelRequested ? '正在取消生成' : '正在生成'
   }
   if (state === 'done') {
     return '已完成'
@@ -173,12 +184,14 @@ function placeholderStatusText(state: 'waiting' | 'refreshing' | 'done' | 'faile
   if (state === 'failed') {
     return '生成失败'
   }
-  return '等待生成'
+  return props.cancelRequested ? '正在取消生成' : '等待生成'
 }
 
 function selectedStatusCopy(state: 'waiting' | 'refreshing' | 'done' | 'failed'): string {
   if (state === 'refreshing') {
-    return '正在生成当前预览图'
+    return props.cancelRequested
+      ? '正在取消生成…'
+      : '正在生成当前预览图'
   }
   if (state === 'done') {
     return '当前预览图已生成'
@@ -186,7 +199,9 @@ function selectedStatusCopy(state: 'waiting' | 'refreshing' | 'done' | 'failed')
   if (state === 'failed') {
     return '当前预览图生成失败'
   }
-  return '等待生成当前预览图'
+  return props.cancelRequested
+    ? '正在取消生成…'
+    : '等待生成当前预览图'
 }
 
 function reviewStatusLabel(status: string | undefined): string {
@@ -201,7 +216,9 @@ function reviewStatusLabel(status: string | undefined): string {
 
 function candidateStatusCopy(state: 'waiting' | 'refreshing' | 'done' | 'failed', index: 'A' | 'B'): string {
   if (state === 'refreshing') {
-    return `正在生成候选图 ${index}`
+    return props.cancelRequested
+      ? `候选图 ${index} 正在取消生成…`
+      : `正在生成候选图 ${index}`
   }
   if (state === 'done') {
     return `候选图 ${index} 已生成`
@@ -209,7 +226,9 @@ function candidateStatusCopy(state: 'waiting' | 'refreshing' | 'done' | 'failed'
   if (state === 'failed') {
     return `候选图 ${index} 生成失败`
   }
-  return `等待生成候选图 ${index}`
+  return props.cancelRequested
+    ? `候选图 ${index} 正在取消生成…`
+    : `等待生成候选图 ${index}`
 }
 
 function candidateLabel(candidate: ImageAssetRef, fallbackIndex: number): string {
@@ -305,7 +324,11 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 
     <!-- Progress text only — bar is shown in the global sticky header -->
     <div v-if="progressText" class="review-progress-inline">
-      <span class="review-progress-copy">{{ progressText }}</span>
+      <InlineStatusPulse
+        class="review-progress-copy"
+        :variant="cancelRequested ? 'cancelling' : 'running'"
+        :text="progressText"
+      />
       <button
         v-if="canCancel"
         type="button"
@@ -313,6 +336,39 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
         @click="onCancelRefresh"
       >
         停止生成
+      </button>
+      <!-- Workflow-level cancel — separate concept from canCancel (which
+           only stops the image-refresh batch). Visible whenever a workflow
+           run is still in flight. -->
+      <button
+        v-if="cancellable"
+        type="button"
+        class="cancel-workflow-link"
+        :disabled="cancelRequested"
+        @click="$emit('cancel-workflow')"
+      >
+        {{ cancelRequested ? '正在取消…' : '取消生成' }}
+      </button>
+    </div>
+
+    <!-- Lightweight workflow cancel entry shown when there's no progress
+         text (initial workflow phase before image refresh kicks in). -->
+    <div
+      v-else-if="cancellable"
+      class="review-workflow-cancel-bar"
+    >
+      <InlineStatusPulse
+        class="review-workflow-cancel-text"
+        :variant="cancelRequested ? 'cancelling' : 'running'"
+        :text="cancelRequested ? '正在取消生成，等待当前步骤结束' : '工作流运行中'"
+      />
+      <button
+        type="button"
+        class="cancel-workflow-link"
+        :disabled="cancelRequested"
+        @click="$emit('cancel-workflow')"
+      >
+        {{ cancelRequested ? '正在取消…' : '取消生成' }}
       </button>
     </div>
 
@@ -662,10 +718,10 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                   >
                     {{
                       entry.state === 'refreshing'
-                        ? '生成中'
+                        ? (cancelRequested ? '取消中' : '生成中')
                         : entry.state === 'failed'
                           ? '失败'
-                          : '等待中'
+                          : (cancelRequested ? '取消中' : '等待中')
                     }}
                   </span>
                 </div>
@@ -746,10 +802,10 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                       >
                         {{
                           entry.state === 'refreshing'
-                            ? '生成中'
+                            ? (cancelRequested ? '取消中' : '生成中')
                             : entry.state === 'failed'
                               ? '失败'
-                              : '等待中'
+                              : (cancelRequested ? '取消中' : '等待中')
                         }}
                       </span>
                     </div>
@@ -802,10 +858,10 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                       >
                         {{
                           entry.state === 'refreshing'
-                            ? '生成中'
+                            ? (cancelRequested ? '取消中' : '生成中')
                             : entry.state === 'failed'
                               ? '失败'
-                              : '等待中'
+                              : (cancelRequested ? '取消中' : '等待中')
                         }}
                       </span>
                     </div>
@@ -1580,6 +1636,55 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   color: #fca5a5;
   background: rgba(248,113,133,0.08);
   transform: translateY(-1px);
+}
+
+/* Lightweight workflow-cancel pill — sits alongside / inside the inline
+   progress strip without competing with the larger image-refresh stop. */
+.cancel-workflow-link {
+  appearance: none;
+  flex-shrink: 0;
+  border: 1px solid color-mix(in srgb, var(--text-muted) 55%, transparent);
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: 999px;
+  padding: 4px 11px;
+  font-size: 0.6875rem;
+  font-family: inherit;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: border-color 0.18s, color 0.18s, background 0.18s;
+}
+.cancel-workflow-link:hover:not(:disabled) {
+  border-color: rgba(248, 113, 133, 0.55);
+  color: #fca5a5;
+  background: rgba(248, 113, 133, 0.06);
+}
+.cancel-workflow-link:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+/* Independent strip shown when there's no progressText (initial workflow
+   phase before image refresh kicks in). */
+.review-workflow-cancel-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 4px 0 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border-glass);
+  background: var(--surface-overlay-soft);
+}
+.review-workflow-cancel-text {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @keyframes reviewShimmer {

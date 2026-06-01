@@ -279,6 +279,12 @@ const workflowRunElapsedSec = ref(0)
 const workflowStatusData = ref<WorkflowStatusResponse | null>(null)
 const resultText = ref('')
 
+// The workflow_id of the currently in-flight run — needed to POST cancel.
+const activeWorkflowId = ref<string>('')
+// True after user clicks cancel and before the runner reaches its next
+// checkpoint; UI flips button text to "正在取消…".
+const cancelRequested = ref(false)
+
 const storyText = ref('')
 const storyboardText = ref('')
 const imagePromptsText = ref('')
@@ -711,7 +717,30 @@ function formatElapsedTime(totalSec: number): string {
   return `${minutes} 分 ${seconds} 秒`
 }
 
+// Single source of truth for the workflow lifecycle. Components downstream
+// (CTA, progress bar, video preview, image review) should derive their
+// running / cancelling / idle visuals from this rather than reading the
+// individual loading / refreshing / cancelRequested refs.
+type RuntimeState = 'idle' | 'running' | 'cancelling'
+const runtimeState = computed<RuntimeState>(() => {
+  const anyRunning =
+    loading.value || refreshingImageReview.value || finalVideoRenderInFlight.value
+  if (cancelRequested.value && anyRunning) return 'cancelling'
+  if (anyRunning) return 'running'
+  return 'idle'
+})
+
+// Standard cancelling copy — every place that used to read "正在生成…"
+// during workflow run should swap to this when runtimeState === 'cancelling'.
+const cancellingLabel = '正在取消生成，等待当前步骤结束…'
+
 const workflowRunStatusMessage = computed(() => {
+  // While the user is cancelling, every running surface should reflect that
+  // single state, regardless of which step the runner is on.
+  if (runtimeState.value === 'cancelling') {
+    return cancellingLabel
+  }
+
   if (!workflowIsProcessing.value) {
     return ''
   }
@@ -737,6 +766,30 @@ const workflowRunStatusMessage = computed(() => {
 
   return `Workflow 仍在运行，已等待 ${elapsed}。${stepCopy}真实接口较慢时可能需要几分钟，请保持页面打开。`
 })
+
+// Unified cleanup invoked when the server confirms a workflow has been
+// cancelled (status === 'cancelled'). Brings every running indicator back
+// to idle so the UI no longer needs a page refresh after a cancel.
+function resetWorkflowRuntimeState() {
+  loading.value = false
+  cancelRequested.value = false
+  activeWorkflowId.value = ''
+  finalVideoRenderInFlight.value = false
+  finalVideoRendering.value = false
+  refreshingImageReview.value = false
+  workflowRunElapsedSec.value = 0
+  workflowStatusData.value = null
+  currentWorkflowResponse.value = null
+  imageReviewRefreshCancelled.value = false
+  sceneRefreshQueue.value = []
+  sceneRefreshingId.value = ''
+  clearImageReviewAutoRefreshTimer()
+  try {
+    localStorage.removeItem(STORAGE_KEY_WORKFLOW)
+  } catch {
+    /* localStorage unavailable — best-effort */
+  }
+}
 
 const workflowStatusProgress = computed(() => {
   const progress = workflowStatusData.value?.progress_percent
@@ -1584,6 +1637,32 @@ async function enhanceImageReviewScene(sceneId: string) {
   }
 }
 
+async function cancelWorkflow() {
+  // Cancellation only makes sense while a run is actually in flight and
+  // we know which workflow_id to target. Re-clicking the button has no
+  // additional effect — the registry is idempotent.
+  const workflowId = activeWorkflowId.value
+  if (!workflowId || cancelRequested.value) {
+    return
+  }
+  cancelRequested.value = true
+  try {
+    await fetch(`${apiBaseUrl}/v1/workflow/cancel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workflow_id: workflowId }),
+    })
+    // Don't flip loading off here — the polling loop will see the status
+    // turn 'cancelled' once the runner reaches its next checkpoint and
+    // resolve the run normally.
+  } catch (error) {
+    // Network failure shouldn't lock the UI; allow the user to retry.
+    cancelRequested.value = false
+    errorMessage.value =
+      error instanceof Error ? `取消失败：${error.message}` : '取消失败'
+  }
+}
+
 function cancelImageReviewRefresh() {
   if (!refreshingImageReview.value) {
     return
@@ -1751,8 +1830,19 @@ async function waitForAsyncWorkflowOutputs(
     workflowStatusData.value = statusData
     const status = String(statusData.status || '').trim().toLowerCase()
 
-    if (status === 'processing') {
+    if (status === 'processing' || status === 'cancel_requested') {
+      // Either still working or waiting for the next checkpoint to honour
+      // the cancel — keep polling until we reach a terminal state.
       continue
+    }
+
+    if (status === 'cancelled') {
+      // Soft-terminate: don't throw (cancel isn't an error). Unify the UI
+      // back to idle here so every running surface — top progress bar,
+      // CTA, timeline, video preview, image review — drops "生成中"
+      // without waiting for a page refresh.
+      resetWorkflowRuntimeState()
+      return null
     }
 
     if (status === 'failed') {
@@ -2003,6 +2093,8 @@ async function runWorkflow() {
 
   // ✅ 点击 Run 立刻给 UI 反馈（跨 tab 都能感知）
   loading.value = true
+  activeWorkflowId.value = workflowId
+  cancelRequested.value = false
   workflowRunElapsedSec.value = 0
   workflowStatusData.value = {
     workflow_id: workflowId,
@@ -2052,6 +2144,8 @@ async function runWorkflow() {
     errorMessage.value = error instanceof Error ? error.message : 'Request failed'
   } finally {
     loading.value = false
+    activeWorkflowId.value = ''
+    cancelRequested.value = false
   }
 }
 </script>
@@ -2063,11 +2157,14 @@ async function runWorkflow() {
         :visible="workflowIsProcessing || refreshingImageReview"
         :percent="workflowStatusProgress ?? (refreshingImageReview ? reviewRefreshProgress.percent : 0)"
         :label="workflowIsProcessing ? workflowRunStatusMessage : reviewRefreshProgress.text"
+        :cancellable="Boolean(activeWorkflowId)"
+        :cancel-requested="cancelRequested"
+        @cancel="cancelWorkflow"
       />
     </template>
     <div class="studio-tab-content">
     <section v-if="activeTab === 'run'" class="studio-home-grid">
-      <StudioCreatePanel :loading="loading">
+      <StudioCreatePanel :loading="loading" :cancel-requested="cancelRequested">
         <WorkflowRunPanel
           :loading="loading || refreshingImageReview || finalVideoRenderInFlight"
           :can-submit="canSubmit"
@@ -2075,9 +2172,16 @@ async function runWorkflow() {
           :form-state="workflowForm"
           :selected-steps="selectedSteps"
           :step-options="STEP_OPTIONS"
+          :cancellable="Boolean(activeWorkflowId)"
+          :cancel-requested="cancelRequested"
+          :status-label="workflowRunStatusMessage"
+          :elapsed-sec="workflowRunElapsedSec"
+          :current-step-index="workflowStatusData?.current_step_index ?? 0"
+          :total-steps="workflowStatusData?.total_steps ?? 0"
           @update:form-state="onUpdateFormState"
           @update:selected-steps="onUpdateSelectedSteps"
           @run="runWorkflow"
+          @cancel="cancelWorkflow"
         />
       </StudioCreatePanel>
 
@@ -2090,8 +2194,11 @@ async function runWorkflow() {
         :status-label="workflowRunStatusMessage || (refreshingImageReview ? reviewRefreshProgress.text : '')"
         :completed-steps="workflowStatusData?.completed_steps ?? 0"
         :total-steps="workflowStatusData?.total_steps ?? 0"
+        :cancellable="Boolean(activeWorkflowId)"
+        :cancel-requested="cancelRequested"
         :example-topics="EXAMPLE_TOPICS"
         @set-topic="setExampleTopic"
+        @cancel="cancelWorkflow"
       />
     </section>
       <section v-if="activeTab === 'review'" class="review-layout">
@@ -2121,6 +2228,7 @@ async function runWorkflow() {
                 :render-in-flight="finalVideoRenderInFlight"
                 :loading="workflowIsProcessing || refreshingImageReview || finalVideoRenderInFlight"
                 :refreshing-images="refreshingImageReview"
+                :cancel-requested="cancelRequested"
                 :error-message="errorMessage"
                 :workflow-status-message="workflowRunStatusMessage"
                 :workflow-status-progress="workflowStatusProgress"
@@ -2148,7 +2256,11 @@ async function runWorkflow() {
               <div class="review-section-header">
                 <span class="review-section-icon" aria-hidden="true">◈</span>
                 <span class="review-section-title">画面审核</span>
-                <span v-if="refreshingImageReview" class="badge badge-arc" style="font-size:0.6rem;">生成中</span>
+                <span
+                  v-if="refreshingImageReview || cancelRequested"
+                  class="badge badge-arc"
+                  style="font-size:0.6rem;"
+                >{{ cancelRequested ? '取消中' : '生成中' }}</span>
               </div>
               <div class="review-images-body">
                 <InteractiveImageReview
@@ -2157,13 +2269,16 @@ async function runWorkflow() {
                   :api-base-url="apiBaseUrl"
                   :loading="loading || refreshingImageReview"
                   :selecting-scene-id="selectingSceneId || sceneRefreshingId"
-                  :progress-text="reviewRefreshProgress.text"
+                  :progress-text="cancelRequested ? cancellingLabel : reviewRefreshProgress.text"
                   :progress-percent="reviewRefreshProgress.percent"
                   :can-cancel="refreshingImageReview"
+                  :cancel-requested="cancelRequested"
+                  :cancellable="Boolean(activeWorkflowId)"
                   @select-asset="({ sceneId, assetRef }) => selectImageAsset(sceneId, assetRef)"
                   @retry-scene="retryImageReviewScene"
                   @enhance-scene="enhanceImageReviewScene"
                   @cancel-refresh="cancelImageReviewRefresh"
+                  @cancel-workflow="cancelWorkflow"
                 />
               </div>
             </div>

@@ -38,7 +38,13 @@
             </div>
             <span :class="['pp-work-badge', { 'pp-work-badge--live': workInProgress }]">
               <span class="pp-work-badge-dot" aria-hidden="true"></span>
-              {{ workInProgress ? '生成中 · 工作流' : '已完成 · 完整视频' }}
+              {{
+                cancelRequested
+                  ? '取消中 · 工作流'
+                  : workInProgress
+                    ? '生成中 · 工作流'
+                    : '已完成 · 完整视频'
+              }}
             </span>
           </div>
 
@@ -61,6 +67,15 @@
             <span class="pp-work-foot-text">
               已完成 {{ doneCount }} / {{ workflowChain.length }} 步骤
             </span>
+            <button
+              v-if="cancellable"
+              type="button"
+              class="pp-cancel-link"
+              :disabled="cancelRequested"
+              @click="$emit('cancel')"
+            >
+              {{ cancelRequested ? '正在取消…' : '取消生成' }}
+            </button>
           </div>
         </div>
 
@@ -123,6 +138,15 @@
             <span class="pp-work-foot-text">
               已完成 {{ doneCount }} / {{ workflowChain.length }} 步骤
             </span>
+            <button
+              v-if="cancellable"
+              type="button"
+              class="pp-cancel-link"
+              :disabled="cancelRequested"
+              @click="$emit('cancel')"
+            >
+              {{ cancelRequested ? '正在取消…' : '取消生成' }}
+            </button>
           </div>
         </div>
 
@@ -305,10 +329,14 @@ const props = defineProps<{
   completedSteps?: number
   totalSteps?: number
   exampleTopics?: string[]
+  // Cancel affordance for the in-flight workflow (driven by App.vue).
+  cancellable?: boolean
+  cancelRequested?: boolean
 }>()
 
 defineEmits<{
   (e: 'set-topic', topic: string): void
+  (e: 'cancel'): void
 }>()
 
 // ── All unique video URLs (current first, then history) ──
@@ -1118,6 +1146,32 @@ const doneCount = computed(
   font-size: 0.7rem;
   color: var(--text-muted);
   margin-top: 2px;
+}
+
+/* Trailing "取消生成" link inside the work card foot — sits at the
+   far right (margin-left: auto) and only shows when a run is in flight. */
+.pp-cancel-link {
+  margin-left: auto;
+  appearance: none;
+  border: 1px solid color-mix(in srgb, var(--text-muted) 55%, transparent);
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-family: inherit;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: border-color 0.18s, color 0.18s, background 0.18s;
+}
+.pp-cancel-link:hover:not(:disabled) {
+  border-color: rgba(248, 113, 113, 0.55);
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.06);
+}
+.pp-cancel-link:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
 }
 
 .pp-work-foot-check {

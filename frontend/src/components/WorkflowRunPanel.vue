@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import ThemedSelect from './studio/ThemedSelect.vue'
+import InlineStatusPulse from './studio/InlineStatusPulse.vue'
 
 type StepName = string
 
@@ -50,13 +51,29 @@ const props = defineProps<{
   formState: WorkflowRunFormState
   selectedSteps: StepName[]
   stepOptions: StepOption[]
+  // Optional cancellation state — App.vue passes these in while a run
+  // is in flight so the button can switch to a stoppable affordance.
+  cancellable?: boolean
+  cancelRequested?: boolean
+  statusLabel?: string
+  elapsedSec?: number
+  currentStepIndex?: number
+  totalSteps?: number
 }>()
 
 const emit = defineEmits<{
   (e: 'update:formState', v: WorkflowRunFormState): void
   (e: 'update:selectedSteps', v: StepName[]): void
   (e: 'run'): void
+  (e: 'cancel'): void
 }>()
+
+// Compact elapsed-time label for the run-state line ("1 分 24 秒" / "12 秒").
+function formatElapsedLabel(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds || 0))
+  if (total < 60) return `${total} 秒`
+  return `${Math.floor(total / 60)} 分 ${total % 60} 秒`
+}
 
 // Local-only collapse state — does NOT affect payload, just UI grouping.
 const voiceCollapsed  = ref(true)   // 配音与字幕 — default collapsed for clean first paint
@@ -485,8 +502,44 @@ function getTopicManualMismatchWarning(): string {
         :disabled="!canSubmit"
         @click="emit('run')"
       >
-        {{ loading ? '正在生成…' : '开始创作' }}
+        {{
+          cancelRequested
+            ? '正在取消生成…'
+            : loading
+              ? '正在生成…'
+              : '开始创作'
+        }}
       </button>
+
+      <!-- Inline run-state strip: current step + elapsed + cancel.
+           Shown only while a run is in flight so the form panel stays
+           compact during idle. Reuses statusLabel + workflow status data
+           from App.vue; nothing here owns workflow state. -->
+      <div v-if="loading || cancellable" class="runState">
+        <div class="runStateInfo">
+          <InlineStatusPulse
+            :variant="cancelRequested ? 'cancelling' : 'running'"
+            :text="statusLabel || '正在准备'"
+          />
+          <span
+            v-if="totalSteps && currentStepIndex"
+            class="runStateStep"
+          >{{ currentStepIndex }} / {{ totalSteps }}</span>
+          <span
+            v-if="elapsedSec !== undefined && elapsedSec > 0"
+            class="runStateElapsed"
+          >· 已等待 {{ formatElapsedLabel(elapsedSec) }}</span>
+        </div>
+        <button
+          v-if="cancellable"
+          type="button"
+          class="cancelLink"
+          :disabled="cancelRequested"
+          @click="emit('cancel')"
+        >
+          {{ cancelRequested ? '正在取消…' : '取消生成' }}
+        </button>
+      </div>
     </div>
 
     <!-- ═══════════ 渲染与输出 (collapsible) ═══════════ -->
@@ -1303,6 +1356,87 @@ select.input {
   opacity: 0.42;
   cursor: not-allowed;
   box-shadow: none;
+}
+
+/* Compact run-state strip — sits directly below the CTA. */
+.runState {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border-glass);
+  background: var(--surface-overlay-soft);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.runStateInfo {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-secondary);
+}
+
+.runStateDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--arc-300);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--arc-300) 55%, transparent);
+  animation: runStatePulse 1.6s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+.runStateText {
+  color: var(--text-primary);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 240px;
+}
+
+.runStateStep {
+  color: var(--arc-300);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.runStateElapsed {
+  color: var(--text-muted);
+}
+
+.cancelLink {
+  flex-shrink: 0;
+  appearance: none;
+  border: 1px solid color-mix(in srgb, var(--text-muted) 60%, transparent);
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.18s, color 0.18s, background 0.18s;
+}
+.cancelLink:hover:not(:disabled) {
+  border-color: rgba(248, 113, 113, 0.55);
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.06);
+}
+.cancelLink:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+@keyframes runStatePulse {
+  0%, 100% { opacity: 0.55; transform: scale(0.9);  }
+  50%      { opacity: 1;    transform: scale(1.15); }
 }
 
 .hint {
