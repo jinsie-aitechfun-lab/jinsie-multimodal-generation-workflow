@@ -12,9 +12,11 @@
       />
 
       <div v-else class="final-placeholder">
-        <!-- Illustration icon -->
+        <!-- Illustration icon: idle clapperboard when nothing's running,
+             AI-workflow loading animation during any active phase
+             (initial workflow run · candidate image refresh · render). -->
         <div class="ph-illus">
-          <svg v-if="finalStatus !== 'rendering' && !renderInFlight" class="ph-svg" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <svg v-if="!isAnyLoading" class="ph-svg" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
             <!-- Film frame outer -->
             <rect x="8" y="18" width="64" height="44" rx="8" stroke="currentColor" stroke-width="1.8" stroke-opacity="0.6"/>
             <!-- Clapperboard top stripe -->
@@ -27,14 +29,7 @@
             <!-- Play triangle -->
             <path d="M34 42 L50 50 L34 58 Z" fill="currentColor" fill-opacity="0.55" stroke="currentColor" stroke-width="1.2" stroke-opacity="0.7" stroke-linejoin="round"/>
           </svg>
-          <svg v-else class="ph-svg ph-svg-spin" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <!-- Render spinning arc -->
-            <circle cx="40" cy="40" r="28" stroke="currentColor" stroke-opacity="0.12" stroke-width="4"/>
-            <path d="M40 12 A28 28 0 0 1 68 40" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-opacity="0.85"/>
-            <!-- Center film icon -->
-            <circle cx="40" cy="40" r="8" stroke="currentColor" stroke-width="1.6" stroke-opacity="0.55"/>
-            <circle cx="40" cy="40" r="3" fill="currentColor" fill-opacity="0.55"/>
-          </svg>
+          <GenerationLoadingAnimation v-else />
         </div>
         <div class="ph-title">{{ placeholderTitle }}</div>
         <div class="ph-desc">{{ placeholderDesc }}</div>
@@ -69,6 +64,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import GenerationLoadingAnimation from './studio/GenerationLoadingAnimation.vue'
 
 type UnknownRecord = Record<string, unknown>
 
@@ -129,6 +125,18 @@ const audioItemCount = computed(() => {
 
 const finalStatus = computed(() => asStr(finalVideo.value?.status).toLowerCase())
 const workflowInFlight = computed(() => props.loading && !outputs.value)
+
+// Any active phase that should swap the static clapperboard for the
+// AI-workflow loading animation: initial workflow, image refresh, render.
+const isAnyLoading = computed(() => {
+  return Boolean(
+    props.loading ||
+    props.renderInFlight ||
+    props.refreshingImages ||
+    finalStatus.value === 'rendering' ||
+    workflowInFlight.value,
+  )
+})
 
 // Internal bar only shows when global sticky bar is NOT already covering the progress.
 // Global bar is active during: initial workflow run (workflowInFlight) OR image refresh.
@@ -217,9 +225,10 @@ const placeholderDesc = computed(() => {
 }
 
 .final-shell {
+  position: relative;
   width: 100%;
   max-width: 1100px;
-  margin: 0 auto;
+  margin: 0 auto 30px;
   border-radius: 18px;
   background: var(--glass-bg);
   backdrop-filter: blur(20px) saturate(140%);
@@ -228,6 +237,36 @@ const placeholderDesc = computed(() => {
   border: 1px solid var(--border-glass);
   box-shadow: var(--shadow-glass);
 }
+/* Bottom gradient that softens the contrast between dark gold studio and
+   the white native progress bar. Only shown when a video is actually
+   loaded (.ready) so it never tints the placeholder illustration.
+   pointer-events:none → controls remain fully clickable. */
+.final-shell.ready::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 64px;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(8, 5, 2, 0) 0%,
+    rgba(8, 5, 2, 0.30) 55%,
+    rgba(8, 5, 2, 0.46) 100%
+  );
+  border-bottom-left-radius: 18px;
+  border-bottom-right-radius: 18px;
+}
+:global(:root[data-theme="pearl"]) .final-shell.ready::after {
+  height: 52px;
+  background: linear-gradient(
+    180deg,
+    rgba(46, 42, 34, 0) 0%,
+    rgba(46, 42, 34, 0.10) 60%,
+    rgba(46, 42, 34, 0.18) 100%
+  );
+}
 
 .final-video {
   width: 100%;
@@ -235,10 +274,14 @@ const placeholderDesc = computed(() => {
   background: #000;
   object-fit: contain;
   max-height: 72vh;
+  accent-color: var(--arc-300, #fbbf24);
+}
+:global(:root[data-theme="pearl"]) .final-video {
+  accent-color: #b8843e;
 }
 
 .final-placeholder {
-  padding: 32px 20px 28px;
+  padding: 32px 20px 45px;
   text-align: center;
   color: var(--text-primary);
 }

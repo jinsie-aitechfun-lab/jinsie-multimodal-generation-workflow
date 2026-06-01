@@ -1217,12 +1217,20 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   font-family: var(--font-mono, monospace);
 }
 
-/* ── Dark placeholder artwork — warm dark gold tones ── */
+/* ── Dark placeholder artwork — theme-aware glass landscape.
+   All accent colours are derived from --arc-* / --border-glass tokens,
+   so the placeholder picks up champagne in black-gold, ice blue in 极夜蓝调,
+   and violet in 暗紫星芒. Pearl Dawn keeps its warm storybook look via
+   the :root[data-theme="pearl"] overrides further down. ── */
 .placeholder-card {
   position: relative;
   width: 100%;
   height: 100%;
-  background: linear-gradient(160deg, #100c03 0%, #16100a 100%);
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--arc-400) 4%, #0a0a0d) 0%,
+    color-mix(in srgb, var(--arc-400) 2%, #0e0e12) 100%
+  );
 }
 
 .placeholder-art {
@@ -1241,21 +1249,25 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   inset: 14px 12px 12px 12px;
   border-radius: 10px;
   overflow: hidden;
-  background: #0c0802;
-  border: 1px solid rgba(245,158,11,0.10);
+  background: #0a0a0d;
+  border: 1px solid var(--border-glass);
 }
 
 .placeholder-sky {
   position: absolute;
   inset: 0 0 38% 0;
-  background: linear-gradient(180deg, #1a0f02 0%, #120b02 100%);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--arc-400) 14%, #16161e) 0%,
+    color-mix(in srgb, var(--arc-400) 6%, #0e0e16) 100%
+  );
 }
 
 .placeholder-cloud {
   position: absolute;
   height: 10px;
   border-radius: 999px;
-  background: rgba(245,158,11,0.07);
+  background: color-mix(in srgb, var(--arc-200) 42%, transparent);
 }
 
 .placeholder-cloud::before,
@@ -1263,7 +1275,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   content: '';
   position: absolute;
   border-radius: 999px;
-  background: rgba(245,158,11,0.07);
+  background: color-mix(in srgb, var(--arc-200) 42%, transparent);
 }
 
 .placeholder-cloud-left {
@@ -1316,14 +1328,14 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   left: -6%;
   width: 76%;
   height: 24%;
-  background: #1e1003;
+  background: color-mix(in srgb, var(--arc-400) 18%, #1c1c26);
 }
 
 .placeholder-hill-front {
   right: -8%;
   width: 84%;
   height: 30%;
-  background: #180d02;
+  background: color-mix(in srgb, var(--arc-400) 26%, #15151e);
 }
 
 .placeholder-water {
@@ -1332,25 +1344,31 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   right: 0;
   bottom: 0;
   height: 24%;
-  background: linear-gradient(180deg, #1a0f04 0%, #100902 100%);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--arc-400) 10%, #10101a) 0%,
+    color-mix(in srgb, var(--arc-400) 4%, #08080d) 100%
+  );
 }
 
 .placeholder-sun {
   position: absolute;
   top: 16%;
   right: 18%;
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
-  background: rgba(245,158,11,0.22);
-  box-shadow: 0 0 0 6px rgba(245,158,11,0.07), 0 0 20px rgba(245,158,11,0.18);
+  background: var(--arc-300);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--arc-300) 16%, transparent),
+    0 0 8px color-mix(in srgb, var(--arc-300) 22%, transparent);
 }
 
 .placeholder-tree {
   position: absolute;
   bottom: 18%;
   width: 5px;
-  background: #1a1004;
+  background: color-mix(in srgb, var(--arc-400) 10%, #060608);
   border-radius: 999px;
 }
 
@@ -1362,7 +1380,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: #1a1004;
+  background: color-mix(in srgb, var(--arc-400) 10%, #060608);
   transform: translateX(-50%);
 }
 
@@ -1383,7 +1401,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   bottom: 10px;
   height: 6px;
   border-radius: 999px;
-  background: rgba(245,158,11,0.08);
+  background: color-mix(in srgb, var(--arc-300) 14%, transparent);
 }
 .shimmer-active::after {
   content: '';
@@ -1391,9 +1409,9 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   inset: 0;
   background: linear-gradient(
     110deg,
-    rgba(245,158,11,0) 18%,
-    rgba(245,158,11,0.12) 46%,
-    rgba(245,158,11,0) 74%
+    transparent 18%,
+    color-mix(in srgb, var(--arc-300) 14%, transparent) 46%,
+    transparent 74%
   );
   transform: translateX(-120%);
   animation: reviewShimmer 1.6s linear infinite;
