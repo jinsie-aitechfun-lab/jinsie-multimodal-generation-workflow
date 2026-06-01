@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import InlineStatusPulse from './studio/InlineStatusPulse.vue'
 
 type ImageAssetRef = {
@@ -57,6 +57,7 @@ type ReviewRenderEntry =
 
 const props = defineProps<{
   items: ImageReviewSelectedAsset[]
+  storyText?: string
   placeholders?: ReviewPlaceholderItem[]
   apiBaseUrl: string
   loading: boolean
@@ -78,6 +79,19 @@ const props = defineProps<{
   // cancel the whole workflow without leaving the review tab.
   cancellable?: boolean
 }>()
+
+const storyExpanded = ref(false)
+const normalizedStoryText = computed(() => String(props.storyText || '').trim())
+const storyNeedsToggle = computed(() => normalizedStoryText.value.length > 260)
+const visibleStoryText = computed(() => {
+  if (!normalizedStoryText.value) {
+    return '故事生成后将在这里展示。'
+  }
+  if (storyExpanded.value || !storyNeedsToggle.value) {
+    return normalizedStoryText.value
+  }
+  return `${normalizedStoryText.value.slice(0, 260).trim()}...`
+})
 
 const emit = defineEmits<{
   (
@@ -351,6 +365,37 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
     class="result-panel"
   >
     <h2 class="section-title">画面审核</h2>
+
+    <article class="story-content-card">
+      <div class="story-content-head">
+        <div>
+          <h3 class="story-content-title">故事内容</h3>
+          <p class="story-content-desc">图片将根据这段故事生成分镜与画面。</p>
+        </div>
+        <span
+          class="story-content-state"
+          :class="{ 'story-content-state-empty': !normalizedStoryText }"
+        >
+          {{ normalizedStoryText ? '已生成' : '等待生成' }}
+        </span>
+      </div>
+
+      <p
+        class="story-content-text"
+        :class="{ 'story-content-text-empty': !normalizedStoryText }"
+      >
+        {{ visibleStoryText }}
+      </p>
+
+      <button
+        v-if="storyNeedsToggle"
+        type="button"
+        class="story-toggle-button"
+        @click="storyExpanded = !storyExpanded"
+      >
+        {{ storyExpanded ? '收起' : '展开全文' }}
+      </button>
+    </article>
 
     <!-- Progress text only — bar is shown in the global sticky header -->
     <div v-if="progressText" class="review-progress-inline">
@@ -967,6 +1012,84 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   text-transform: uppercase;
   color: var(--text-muted);
   text-align: left;
+}
+
+.story-content-card {
+  margin: 0 0 14px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--glass-bg);
+  border: 1px solid rgba(245,158,11,0.12);
+  box-shadow: var(--shadow-glass);
+}
+
+.story-content-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.story-content-title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.story-content-desc {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.story-content-state {
+  flex-shrink: 0;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(245,158,11,0.14);
+  color: var(--arc-300);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 24px;
+}
+
+.story-content-state-empty {
+  background: rgba(255,255,255,0.07);
+  color: var(--text-muted);
+}
+
+.story-content-text {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
+  line-height: 1.85;
+  white-space: pre-wrap;
+}
+
+.story-content-text-empty {
+  color: var(--text-muted);
+}
+
+.story-toggle-button {
+  margin-top: 10px;
+  width: fit-content;
+  border: none;
+  background: transparent;
+  color: var(--arc-300);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  padding: 0;
+}
+
+.story-toggle-button:hover {
+  color: var(--arc-200);
+  text-decoration: underline;
 }
 
 /* Inline progress — just text + cancel, no duplicate bar */

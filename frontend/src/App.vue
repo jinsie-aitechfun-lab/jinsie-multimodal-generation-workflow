@@ -2265,6 +2265,7 @@ async function runWorkflow() {
               <div class="review-images-body">
                 <InteractiveImageReview
                   :items="imageReviewItems"
+                  :story-text="storyText"
                   :placeholders="reviewPlaceholders"
                   :api-base-url="apiBaseUrl"
                   :loading="loading || refreshingImageReview"
