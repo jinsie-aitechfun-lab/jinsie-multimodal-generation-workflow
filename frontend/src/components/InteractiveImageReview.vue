@@ -123,6 +123,13 @@ function assetRefPath(assetRef?: ImageAssetRef): string {
   return assetRef.public_url || assetRef.relative_path || ''
 }
 
+function assetRefDebugPath(assetRef?: ImageAssetRef): string {
+  if (!assetRef) {
+    return '-'
+  }
+  return assetRef.relative_path || assetRef.public_url || assetRef.file_name || '-'
+}
+
 function isImageAsset(path?: string): boolean {
   if (!path) {
     return false
@@ -253,6 +260,29 @@ function candidateLabel(candidate: ImageAssetRef, fallbackIndex: number): string
   }
 
   return suffix
+}
+
+function sceneNumberLabel(sceneId?: string): string {
+  const match = sceneId?.match(/(?:scene[-_]?|^)(\d+)/i)
+  if (!match) return ''
+  return match[1].padStart(2, '0')
+}
+
+function sceneDisplayTitle(entry: ReviewRenderEntry): string {
+  const rawTitle = String(entry.sceneTitle || '').trim()
+  const rawSceneId = String(entry.sceneId || '').trim()
+  const technicalTitle = !rawTitle || rawTitle === rawSceneId || rawTitle === 'unknown-scene'
+  if (!technicalTitle) {
+    return rawTitle
+  }
+
+  const sceneNumber = sceneNumberLabel(rawSceneId)
+  return sceneNumber ? `场景 ${sceneNumber}` : '场景'
+}
+
+function sceneAssetTitle(entry: ReviewRenderEntry, label: string): string {
+  const sceneNumber = sceneNumberLabel(entry.sceneId)
+  return sceneNumber ? `场景 ${sceneNumber} · ${label}` : label
 }
 
 const renderEntries = computed<ReviewRenderEntry[]>(() => {
@@ -440,16 +470,8 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
         <div class="review-scene-head">
           <div class="scene-meta-block">
             <strong class="scene-title-text">
-              {{ entry.sceneTitle }}
+              {{ sceneDisplayTitle(entry) }}
             </strong>
-
-            <p v-if="entry.kind === 'item'" class="detail-text scene-subtext">
-              {{ entry.item.selection_source || '-' }} / {{ entry.item.selection_mode || '-' }}
-            </p>
-
-            <p v-else class="detail-text scene-subtext">
-              progressive_scene_refresh / {{ placeholderStatusText(entry.state) }}
-            </p>
           </div>
 
           <span class="summary-status">
@@ -493,14 +515,8 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 
               <div class="preview-info-panel">
                 <div class="preview-info-head">
-                  <span class="preview-title">当前预览</span>
+                  <span class="preview-title">{{ sceneAssetTitle(entry, '当前图') }}</span>
                   <span class="preview-state-tag preview-state-tag-done">已生成</span>
-                </div>
-
-                <div class="asset-code-wrap asset-code-wrap-compact">
-                  <code class="asset-code-text">
-                    {{ assetRefPath(entry.item.selected_asset_ref) || '-' }}
-                  </code>
                 </div>
 
                 <a
@@ -577,7 +593,9 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 
                   <div class="preview-info-panel">
                     <div class="preview-info-head">
-                      <span class="preview-title">候选图 {{ candidateLabel(candidate, index) }}</span>
+                      <span class="preview-title">
+                        {{ sceneAssetTitle(entry, `候选 ${candidateLabel(candidate, index)}`) }}
+                      </span>
                       <span
                         class="preview-state-tag"
                         :class="
@@ -594,7 +612,6 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                       </span>
                     </div>
 
-                    <code class="candidate-file-chip">{{ candidate.file_name || '-' }}</code>
                   </div>
                 </div>
               </button>
@@ -705,7 +722,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 
               <div class="preview-info-panel">
                 <div class="preview-info-head">
-                  <span class="preview-title">当前预览</span>
+                  <span class="preview-title">{{ sceneAssetTitle(entry, '当前图') }}</span>
                   <span
                     class="preview-state-tag"
                     :class="
@@ -724,10 +741,6 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                           : (cancelRequested ? '取消中' : '等待中')
                     }}
                   </span>
-                </div>
-
-                <div class="asset-code-wrap asset-code-wrap-compact">
-                  <code class="asset-code-text">pending://{{ entry.sceneId }}/selected</code>
                 </div>
 
                 <div class="placeholder-status-copy">
@@ -875,6 +888,63 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
             </div>
           </div>
         </template>
+
+        <details class="scene-developer-info">
+          <summary>开发者信息</summary>
+
+          <div class="developer-info-grid">
+            <div class="developer-info-row">
+              <span class="developer-info-label">场景 ID</span>
+              <code>{{ entry.sceneId || '-' }}</code>
+            </div>
+
+            <template v-if="entry.kind === 'item'">
+              <div class="developer-info-row">
+                <span class="developer-info-label">筛选策略</span>
+                <code>{{ entry.item.selection_source || '-' }}</code>
+              </div>
+              <div class="developer-info-row">
+                <span class="developer-info-label">生成策略</span>
+                <code>{{ entry.item.selection_mode || '-' }}</code>
+              </div>
+              <div class="developer-info-row">
+                <span class="developer-info-label">当前图路径</span>
+                <code>{{ assetRefDebugPath(entry.item.selected_asset_ref) }}</code>
+              </div>
+              <div
+                v-for="(candidate, index) in entry.item.candidate_asset_refs || []"
+                :key="candidate.relative_path || candidate.file_name || candidate.public_url || index"
+                class="developer-info-row"
+              >
+                <span class="developer-info-label">候选 {{ candidateLabel(candidate, index) }} 路径</span>
+                <code>{{ assetRefDebugPath(candidate) }}</code>
+              </div>
+              <div v-if="entry.item.prompt" class="developer-info-row">
+                <span class="developer-info-label">图片提示词</span>
+                <code>{{ entry.item.prompt }}</code>
+              </div>
+            </template>
+
+            <template v-else>
+              <div class="developer-info-row">
+                <span class="developer-info-label">生成策略</span>
+                <code>progressive_scene_refresh</code>
+              </div>
+              <div class="developer-info-row">
+                <span class="developer-info-label">当前图路径</span>
+                <code>pending://{{ entry.sceneId }}/selected</code>
+              </div>
+              <div class="developer-info-row">
+                <span class="developer-info-label">候选 A 路径</span>
+                <code>pending://{{ entry.sceneId }}/candidate_a</code>
+              </div>
+              <div class="developer-info-row">
+                <span class="developer-info-label">候选 B 路径</span>
+                <code>pending://{{ entry.sceneId }}/candidate_b</code>
+              </div>
+            </template>
+          </div>
+        </details>
       </article>
     </div>
   </section>
@@ -1270,6 +1340,59 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   font-size: 0.6875rem;
   line-height: 1.35;
   word-break: break-all;
+  font-family: var(--font-mono, monospace);
+}
+
+.scene-developer-info {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(245,158,11,0.08);
+}
+
+.scene-developer-info summary {
+  width: fit-content;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.scene-developer-info summary:hover {
+  color: var(--arc-300);
+}
+
+.developer-info-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.developer-info-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface-overlay-strong);
+  border: 1px solid rgba(245,158,11,0.07);
+}
+
+.developer-info-label {
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.developer-info-row code {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-wrap: anywhere;
   font-family: var(--font-mono, monospace);
 }
 

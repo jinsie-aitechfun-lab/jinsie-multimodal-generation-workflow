@@ -95,6 +95,10 @@ function isVideoAsset(path?: string): boolean {
   return value.endsWith('.mp4') || value.endsWith('.webm') || value.endsWith('.mov')
 }
 
+function resultScreenshotTitle(index: number): string {
+  return `结果截图 ${String(index + 1).padStart(2, '0')}`
+}
+
 function providerDisplayName(provider?: string): string {
   if (!provider) return '-'
   if (provider.toLowerCase() === 'kling') return '可灵'
@@ -246,16 +250,7 @@ function availableSceneIds(): string {
 
           <div class="detail-block">
             <span class="detail-label">无水印视频</span>
-            <code>{{ selectedSampleDetail.assets?.clean_video || '-' }}</code>
-            <a
-              v-if="hasAssetLink(selectedSampleDetail.assets?.clean_video)"
-              class="asset-link"
-              :href="toAssetHref(selectedSampleDetail.assets?.clean_video)"
-              target="_blank"
-              rel="noreferrer"
-            >
-              打开无水印视频
-            </a>
+            <span v-if="isVideoAsset(selectedSampleDetail.assets?.clean_video)" class="asset-preview-label">视频预览</span>
             <video
               v-if="isVideoAsset(selectedSampleDetail.assets?.clean_video)"
               class="asset-video"
@@ -263,11 +258,28 @@ function availableSceneIds(): string {
               preload="metadata"
               :src="toAssetHref(selectedSampleDetail.assets?.clean_video)"
             />
+            <a
+              v-if="hasAssetLink(selectedSampleDetail.assets?.clean_video)"
+              class="asset-link"
+              :href="toAssetHref(selectedSampleDetail.assets?.clean_video)"
+              target="_blank"
+              rel="noreferrer"
+            >
+              打开视频
+            </a>
+            <p v-else class="hint">暂无无水印视频。</p>
           </div>
 
           <div class="detail-block">
             <span class="detail-label">带水印视频</span>
-            <code>{{ selectedSampleDetail.assets?.watermarked_video || '-' }}</code>
+            <span v-if="isVideoAsset(selectedSampleDetail.assets?.watermarked_video)" class="asset-preview-label">视频预览</span>
+            <video
+              v-if="isVideoAsset(selectedSampleDetail.assets?.watermarked_video)"
+              class="asset-video"
+              controls
+              preload="metadata"
+              :src="toAssetHref(selectedSampleDetail.assets?.watermarked_video)"
+            />
             <a
               v-if="hasAssetLink(selectedSampleDetail.assets?.watermarked_video)"
               class="asset-link"
@@ -275,52 +287,91 @@ function availableSceneIds(): string {
               target="_blank"
               rel="noreferrer"
             >
-              打开带水印视频
+              打开视频
             </a>
+            <p v-else class="hint">暂无带水印视频。</p>
           </div>
 
           <div class="detail-block">
             <span class="detail-label">输入截图</span>
-            <code>{{ selectedSampleDetail.assets?.input_screenshot || '-' }}</code>
-            <a
+            <span v-if="isImageAsset(selectedSampleDetail.assets?.input_screenshot)" class="asset-preview-label">图片预览</span>
+            <img
               v-if="isImageAsset(selectedSampleDetail.assets?.input_screenshot)"
-              class="asset-image-link"
+              class="asset-image asset-image-thumbnail"
+              :src="toAssetHref(selectedSampleDetail.assets?.input_screenshot)"
+              alt="输入截图预览"
+            />
+            <a
+              v-if="hasAssetLink(selectedSampleDetail.assets?.input_screenshot)"
+              class="asset-link"
               :href="toAssetHref(selectedSampleDetail.assets?.input_screenshot)"
               target="_blank"
               rel="noreferrer"
             >
-              <img
-                class="asset-image asset-image-thumbnail"
-                :src="toAssetHref(selectedSampleDetail.assets?.input_screenshot)"
-                alt="input screenshot preview"
-              />
+              打开图片
             </a>
+            <p v-else class="hint">暂无输入截图。</p>
           </div>
 
           <div class="detail-block">
             <span class="detail-label">结果截图</span>
             <ul class="asset-list asset-grid-list">
               <li
-                v-for="path in selectedSampleDetail.assets?.result_screenshots || []"
+                v-for="(path, index) in selectedSampleDetail.assets?.result_screenshots || []"
                 :key="path"
                 class="asset-list-item"
               >
-                <code>{{ path }}</code>
-                <a
+                <strong class="asset-card-title">{{ resultScreenshotTitle(index) }}</strong>
+                <img
                   v-if="isImageAsset(path)"
-                  class="asset-image-link"
+                  class="asset-image asset-image-thumbnail"
+                  :src="toAssetHref(path)"
+                  :alt="resultScreenshotTitle(index)"
+                />
+                <a
+                  v-if="hasAssetLink(path)"
+                  class="asset-link"
                   :href="toAssetHref(path)"
                   target="_blank"
                   rel="noreferrer"
                 >
-                  <img
-                    class="asset-image asset-image-thumbnail"
-                    :src="toAssetHref(path)"
-                    :alt="path"
-                  />
+                  打开图片
                 </a>
               </li>
             </ul>
+          </div>
+
+          <div class="detail-block">
+            <details class="asset-developer-info">
+              <summary>开发者信息</summary>
+              <div class="detail-row">
+                <span class="detail-label">备注路径</span>
+                <code>{{ selectedSampleDetail.assets?.notes || '-' }}</code>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">无水印视频路径</span>
+                <code>{{ selectedSampleDetail.assets?.clean_video || '-' }}</code>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">带水印视频路径</span>
+                <code>{{ selectedSampleDetail.assets?.watermarked_video || '-' }}</code>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">输入截图路径</span>
+                <code>{{ selectedSampleDetail.assets?.input_screenshot || '-' }}</code>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">结果截图路径</span>
+                <ul class="asset-list">
+                  <li
+                    v-for="path in selectedSampleDetail.assets?.result_screenshots || []"
+                    :key="path"
+                  >
+                    <code>{{ path }}</code>
+                  </li>
+                </ul>
+              </div>
+            </details>
           </div>
         </div>
 
@@ -556,6 +607,38 @@ code {
 .asset-link:hover { text-decoration: underline; color: var(--arc-200); }
 
 .asset-list-item { display: flex; flex-direction: column; gap: 4px; }
+
+.asset-card-title {
+  color: var(--arc-300);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.asset-preview-label {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.asset-developer-info {
+  width: 100%;
+}
+
+.asset-developer-info summary {
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.asset-developer-info summary:hover {
+  color: var(--arc-300);
+}
+
+.asset-developer-info .detail-row {
+  margin-top: 10px;
+}
 
 .asset-image {
   display: block;
