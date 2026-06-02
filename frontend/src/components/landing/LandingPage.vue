@@ -178,7 +178,20 @@ import ThemeSwitcher from '../studio/ThemeSwitcher.vue'
 
 const router = useRouter()
 
+// Landing → Studio entries are treated as a fresh "start creating" intent,
+// so we land on the first tab (创作故事) regardless of what the user was
+// looking at last. Direct refresh of /studio doesn't go through here, so
+// the existing per-session tab persistence still resumes the last tab on
+// reload.
+const STUDIO_TAB_STORAGE_KEY = 'jinsie_active_tab'
+const STUDIO_DEFAULT_TAB = 'run'
+
 function goStudio() {
+  try {
+    localStorage.setItem(STUDIO_TAB_STORAGE_KEY, STUDIO_DEFAULT_TAB)
+  } catch {
+    /* localStorage unavailable — fall through; StudioView's default is also 'run' */
+  }
   router.push('/studio')
 }
 

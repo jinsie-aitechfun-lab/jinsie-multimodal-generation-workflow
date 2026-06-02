@@ -359,6 +359,11 @@ const sceneRefreshQueue = ref<string[]>([])
 const sceneRefreshingId = ref('')
 const reviewPlaceholders = ref<ReviewPlaceholderItem[]>([])
 const imageReviewRefreshCancelled = ref(false)
+// Reactive mirror of STORAGE_KEY_REFRESH_CANCELLED — true iff THIS workflow's
+// image refresh was paused by user cancel. Used to distinguish "已暂停" (user
+// chose to stop) from "失败" (API/network error) in placeholder copy, since
+// localStorage itself isn't reactive.
+const imageRefreshPausedByUser = ref(false)
 let reviewAutoRefreshFiredOnce = false
 let imageReviewAutoRefreshTimer: number | null = null
 let imageReviewRefreshAbortController: AbortController | null = null
@@ -436,6 +441,11 @@ const STORAGE_KEY_RECENT_VIDEOS = 'jinsie_recent_video_urls'
 const STORAGE_KEY_DEV = 'jinsie_dev_mode'
 const STORAGE_KEY_WORKFLOW = 'jinsie_workflow_id'
 const STORAGE_KEY_PAYLOAD = 'jinsie_workflow_payload'
+// Persists "user explicitly cancelled image refresh for this workflow_id".
+// Survives Landing → Studio nav so auto-resume does NOT restart a run
+// the user just stopped. Cleared by: starting a new workflow, manually
+// clicking "立即生成候选图", or finishing a successful refresh+render.
+const STORAGE_KEY_REFRESH_CANCELLED = 'jinsie_workflow_refresh_cancelled'
 const STORAGE_KEY_FORM = 'jinsie_workflow_form'
 
 watch(activeTab, (tab) => {
@@ -474,45 +484,48 @@ onMounted(() => {
     devMode.value = localStorage.getItem(STORAGE_KEY_DEV) === '1'
   }
 
-  // Distinguish page reload (F5/Cmd+R) from fresh navigation (typing URL / new tab).
-  // Only restore the last tab and workflow state on reload — a fresh open starts clean.
-  const navEntry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined
-  const isReload = navEntry ? navEntry.type === 'reload' : false
+  // Always restore the studio shell from localStorage, regardless of how
+  // we got here (reload / SPA nav from Landing / direct URL / new tab).
+  //   • Tab: Landing entries pre-write 'run' so SPA nav still lands on
+  //     创作故事, while direct refresh restores the last visited tab.
+  //   • Form / session / payload: needed so the image-refresh loop can
+  //     auto-resume when reattaching to an in-flight workflow — without
+  //     a restored payload, resumePendingSceneGenerationAfterRestore()
+  //     bails out and the user sees "立即生成候选图" instead of progress.
+  const savedTab = localStorage.getItem(STORAGE_KEY_TAB) as ViewTab | null
+  if (savedTab && ['run', 'review', 'assets'].includes(savedTab)) {
+    activeTab.value = savedTab
+  } else if (savedTab === 'debug' && devMode.value) {
+    activeTab.value = 'debug'
+  }
 
-  if (isReload) {
-    const savedTab = localStorage.getItem(STORAGE_KEY_TAB) as ViewTab | null
-    if (savedTab && ['run', 'review', 'assets'].includes(savedTab)) {
-      activeTab.value = savedTab
-    } else if (savedTab === 'debug' && devMode.value) {
-      activeTab.value = 'debug'
-    }
-
-    const savedFormStr = localStorage.getItem(STORAGE_KEY_FORM)
-    if (savedFormStr) {
-      try {
-        const savedForm = JSON.parse(savedFormStr)
-        // Normalize known legacy enum values (whitespace → underscores)
-        // so dropdowns don't accumulate a stray "cute chibi anime" option.
-        if (savedForm.visualStyle === 'cute chibi anime') {
-          savedForm.visualStyle = 'cute_chibi_anime'
-        }
-        workflowForm.value = { ...DEFAULT_WORKFLOW_FORM, ...savedForm }
-      } catch { /* ignore malformed */ }
-    }
-
-    const savedSessionId = localStorage.getItem(STORAGE_KEY_SESSION)
-    if (savedSessionId) {
-      workflowForm.value.sessionId = savedSessionId
-    }
-
-    // Restore payload so refresh-scene API calls have the original workflow_input
-    const savedPayloadStr = localStorage.getItem(STORAGE_KEY_PAYLOAD)
-    if (savedPayloadStr) {
-      try {
-        currentWorkflowPayload.value = JSON.parse(savedPayloadStr) as WorkflowRunPayload
-      } catch {
-        // ignore malformed payload
+  const savedFormStr = localStorage.getItem(STORAGE_KEY_FORM)
+  if (savedFormStr) {
+    try {
+      const savedForm = JSON.parse(savedFormStr)
+      // Normalize known legacy enum values (whitespace → underscores)
+      // so dropdowns don't accumulate a stray "cute chibi anime" option.
+      if (savedForm.visualStyle === 'cute chibi anime') {
+        savedForm.visualStyle = 'cute_chibi_anime'
       }
+      workflowForm.value = { ...DEFAULT_WORKFLOW_FORM, ...savedForm }
+    } catch { /* ignore malformed */ }
+  }
+
+  const savedSessionId = localStorage.getItem(STORAGE_KEY_SESSION)
+  if (savedSessionId) {
+    workflowForm.value.sessionId = savedSessionId
+  }
+
+  // Restore payload so refresh-scene API calls (and the auto-resume
+  // path in resumePendingSceneGenerationAfterRestore) have the original
+  // workflow_input.
+  const savedPayloadStr = localStorage.getItem(STORAGE_KEY_PAYLOAD)
+  if (savedPayloadStr) {
+    try {
+      currentWorkflowPayload.value = JSON.parse(savedPayloadStr) as WorkflowRunPayload
+    } catch {
+      // ignore malformed payload
     }
   }
 
@@ -540,9 +553,66 @@ onMounted(() => {
     pushRecentFinalVideoUrl(savedVideoUrl)
   }
 
-  const savedWorkflowId = isReload ? localStorage.getItem(STORAGE_KEY_WORKFLOW) : null
+  // Reattach to any in-flight workflow regardless of how we got here
+  // (reload, SPA navigation from /, fresh tab open). The workflow_id in
+  // localStorage is the source of truth; the previous `isReload` gate
+  // silently dropped resume on SPA nav, which made "go to Landing during
+  // a generation then come back" look like the run was lost.
+  const savedWorkflowId = localStorage.getItem(STORAGE_KEY_WORKFLOW)
+
+  // Restore the "user paused image refresh" reactive mirror so post-remount
+  // placeholder copy says "已暂停" instead of "失败" (latter is reserved for
+  // actual API/network failures). Marker is auth'd against current workflow_id.
+  try {
+    const markerWf = localStorage.getItem(STORAGE_KEY_REFRESH_CANCELLED) || ''
+    if (markerWf && savedWorkflowId && markerWf === savedWorkflowId) {
+      imageRefreshPausedByUser.value = true
+    }
+  } catch { /* ignore */ }
+
   if (savedWorkflowId) {
     const base = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() || 'http://127.0.0.1:8004'
+
+    const reconnectInFlight = (statusData: any) => {
+      const status = String(statusData?.status || '').trim().toLowerCase()
+      const isProcessing = status === 'processing'
+      const isCancelling = status === 'cancel_requested'
+      if (!isProcessing && !isCancelling) return false
+
+      // Restore the running-UI surface so cancel button / timeline /
+      // progress bar / generation animation all wake up.
+      loading.value = true
+      workflowStatusData.value = statusData
+      activeWorkflowId.value = savedWorkflowId
+      cancelRequested.value = isCancelling
+      // Leave activeTab alone — Landing entries set it to 'run' (which
+      // already shows the timeline + CTA "正在生成…"); reload restores
+      // last tab; neither needs to be overridden here.
+
+      waitForAsyncWorkflowOutputs(savedWorkflowId)
+        .then(asyncData => {
+          if (asyncData) {
+            applyWorkflowResponse(asyncData)
+            // Match runWorkflow()'s post-completion path so the deferred
+            // candidate-image refresh kicks in automatically (sets
+            // refreshingImageReview=true → CTA + progress bar reflect it).
+            // Without this, the user lands on "立即生成候选图" with no
+            // running indicators even though refreshImageReview is the
+            // expected next step.
+            scheduleImageReviewAutoRefreshIfNeeded()
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          // Workflow reached a terminal state — clear the per-run handles
+          // so the cancel button / activeWorkflowId disappear cleanly.
+          loading.value = false
+          activeWorkflowId.value = ''
+          cancelRequested.value = false
+        })
+      return true
+    }
+
     fetch(`${base}/v1/workflow/results/${savedWorkflowId}`)
       .then(r => {
         if (r.status === 404) return { __notFound: true } as any
@@ -551,24 +621,10 @@ onMounted(() => {
       .then(data => {
         if (!data) return
         if (data.__notFound) {
-          // Workflow completed data not on disk yet — it may still be running.
-          // Check status and reconnect if so.
+          // Outputs not on disk yet — the run may still be in flight.
           return fetch(`${base}/v1/workflow/status/${savedWorkflowId}`)
             .then(r => r.ok ? r.json() : null)
-            .then(statusData => {
-              const status = String(statusData?.status || '').trim().toLowerCase()
-              if (status === 'processing') {
-                // Reconnect: show processing UI and resume polling
-                loading.value = true
-                workflowStatusData.value = statusData
-                activeTab.value = 'review'
-                waitForAsyncWorkflowOutputs(savedWorkflowId).then(asyncData => {
-                  if (asyncData) {
-                    applyWorkflowResponse(asyncData)
-                  }
-                }).catch(() => {}).finally(() => { loading.value = false })
-              }
-            })
+            .then(statusData => { reconnectInFlight(statusData) })
             .catch(() => {})
         }
         if (data.outputs || data.steps) {
@@ -876,6 +932,39 @@ const reviewRefreshProgress = computed(() => {
   }
 })
 
+// Banner shown on the 画面审核 tab to let the user (re)start the deferred
+// image-refresh loop. Covers two distinct states:
+//   • fresh deferred — no scenes done yet, status=pending, reason=deferred_to_refresh
+//   • partial paused — some scenes done (after a user cancel mid-flight where
+//     the backend completed an in-flight scene before the abort actually took
+//     effect, leaving outputs.json with 1..N-1 selected_assets while the
+//     persistent cancel marker prevents auto-resume). Without this banner the
+//     user has no obvious affordance to continue and the panel labels look
+//     misleadingly "in progress".
+const canResumeImageRefresh = computed(() => {
+  if (refreshingImageReview.value) return false
+  if (loading.value) return false
+  if (finalVideoRenderInFlight.value) return false
+  if (finalVideoUrl.value) return false
+  if (!currentWorkflowPayload.value) return false
+  if (reviewWaitingState.value === 'deferred_pending') return true
+  return reviewPlaceholders.value.some((p) => p.state === 'waiting')
+})
+
+const deferredBannerLabel = computed(() => {
+  const total = reviewPlaceholders.value.length
+  const done = reviewPlaceholders.value.filter((p) => p.state === 'done').length
+  if (total > 0 && done > 0 && done < total) {
+    return `候选图已暂停（${done}/${total}）`
+  }
+  return '候选图尚未生成'
+})
+
+const deferredBannerCta = computed(() => {
+  const done = reviewPlaceholders.value.filter((p) => p.state === 'done').length
+  return done > 0 ? '继续生成候选图' : '立即生成候选图'
+})
+
 function assetRefPath(assetRef?: ImageAssetRef): string {
   if (!assetRef) {
     return ''
@@ -1141,6 +1230,9 @@ function applyWorkflowResponse(data: WorkflowRunResponse) {
   if (finalVideoUrl.value) {
     pushRecentFinalVideoUrl(finalVideoUrl.value)
     localStorage.setItem(STORAGE_KEY_VIDEO_URL, finalVideoUrl.value)
+    // Pipeline is fully done — drop the "user cancelled refresh" marker
+    // so a brand-new workflow after this isn't accidentally blocked.
+    clearImageRefreshCancelledMarker()
   }
   extractMockAudioState(data)
   stepSummaries.value = buildStepSummaries(data)
@@ -1663,6 +1755,33 @@ async function enhanceImageReviewScene(sceneId: string) {
   }
 }
 
+// Unified "stop the current in-flight work" affordance. The Studio runs
+// two distinct cancellable phases:
+//   - initial workflow (story / storyboard / etc.) → server-side cancel
+//   - candidate image refresh (per-scene loop)     → frontend AbortController
+// They share the same "取消生成" button in WorkflowRunPanel / StudioProgress
+// / StudioPreviewPanel; this dispatcher routes to the right implementation
+// based on which phase is actually running.
+const phaseInFlight = computed(() => {
+  return loading.value || refreshingImageReview.value || finalVideoRenderInFlight.value
+})
+const phaseCancellable = computed(() => phaseInFlight.value && !cancelRequestedAny.value)
+const cancelRequestedAny = computed(() =>
+  cancelRequested.value || imageReviewRefreshCancelled.value,
+)
+function cancelActivePhase() {
+  // Workflow cancel beats image-refresh cancel when both could apply —
+  // server-side cancel covers the whole run, abort only stops the
+  // frontend loop.
+  if (loading.value && activeWorkflowId.value) {
+    void cancelWorkflow()
+    return
+  }
+  if (refreshingImageReview.value) {
+    cancelImageReviewRefresh()
+  }
+}
+
 async function cancelWorkflow() {
   // Cancellation only makes sense while a run is actually in flight and
   // we know which workflow_id to target. Re-clicking the button has no
@@ -1701,7 +1820,127 @@ function cancelImageReviewRefresh() {
     markPlaceholderState(sceneRefreshingId.value, 'waiting')
   }
 
+  // Persist "this workflow's image refresh was cancelled by the user"
+  // so a subsequent mount (Landing → Studio nav) doesn't auto-restart
+  // the loop we just stopped. Cleared by: starting a new workflow,
+  // manual "立即生成候选图" click, or full pipeline completion.
+  const wfId =
+    currentWorkflowResponse.value?.workflow_id ||
+    currentWorkflowPayload.value?.workflow_id ||
+    localStorage.getItem(STORAGE_KEY_WORKFLOW) ||
+    ''
+  if (wfId) {
+    try { localStorage.setItem(STORAGE_KEY_REFRESH_CANCELLED, wfId) } catch { /* ignore */ }
+    imageRefreshPausedByUser.value = true
+  }
+
   errorMessage.value = '已取消剩余候选图生成。'
+}
+
+// Returns true if the user explicitly cancelled image refresh for THIS
+// workflow_id (persisted in localStorage). Used by auto-resume paths so
+// nav-back / reload doesn't re-trigger a run the user just stopped.
+function isImageRefreshUserCancelled(): boolean {
+  const cancelledFor = (() => {
+    try { return localStorage.getItem(STORAGE_KEY_REFRESH_CANCELLED) || '' } catch { return '' }
+  })()
+  if (!cancelledFor) return false
+  const currentWfId =
+    currentWorkflowResponse.value?.workflow_id ||
+    currentWorkflowPayload.value?.workflow_id ||
+    localStorage.getItem(STORAGE_KEY_WORKFLOW) ||
+    ''
+  return Boolean(currentWfId && currentWfId === cancelledFor)
+}
+
+function clearImageRefreshCancelledMarker() {
+  try { localStorage.removeItem(STORAGE_KEY_REFRESH_CANCELLED) } catch { /* ignore */ }
+  imageRefreshPausedByUser.value = false
+}
+
+// Bound to the "立即生成候选图" deferred-banner button. The user explicitly
+// asking to (re)start refresh means we must clear the persistent cancel
+// marker before invoking the refresh loop — otherwise the auto-resume
+// guard would still treat this workflow as cancelled on next mount.
+function triggerManualImageRefresh() {
+  clearImageRefreshCancelledMarker()
+  imageReviewRefreshCancelled.value = false
+  errorMessage.value = ''
+  void refreshImageReview()
+}
+
+// "放弃当前生成" — the explicit-discard exit for a draft the user no longer
+// wants to continue. Distinct from cancel: cancel pauses (banner stays so the
+// user can resume), discard wipes the draft entirely and lands on a clean
+// creation tab. Preserves the form inputs (so the user can tweak and retry)
+// and the recent-videos history (those are past completed runs, not this draft).
+//
+// Two-step UX: discardCurrentDraft() opens the themed confirm dialog;
+// performDiscardCurrentDraft() runs the actual reset once the user confirms.
+// Native window.confirm was avoided because it can't be themed and broke the
+// dark/pearl aesthetic.
+const showDiscardConfirm = ref(false)
+
+function discardCurrentDraft() {
+  showDiscardConfirm.value = true
+}
+
+function cancelDiscardDialog() {
+  showDiscardConfirm.value = false
+}
+
+function performDiscardCurrentDraft() {
+  showDiscardConfirm.value = false
+
+  // Stop any in-flight image refresh.
+  imageReviewRefreshAbortController?.abort()
+  imageReviewRefreshAbortController = null
+  imageReviewRefreshCancelled.value = false
+  refreshingImageReview.value = false
+  sceneRefreshQueue.value = []
+  sceneRefreshingId.value = ''
+  clearImageReviewAutoRefreshTimer()
+  reviewAutoRefreshFiredOnce = false
+  restoreAutoRefreshFired = false
+
+  // Wipe everything that applyWorkflowResponse populates.
+  currentWorkflowResponse.value = null
+  currentWorkflowPayload.value = null
+  storyText.value = ''
+  storyboardText.value = ''
+  imagePromptsText.value = ''
+  imageAssetsText.value = ''
+  imageReviewText.value = ''
+  videoPromptsText.value = ''
+  narrationText.value = ''
+  subtitlesText.value = ''
+  renderPlanText.value = ''
+  finalVideoText.value = ''
+  finalVideoUrl.value = ''
+  finalVideoAudioEnabled.value = true
+  stepSummaries.value = []
+  characterCandidatesText.value = ''
+  characterManifestText.value = ''
+  resultText.value = ''
+  reviewPlaceholders.value = []
+  errorMessage.value = ''
+  workflowStatusData.value = null
+  activeWorkflowId.value = ''
+  cancelRequested.value = false
+  loading.value = false
+  finalVideoRenderInFlight.value = false
+  finalVideoRendering.value = false
+
+  // Clear draft-related localStorage. Preserve FORM / SESSION / TAB / DEV /
+  // RECENT_VIDEOS / LAST_VIDEO_URL — those are user-level state, not draft.
+  try {
+    localStorage.removeItem(STORAGE_KEY_WORKFLOW)
+    localStorage.removeItem(STORAGE_KEY_PAYLOAD)
+    localStorage.removeItem(STORAGE_KEY_REFRESH_CANCELLED)
+  } catch { /* ignore */ }
+
+  // Drop the user back on 创作故事 — clean starting point for the next run.
+  activeTab.value = 'run'
 }
 
 async function refreshImageReview() {
@@ -1796,31 +2035,46 @@ function scheduleImageReviewAutoRefreshIfNeeded() {
   if (reviewWaitingState.value !== 'deferred_pending' || reviewAutoRefreshFiredOnce) {
     return
   }
+  // Respect the user's explicit cancel — don't auto-restart a refresh
+  // they just stopped. Manual click of "立即生成候选图" clears the marker.
+  if (isImageRefreshUserCancelled()) return
 
   reviewAutoRefreshFiredOnce = true
   clearImageReviewAutoRefreshTimer()
-  imageReviewAutoRefreshTimer = window.setTimeout(() => {
-    if (refreshingImageReview.value) return
-    void refreshImageReview()
-  }, 1200)
+  if (refreshingImageReview.value) return
+  void refreshImageReview()
 }
 
-// Called after page-refresh restore only. Triggers generation for scenes that
-// are still 'waiting' (not in selected_assets). Safe to call even when some
-// scenes are already done — refreshImageReview() skips doneSceneIds internally.
+// Called after page-refresh / SPA-nav restore. Triggers generation for scenes
+// still 'waiting' (not in selected_assets). Safe to call even when some scenes
+// are already done — refreshImageReview() skips doneSceneIds internally.
+//
+// Guards:
+//   - if the CURRENT workflow's response already contains a final_video
+//     URL, the run is fully done and we don't want to clobber it with a
+//     fresh image-refresh cycle.
+//   - recentFinalVideoUrls is NOT a valid guard: it accumulates videos
+//     from prior runs and would block auto-refresh for any new workflow
+//     after a user has ever produced a video before. Use finalVideoUrl
+//     (per-workflow) only.
 let restoreAutoRefreshFired = false
 function resumePendingSceneGenerationAfterRestore() {
   if (restoreAutoRefreshFired) return
   const hasPending = reviewPlaceholders.value.some((p) => p.state === 'waiting')
   if (!hasPending) return
   if (!currentWorkflowPayload.value) return
+  if (finalVideoUrl.value) return
+  // Respect persistent user cancel — Landing → Studio nav must not undo
+  // the user's "stop generating" action.
+  if (isImageRefreshUserCancelled()) return
 
   restoreAutoRefreshFired = true
-  window.setTimeout(() => {
-    if (!refreshingImageReview.value && reviewPlaceholders.value.some((p) => p.state === 'waiting')) {
-      void refreshImageReview()
-    }
-  }, 1200)
+  // Fire immediately — same render tick as applyWorkflowResponse, so
+  // refreshingImageReview = true masks the deferred-banner from the
+  // very first paint.
+  if (!refreshingImageReview.value && reviewPlaceholders.value.some((p) => p.state === 'waiting')) {
+    void refreshImageReview()
+  }
 }
 
 async function waitForAsyncWorkflowOutputs(
@@ -2116,6 +2370,9 @@ async function runWorkflow() {
   }
   currentWorkflowPayload.value = payload as WorkflowRunPayload
   localStorage.setItem(STORAGE_KEY_PAYLOAD, JSON.stringify(payload))
+  // New workflow starts clean — any prior "user cancelled image refresh"
+  // marker shouldn't haunt this fresh run.
+  clearImageRefreshCancelledMarker()
 
   // ✅ 点击 Run 立刻给 UI 反馈（跨 tab 都能感知）
   loading.value = true
@@ -2183,14 +2440,14 @@ async function runWorkflow() {
         :visible="workflowIsProcessing || refreshingImageReview"
         :percent="workflowStatusProgress ?? (refreshingImageReview ? reviewRefreshProgress.percent : 0)"
         :label="workflowIsProcessing ? workflowRunStatusMessage : reviewRefreshProgress.text"
-        :cancellable="Boolean(activeWorkflowId)"
-        :cancel-requested="cancelRequested"
-        @cancel="cancelWorkflow"
+        :cancellable="phaseCancellable"
+        :cancel-requested="cancelRequestedAny"
+        @cancel="cancelActivePhase"
       />
     </template>
     <div class="studio-tab-content">
     <section v-if="activeTab === 'run'" class="studio-home-grid">
-      <StudioCreatePanel :loading="loading" :cancel-requested="cancelRequested">
+      <StudioCreatePanel :loading="loading || refreshingImageReview || finalVideoRenderInFlight" :cancel-requested="cancelRequestedAny">
         <WorkflowRunPanel
           :loading="loading || refreshingImageReview || finalVideoRenderInFlight"
           :can-submit="canSubmit"
@@ -2198,16 +2455,16 @@ async function runWorkflow() {
           :form-state="workflowForm"
           :selected-steps="selectedSteps"
           :step-options="STEP_OPTIONS"
-          :cancellable="Boolean(activeWorkflowId)"
-          :cancel-requested="cancelRequested"
-          :status-label="workflowRunStatusMessage"
+          :cancellable="phaseCancellable"
+          :cancel-requested="cancelRequestedAny"
+          :status-label="workflowRunStatusMessage || (refreshingImageReview ? reviewRefreshProgress.text : '')"
           :elapsed-sec="workflowRunElapsedSec"
           :current-step-index="workflowStatusData?.current_step_index ?? 0"
           :total-steps="workflowStatusData?.total_steps ?? 0"
           @update:form-state="onUpdateFormState"
           @update:selected-steps="onUpdateSelectedSteps"
           @run="runWorkflow"
-          @cancel="cancelWorkflow"
+          @cancel="cancelActivePhase"
         />
       </StudioCreatePanel>
 
@@ -2220,11 +2477,11 @@ async function runWorkflow() {
         :status-label="workflowRunStatusMessage || (refreshingImageReview ? reviewRefreshProgress.text : '')"
         :completed-steps="workflowStatusData?.completed_steps ?? 0"
         :total-steps="workflowStatusData?.total_steps ?? 0"
-        :cancellable="Boolean(activeWorkflowId)"
-        :cancel-requested="cancelRequested"
+        :cancellable="phaseCancellable"
+        :cancel-requested="cancelRequestedAny"
         :example-topics="EXAMPLE_TOPICS"
         @set-topic="setExampleTopic"
-        @cancel="cancelWorkflow"
+        @cancel="cancelActivePhase"
       />
     </section>
       <section v-if="activeTab === 'review'" class="review-layout">
@@ -2255,6 +2512,7 @@ async function runWorkflow() {
                 :loading="workflowIsProcessing || refreshingImageReview || finalVideoRenderInFlight"
                 :refreshing-images="refreshingImageReview"
                 :cancel-requested="cancelRequested"
+                :paused-by-user="imageRefreshPausedByUser"
                 :error-message="errorMessage"
                 :workflow-status-message="workflowRunStatusMessage"
                 :workflow-status-progress="workflowStatusProgress"
@@ -2267,13 +2525,21 @@ async function runWorkflow() {
             </div>
           </div>
 
-          <!-- Deferred banner -->
+          <!-- Deferred banner: shown for fresh deferred state AND for partial
+               paused state (after the user cancelled mid-flight). Keeps the
+               "继续生成" affordance visible so the user isn't stuck looking at
+               a static partial-progress placeholder with no way forward.
+               "放弃当前生成" is the explicit exit — wipes the draft entirely
+               so the user isn't forced to either resume or start a new topic. -->
           <div
-            v-if="reviewWaitingState === 'deferred_pending' && !refreshingImageReview"
+            v-if="canResumeImageRefresh"
             class="deferred-generate-banner"
           >
-            <span>候选图尚未生成</span>
-            <button class="deferred-generate-btn" @click="refreshImageReview()">立即生成候选图</button>
+            <span>{{ deferredBannerLabel }}</span>
+            <div class="deferred-actions">
+              <button class="deferred-discard-btn" @click="discardCurrentDraft">放弃当前生成</button>
+              <button class="deferred-generate-btn" @click="triggerManualImageRefresh()">{{ deferredBannerCta }}</button>
+            </div>
           </div>
 
           <!-- Image review + results -->
@@ -2477,6 +2743,30 @@ async function runWorkflow() {
     </section>
     </div>
   </StudioLayout>
+
+  <!-- Themed confirm dialog for "放弃当前生成". Teleported to body so the
+       backdrop covers the whole viewport, including sidebar / progress bar.
+       Tokens-only — adapts to gold/blue/purple/pearl automatically. -->
+  <Teleport to="body">
+    <Transition name="confirm-fade">
+      <div
+        v-if="showDiscardConfirm"
+        class="confirm-overlay"
+        role="dialog"
+        aria-modal="true"
+        @click.self="cancelDiscardDialog"
+      >
+        <div class="confirm-dialog">
+          <h3 class="confirm-title">放弃当前生成</h3>
+          <p class="confirm-message">已生成的候选图、故事内容将不再可用；表单输入和历史视频会保留。</p>
+          <div class="confirm-actions">
+            <button class="confirm-btn confirm-btn-ghost" @click="cancelDiscardDialog">取消</button>
+            <button class="confirm-btn confirm-btn-primary" @click="performDiscardCurrentDraft">放弃</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -3101,32 +3391,181 @@ async function runWorkflow() {
   margin-top: 8px;
 }
 
+/* Deferred banner — theme-aware (gold/blue/purple/pearl all via tokens).
+   Was previously hardcoded tan/orange which clashed with all 4 themes. */
 .deferred-generate-banner {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 16px;
-  padding: 12px 20px;
-  background: rgba(245,158,11,0.06);
-  border: 1px solid #ffe082;
-  border-radius: 8px;
+  padding: 14px 20px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  border: 1px solid var(--border-glass);
+  border-radius: 12px;
   margin-bottom: 16px;
-  font-size: 14px;
-  color: #795548;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  box-shadow: var(--shadow-glass);
+}
+
+.deferred-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .deferred-generate-btn {
   padding: 8px 18px;
-  background: #ff9800;
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  font-size: 14px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--arc-300) 22%, transparent),
+    color-mix(in srgb, var(--arc-400) 30%, transparent)
+  );
+  color: var(--text-primary);
+  border: 1px solid color-mix(in srgb, var(--arc-300) 50%, transparent);
+  border-radius: 8px;
+  font-size: 0.875rem;
   cursor: pointer;
   font-weight: 600;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+.deferred-generate-btn:hover {
+  border-color: var(--arc-300);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--arc-300) 25%, transparent);
 }
 
-.deferred-generate-btn:hover {
-  background: #f57c00;
+.deferred-discard-btn {
+  padding: 7px 14px;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  font-weight: 500;
+  transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
+}
+.deferred-discard-btn:hover {
+  border-color: color-mix(in srgb, var(--text-primary) 32%, transparent);
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  color: var(--text-primary);
+}
+
+/* ── "放弃当前生成" confirm dialog ─────────────────────────────────────
+   Teleported to body. Uses theme tokens so it adapts across all 4 themes
+   without per-theme overrides. */
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  /* Lighter than 0.55 so the dialog reads as "card on top" instead of
+     "dark hole on darker hole". 0.42 still dims the studio surface enough
+     to clearly indicate focus without crushing contrast. */
+  background: rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+}
+
+/* Dialog surface — glass-bg-light alone is too translucent on a dark overlay,
+   so we layer a champagne arc-300 tint on top to lift the surface and give it
+   warmth. The gradient + inset highlight + stronger arc border make the panel
+   read as a card. Pearl theme: arc tint blends with the near-white glass to a
+   soft warm cream — still legible. */
+.confirm-dialog {
+  width: min(460px, 100%);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--arc-300) 14%, var(--glass-bg-light)),
+      color-mix(in srgb, var(--arc-400) 7%, var(--glass-bg-light))
+    );
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  border: 1px solid color-mix(in srgb, var(--arc-300) 38%, var(--border-glass));
+  border-radius: 16px;
+  padding: 22px 24px 18px;
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 color-mix(in srgb, var(--arc-300) 22%, transparent);
+  color: var(--text-primary);
+}
+
+.confirm-title {
+  margin: 0 0 10px;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-primary);
+}
+
+.confirm-message {
+  margin: 0 0 22px;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.confirm-btn {
+  padding: 8px 18px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease, color 150ms ease, box-shadow 150ms ease;
+}
+
+.confirm-btn-ghost {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border-glass);
+}
+.confirm-btn-ghost:hover {
+  color: var(--text-primary);
+  border-color: color-mix(in srgb, var(--text-primary) 32%, transparent);
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+}
+
+.confirm-btn-primary {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--arc-300) 24%, transparent),
+    color-mix(in srgb, var(--arc-400) 32%, transparent)
+  );
+  color: var(--text-primary);
+  border: 1px solid color-mix(in srgb, var(--arc-300) 55%, transparent);
+}
+.confirm-btn-primary:hover {
+  border-color: var(--arc-300);
+  box-shadow: 0 0 22px color-mix(in srgb, var(--arc-300) 28%, transparent);
+}
+
+.confirm-fade-enter-active,
+.confirm-fade-leave-active {
+  transition: opacity 160ms ease;
+}
+.confirm-fade-enter-active .confirm-dialog,
+.confirm-fade-leave-active .confirm-dialog {
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.confirm-fade-enter-from,
+.confirm-fade-leave-to {
+  opacity: 0;
+}
+.confirm-fade-enter-from .confirm-dialog,
+.confirm-fade-leave-to .confirm-dialog {
+  transform: translateY(8px) scale(0.98);
 }
 @keyframes final-video-loading {
   0% { transform: translateX(-120%); }
