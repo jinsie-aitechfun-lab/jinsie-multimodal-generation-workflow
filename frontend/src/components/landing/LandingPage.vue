@@ -61,10 +61,10 @@
             <span class="hero-title-rest">AI Video Studio</span>
           </h1>
           <p class="hero-subtitle">
-            把故事灵感转化为绘本风视频作品
+            从故事创意到视频成片的 AI 创作工作台
           </p>
           <p class="hero-subtitle hero-subtitle-secondary">
-            从故事构想到绘本分镜，再到配音与成片，让你的创意在温柔的光里被看见。
+            当前版本以绘本风故事视频为示例，打通故事生成、分镜设计、画面审核、配音字幕与视频合成的完整工作流。
           </p>
 
           <div class="hero-cta-row">
@@ -105,7 +105,7 @@
                   <path d="M12 6.5v13"/>
                 </svg>
               </div>
-              <div class="hwi-label">Picture-book<br/>Scenes</div>
+              <div class="hwi-label">Storyboard</div>
             </div>
             <span class="hwi-arrow" aria-hidden="true">→</span>
             <div class="hwi-item">
@@ -377,6 +377,13 @@
           </div>
 
           <div class="case-meta">
+            <div class="case-meta-info" aria-hidden="true">
+              <span class="case-meta-duration">60s</span>
+              <span class="case-meta-dot">·</span>
+              <span>画面风格</span>
+              <span class="case-meta-dot">·</span>
+              <span>AI 生成</span>
+            </div>
             <div class="case-tag-row">
               <span
                 v-for="tag in caseItem.tags"
@@ -466,12 +473,12 @@ function scrollTo(id: string) {
 // sync at the label level. Internal step ids are server-side keys but only
 // label/desc surface in the UI.
 const workflowSteps = [
-  { id: 'story',      title: '故事生成', desc: '根据主题生成儿童故事' },
+  { id: 'story',      title: '故事生成', desc: '根据主题生成故事内容' },
   { id: 'storyboard', title: '分镜设计', desc: '拆解镜头与叙事节奏' },
   { id: 'images',     title: '画面生成', desc: '生成候选图并支持审核' },
   { id: 'voice',      title: '配音旁白', desc: '生成旁白音频' },
   { id: 'subtitles',  title: '字幕生成', desc: '生成时间轴字幕' },
-  { id: 'video',      title: '视频合成', desc: '输出最终绘本风视频' },
+  { id: 'video',      title: '视频合成', desc: '输出最终成片视频' },
 ]
 
 // Cinematic poster cards. Each case has its own illustrated thumbnail
@@ -501,14 +508,14 @@ const caseList: CaseItem[] = [
     id: 'forest',
     title: '森林里的小伙伴',
     subtitle: '原创亲子故事',
-    tags: ['绘本风', '亲子'],
+    tags: ['插画风', '亲子'],
     tone: 'forest',
   },
   {
     id: 'ocean',
     title: '小蝌蚪的冒险',
     subtitle: '池塘里的成长',
-    tags: ['儿童故事', '成长'],
+    tags: ['原创故事', '成长'],
     tone: 'ocean',
   },
 ]
@@ -1275,18 +1282,24 @@ function starStyle(i: number) {
 .landing-section {
   position: relative;
   z-index: 1;
-  padding: 56px 24px 72px;
+  /* Tighter vertical rhythm — sections now sit ~40–56px apart instead of
+     the earlier ~72px gap. Page reads as a connected product flow rather
+     than a long magazine spread. */
+  padding: 40px 24px 48px;
   max-width: 1100px;
   margin: 0 auto;
 }
-/* On narrow / scaled-down viewports, shrink the top gap so the
-   Workflow section sits ~80-120px below the hero, not pushed far down. */
 @media (max-width: 1200px) {
-  .landing-section { padding-top: 40px; }
+  .landing-section { padding: 32px 24px 40px; }
 }
 @media (max-width: 960px) {
-  .landing-section { padding-top: 32px; }
+  .landing-section { padding: 28px 24px 36px; }
 }
+/* Section title block also gets a smaller bottom gap — reduces the empty
+   space between the title and the rail/grid beneath. */
+.landing .section-title { margin-bottom: 32px; }
+/* Footer banner: pull closer to the cases grid. */
+.landing-foot { padding: 24px 24px 56px; }
 
 .section-eyebrow {
   display: flex;
@@ -1703,6 +1716,29 @@ function starStyle(i: number) {
   transform: translateX(2px);
 }
 
+/* ── Case video meta line ──
+   Small chip-style metadata under the poster (e.g. "60s · 绘本风 · AI 生成")
+   that signals the cards are video works, not flat illustrations. Subtle
+   on dark themes so the existing approved card composition is preserved. */
+.case-meta-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: color-mix(in srgb, var(--text-secondary) 80%, transparent);
+  margin-bottom: 4px;
+}
+.case-meta-info .case-meta-duration {
+  font-weight: 700;
+  color: color-mix(in srgb, var(--arc-300) 92%, transparent);
+  letter-spacing: 0.06em;
+}
+.case-meta-info .case-meta-dot {
+  color: color-mix(in srgb, var(--text-muted) 60%, transparent);
+}
+
 /* ── Reduced motion ──
    Disable every decorative motion when the user has requested less motion.
    Layout stays intact; only animations are stopped. CTA hover still works
@@ -1745,37 +1781,93 @@ function starStyle(i: number) {
    DOM classes; specificity is enough to win over base rules.
    Dark themes (gold/blue/purple) are untouched.
 ═══════════════════════════════════════════════════════════ */
-/* Background decorative layers — gentler on a light surface */
+
+/* ─ Defensive reset against browser-extension CSS injection.
+   At least one extension (observed: Caoliao / Monica / Immersive
+   Translate on this user) injects styles targeting
+   `:root[data-theme="pearl"]` directly — it sets `height: 52px` on
+   html plus a dark linear-gradient background, which tile-paints
+   horizontal sawtooth stripes across the viewport.
+   Force the html element back to natural sizing and paint the same
+   cream as `.landing`'s base colour, so:
+     · the extension's height/background injections are overridden
+     · the default body margin (8px) doesn't reveal a white canvas
+       strip at the viewport edges. */
+:root[data-theme="pearl"] {
+  height: auto !important;
+  background: #faf3e4 !important;
+}
+
+/* ─ Page surface — warm paper (left) + ice-morning mist (right) ─
+   Restored asymmetric gradient. The previous uniform cream variant kept
+   the brand half clean but left the illustration's blue sky orphaned —
+   a clear vertical seam where blue clouds met cream paper. Now the
+   right side of the page softly carries an ice-blue mist that picks up
+   the same blue from the illustration, so the figure dissolves into the
+   page instead of sitting on top of it. */
+:root[data-theme="pearl"] .landing {
+  background-color: #faf3e4;
+  background-image:
+    /* Ice-blue morning mist — sized HUGE with falloff all the way to
+       100% so it has no perceptible boundary. */
+    radial-gradient(ellipse 90% 100% at 82% 30%, rgba(196, 220, 238, 0.48) 0%, transparent 100%),
+    /* Warm cream halo — top-left. */
+    radial-gradient(ellipse 70% 70% at 18% 18%, rgba(252, 240, 210, 0.50) 0%, transparent 100%),
+    /* Soft warm wash at the bottom-center. */
+    radial-gradient(ellipse 90% 60% at 48% 100%, rgba(247, 232, 196, 0.36) 0%, transparent 100%),
+    /* Diagonal: warm cream (left) → soft ice mist (right). */
+    linear-gradient(125deg, #fffaf0 0%, #f8f3e2 38%, #e9f2fb 100%);
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+
+/* Background decorative layers — gentler on a light surface. */
 :root[data-theme="pearl"] .landing .bg-glow-a {
   background: radial-gradient(
     circle,
-    rgba(214, 179, 90, 0.30) 0%,
-    transparent 62%
+    rgba(238, 204, 130, 0.24) 0%,
+    transparent 64%
   );
-  opacity: 0.50;
+  opacity: 0.42;
 }
 :root[data-theme="pearl"] .landing .bg-glow-b {
   background: radial-gradient(
     circle,
-    rgba(150, 192, 220, 0.34) 0%,
-    transparent 62%
+    rgba(190, 218, 240, 0.30) 0%,
+    transparent 64%
   );
-  opacity: 0.56;
+  opacity: 0.46;
 }
 :root[data-theme="pearl"] .landing .bg-ambient {
   background:
-    radial-gradient(circle at 30% 22%, rgba(214,179,90,0.10) 0%, transparent 42%),
-    radial-gradient(circle at 78% 78%, rgba(140,180,220,0.12) 0%, transparent 44%);
+    radial-gradient(circle at 30% 22%, rgba(214,179,90,0.06) 0%, transparent 42%),
+    radial-gradient(circle at 78% 78%, rgba(170,200,224,0.08) 0%, transparent 44%);
 }
 :root[data-theme="pearl"] .landing .bg-grid {
-  background-image:
-    linear-gradient(to right,  rgba(184,132,62,0.06) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(184,132,62,0.06) 1px, transparent 1px);
-  opacity: 0.42;
+  /* Hide the 1px gold grid on pearl. On a near-white surface the grid
+     lines anti-alias unevenly and read as faint jagged hatching along
+     the left margin. Dark themes keep their grid via the base rule. */
+  display: none;
 }
+/* Force GPU compositing on the soft blur layers so their animated drift
+   doesn't show micro-edge artifacts at low alpha. */
+:root[data-theme="pearl"] .landing .bg-glow-a,
+:root[data-theme="pearl"] .landing .bg-glow-b,
+:root[data-theme="pearl"] .landing .bg-ambient {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  will-change: transform;
+}
+/* Remove the starfield entirely on pearl. On a near-white paper surface
+   the 1-3px dots + their box-shadow halo anti-alias as faint rectangles,
+   and the deterministic golden-ratio layout puts several of them near
+   the left edge in a near-vertical column — which read as a sawtooth
+   strip running down the left margin. Dark themes still get the stars
+   via the base rule; the new `.landing::after` morning-light drift now
+   covers the "atmospheric motion" duty on pearl. */
+:root[data-theme="pearl"] .landing .bg-stars,
 :root[data-theme="pearl"] .landing .bg-stars span {
-  background: rgba(184, 132, 62, 0.28);
-  box-shadow: 0 0 4px rgba(184, 132, 62, 0.18);
+  display: none !important;
 }
 
 /* Top-right Enter Studio — pearl glass pill */
@@ -1808,65 +1900,81 @@ function starStyle(i: number) {
   );
 }
 :root[data-theme="pearl"] .landing .hero-badge-top {
-  color: #8b6722;
-  text-shadow: 0 0 10px rgba(214, 179, 90, 0.32);
+  /* Higher-grade champagne — less mustard, more brushed copper.
+     text-shadow removed: dark-theme glow on a paper surface looks dirty. */
+  color: #b9904f;
+  text-shadow: none;
 }
 :root[data-theme="pearl"] .landing .hero-badge-sub {
-  color: rgba(80, 58, 22, 0.60);
+  color: rgba(46, 43, 39, 0.62);
 }
 :root[data-theme="pearl"] .landing .hero-title-brand {
   background: linear-gradient(
     135deg,
-    #b8843e 0%,
-    #c89a55 50%,
+    #b9904f 0%,
+    #c49a58 55%,
     #d6b06a 100%
   );
   -webkit-background-clip: text;
           background-clip: text;
 }
+/* Tighter title block — "Jinsie" and "AI Video Studio" read as ONE brand
+   wordmark on pearl instead of two visually disjoint lines. */
+:root[data-theme="pearl"] .landing .hero-title {
+  gap: 2px;
+  margin-bottom: 22px;
+}
 :root[data-theme="pearl"] .landing .hero-title-rest {
-  color: #2F2D28;
+  color: #1f1d19;
+  text-shadow: none;
+  /* Bump rest from 0.58em → 0.74em so the product name "AI Video Studio"
+     reads as primary copy, not a small caption under "Jinsie". */
+  font-size: 0.74em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 :root[data-theme="pearl"] .landing .hero-subtitle {
-  color: rgba(47, 45, 40, 0.68);
+  color: rgba(46, 43, 39, 0.82);
+  font-weight: 500;
 }
 
-/* Hero primary CTA — deep champagne instead of black glass */
+/* Hero primary CTA — deeper champagne so it reads as the focal point on
+   a pale paper page. Larger padding + font on pearl so it owns the first
+   fold as the page's primary action. Cream ink on antique gold. */
 :root[data-theme="pearl"] .landing .hero-primary {
-  background: linear-gradient(
-    180deg,
-    rgba(255, 252, 240, 0.96) 0%,
-    rgba(232, 200, 130, 0.94) 100%
-  );
-  color: rgba(70, 48, 18, 0.96);
-  border-color: rgba(190, 148, 54, 0.50);
+  background: linear-gradient(180deg, #c89a55 0%, #a07332 100%);
+  color: #fff7e2;
+  border-color: rgba(120, 86, 30, 0.55);
+  padding: 15px 32px;
+  font-size: 1rem;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.85),
-    inset 0 -1px 0 rgba(184, 132, 62, 0.16),
-    0 10px 26px rgba(140, 100, 40, 0.20),
-    0 0 18px rgba(214, 179, 90, 0.14);
+    inset 0 1px 0 rgba(255, 248, 220, 0.36),
+    inset 0 -1px 0 rgba(80, 56, 18, 0.22),
+    0 14px 30px rgba(120, 86, 30, 0.28);
 }
 :root[data-theme="pearl"] .landing .hero-primary:hover {
-  border-color: rgba(190, 148, 54, 0.66);
+  border-color: rgba(120, 86, 30, 0.72);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.92),
-    0 14px 32px rgba(140, 100, 40, 0.26),
-    0 0 26px rgba(214, 179, 90, 0.24);
+    inset 0 1px 0 rgba(255, 248, 220, 0.46),
+    0 16px 34px rgba(120, 86, 30, 0.34),
+    0 0 22px rgba(214, 170, 88, 0.30);
 }
 :root[data-theme="pearl"] .landing .hero-primary-icon {
-  color: #b8843e;
+  color: #fff3d0;
 }
 
-/* Hero secondary — light glass outline */
+/* Hero secondary — soft paper outline, no dark glow */
 :root[data-theme="pearl"] .landing .hero-secondary {
-  color: #5a3f15;
-  background: rgba(255, 255, 255, 0.42);
-  border-color: rgba(120, 100, 70, 0.28);
+  color: #4a4032;
+  background: rgba(255, 255, 255, 0.55);
+  border-color: rgba(151, 132, 96, 0.25);
+  box-shadow: none;
 }
 :root[data-theme="pearl"] .landing .hero-secondary:hover {
-  border-color: rgba(190, 148, 54, 0.55);
-  color: #8b6722;
-  background: rgba(255, 255, 255, 0.62);
+  border-color: rgba(177, 132, 57, 0.48);
+  color: #6e4f1c;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 6px 18px rgba(177, 132, 57, 0.10);
 }
 
 :root[data-theme="pearl"] .landing .hero-flow-path-base {
@@ -1888,19 +1996,41 @@ function starStyle(i: number) {
    bright halo planet), cream-parchment book, light gold dust, warm
    brown mouse + text. The whole right column should feel like an
    illustrated picture-book spread laid on a designer's desk. */
-/* Pearl-theme: workflow icon strip */
+/* Pearl-theme: workflow icon strip — caption tier. The dedicated Workflow
+   section below carries the real pipeline; this strip is a brand hint.
+   Colours are deepened so the strip stays readable on the cream surface
+   without becoming visually heavy. */
+:root[data-theme="pearl"] .landing .hero-workflow-icons {
+  margin-top: 22px;
+  gap: 10px;
+  opacity: 1;
+}
 :root[data-theme="pearl"] .landing .hwi-icon {
-  color: #b8843e;
-  filter: drop-shadow(0 0 6px rgba(214, 179, 90, 0.32));
+  width: 18px;
+  height: 18px;
+  color: rgba(181, 138, 58, 0.76);
+  filter: none;
+  transition: color 0.18s;
 }
 :root[data-theme="pearl"] .landing .hwi-label {
-  color: rgba(80, 58, 22, 0.78);
+  font-size: 0.625rem;
+  letter-spacing: 0.18em;
+  color: #6F6048;
+  transition: color 0.18s;
 }
 :root[data-theme="pearl"] .landing .hwi-arrow {
-  color: rgba(190, 148, 54, 0.6);
+  font-size: 0.8125rem;
+  color: rgba(181, 138, 58, 0.42);
+}
+/* Hover: subtle champagne pop on the label + icon for the row item. */
+:root[data-theme="pearl"] .landing .hwi-item:hover .hwi-icon {
+  color: #b9803a;
+}
+:root[data-theme="pearl"] .landing .hwi-item:hover .hwi-label {
+  color: #4a3f2a;
 }
 :root[data-theme="pearl"] .landing .hero-subtitle-secondary {
-  color: rgba(80, 58, 22, 0.62);
+  color: rgba(58, 49, 38, 0.62);
 }
 
 /* Pearl-theme: swap which illustration is visible. The dark variant is
@@ -1912,13 +2042,40 @@ function starStyle(i: number) {
 /* Pearl: hero illustration as a soft paper-style background visual.
    Quieter than the gold dark theme — readable but not the focal element.
    A dedicated light-theme illustration may replace this later. */
+/* Pearl: the cream-paper PNG already has feathered transparent edges on
+   the left and right, so no horizontal mask is needed. Only add a soft
+   top + bottom feather so the upper sky and lower book don't end on
+   sharp horizontal cuts.
+   Size inherits from base scoped `.hero-visual` (same as dark theme).
+   Composite is explicitly reset (1-layer + default add / source-over)
+   because the inherited `intersect` / `source-in` from base would
+   drop a single-layer mask on WebKit. */
 :root[data-theme="pearl"] .landing .hero-storybook-art {
-  filter: brightness(1.04) contrast(0.88) saturate(0.82);
-  opacity: 0.55;
-  mix-blend-mode: normal;
+  mask-image:
+    linear-gradient(to bottom, transparent 0%, #000 12%, #000 88%, transparent 100%) !important;
+  mask-composite: add !important;
+  mask-repeat: no-repeat !important;
+  -webkit-mask-image:
+    linear-gradient(to bottom, transparent 0%, #000 12%, #000 88%, transparent 100%) !important;
+  -webkit-mask-composite: source-over !important;
+  -webkit-mask-repeat: no-repeat !important;
 }
-/* Very light cream wash — just enough to soften any rectangular edges
-   into the pearl surface without obscuring the illustration. */
+/* Stage glow BEHIND the illustration — pure warm champagne halo. Stops
+   extend to 100% so neither radial has a perceptible inner falloff edge
+   (previous 68%/72% stops were producing a soft elliptical boundary). */
+:root[data-theme="pearl"] .landing .hero-visual::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 62% 56% at 58% 46%, rgba(255, 236, 188, 0.52) 0%, transparent 100%),
+    radial-gradient(ellipse 46% 40% at 72% 64%, rgba(248, 220, 162, 0.34) 0%, transparent 100%);
+  filter: blur(32px);
+}
+/* Bottom mist is minimal now — just a hint so the figure doesn't end on
+   a hard rectangular edge. Previous wash was hiding the video cards. */
 :root[data-theme="pearl"] .landing .hero-visual::after {
   content: '';
   position: absolute;
@@ -1927,8 +2084,9 @@ function starStyle(i: number) {
   pointer-events: none;
   background: linear-gradient(
     180deg,
-    rgba(255, 252, 244, 0.18) 0%,
-    rgba(255, 252, 244, 0.22) 100%
+    transparent 0%,
+    transparent 82%,
+    rgba(255, 252, 244, 0.14) 100%
   );
 }
 /* (Pearl ::before override removed — no fade overlay on either theme.) */
@@ -1939,68 +2097,83 @@ function starStyle(i: number) {
    Posters get lighter tone-specific backdrops so the warm-gold SVG ink
    reads on the page; ribbon + overlay text switch to warm brown tones. */
 :root[data-theme="pearl"] .landing .case-card {
-  background: rgba(255, 255, 255, 0.62);
-  border-color: rgba(190, 150, 82, 0.22);
+  background: rgba(255, 252, 244, 0.74);
+  border-color: rgba(178, 152, 105, 0.20);
+  border-radius: 22px;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.92),
-    0 18px 44px rgba(120, 104, 72, 0.12);
+    inset 0 1px 0 rgba(255, 255, 255, 0.94),
+    0 18px 42px rgba(92, 76, 46, 0.08);
 }
 :root[data-theme="pearl"] .landing .case-card::before {
   background: linear-gradient(
     90deg,
     transparent,
-    rgba(184, 132, 62, 0.40),
+    rgba(190, 150, 82, 0.32),
     transparent
   );
 }
 :root[data-theme="pearl"] .landing .case-card:hover {
-  border-color: rgba(190, 148, 54, 0.44);
+  border-color: rgba(190, 150, 82, 0.38);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.98),
-    0 24px 54px rgba(120, 104, 72, 0.20),
-    0 0 26px rgba(214, 179, 90, 0.22);
+    0 24px 50px rgba(92, 76, 46, 0.14),
+    0 0 24px rgba(238, 204, 130, 0.22);
 }
-/* Per-tone pearl poster backdrops — soft pastel scenes, warm gold ink. */
+/* Per-tone pearl poster backdrops — clean watercolor scenes with a hint
+   more saturation than v1 so they don't read as muddy beige. SVG "ink"
+   inherits `currentColor`, so the per-tone color line below controls the
+   illustration tint over each backdrop. */
 :root[data-theme="pearl"] .landing .case-poster {
-  color: #8b6722;
+  color: #a07a35;
 }
 :root[data-theme="pearl"] .landing .case-poster--moon {
   background: linear-gradient(
     180deg,
-    #e9e7ee 0%,
-    #d8d4e0 60%,
-    #c8c3d2 100%
+    #eef0f6 0%,
+    #d8dbeb 60%,
+    #c2c8de 100%
   );
+}
+:root[data-theme="pearl"] .landing .case-poster--moon .case-svg {
+  color: #5d6a8a;
 }
 :root[data-theme="pearl"] .landing .case-poster--forest {
   background: linear-gradient(
     180deg,
-    #f4ecd8 0%,
-    #e6d6b0 100%
+    #f6ecce 0%,
+    #e6d29a 100%
   );
+}
+:root[data-theme="pearl"] .landing .case-poster--forest .case-svg {
+  color: #8a6a2a;
 }
 :root[data-theme="pearl"] .landing .case-poster--ocean {
   background: linear-gradient(
     180deg,
-    #dbe9ee 0%,
-    #c0d6df 100%
+    #dfeaf2 0%,
+    #b9d3e2 100%
   );
 }
-/* On pearl, the bottom overlay must lighten (not darken) so it doesn't
-   muddy the soft poster. Switch to a warm cream wash. */
+:root[data-theme="pearl"] .landing .case-poster--ocean .case-svg {
+  color: #43718e;
+}
+/* On pearl, flip the overlay from a dark wash to a soft cream paper fade,
+   and switch title/subtitle to dark brown ink so they read on light. */
 :root[data-theme="pearl"] .landing .case-overlay {
   background: linear-gradient(
     180deg,
     transparent 0%,
-    rgba(70, 48, 18, 0.18) 60%,
-    rgba(70, 48, 18, 0.50) 100%
+    rgba(255, 252, 244, 0.42) 55%,
+    rgba(255, 252, 244, 0.86) 100%
   );
 }
 :root[data-theme="pearl"] .landing .case-overlay-subtitle {
-  color: rgba(255, 245, 220, 0.92);
+  color: rgba(84, 70, 48, 0.62);
+  text-shadow: none;
 }
 :root[data-theme="pearl"] .landing .case-overlay-title {
-  color: rgba(255, 248, 232, 0.98);
+  color: #2f2a22;
+  text-shadow: none;
 }
 /* REFERENCE ribbon on pearl: bright cream pill */
 :root[data-theme="pearl"] .landing .case-ribbon {
@@ -2016,58 +2189,186 @@ function starStyle(i: number) {
     0 4px 14px rgba(140, 100, 40, 0.18),
     0 0 16px rgba(214, 179, 90, 0.30);
 }
+/* Play badge — always faintly visible on pearl so each card reads as a
+   playable video work, not a flat illustration. Strengthens on hover. */
 :root[data-theme="pearl"] .landing .case-play {
-  color: rgba(255, 252, 240, 0.98);
-  filter: drop-shadow(0 0 12px rgba(140, 100, 40, 0.55));
+  color: #6e4f1c;
+  filter: drop-shadow(0 0 10px rgba(238, 204, 130, 0.55));
+  opacity: 0.34;
+  transform: translate(-50%, -50%) scale(0.92);
+}
+:root[data-theme="pearl"] .landing .case-card:hover .case-play {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
 }
 :root[data-theme="pearl"] .landing .case-tag {
-  background: rgba(255, 255, 255, 0.66);
-  border-color: rgba(190, 148, 54, 0.36);
-  color: #8b6722;
+  background: rgba(246, 229, 185, 0.36);
+  border-color: rgba(177, 132, 57, 0.28);
+  color: #6e4f1c;
 }
+/* "进入工作台 →" — a clearer, more pill-like link so it reads as the
+   card's primary action without competing with the hero CTA. */
 :root[data-theme="pearl"] .landing .case-cta {
-  color: #b8843e;
+  color: #8a6a2a;
+  font-weight: 600;
+  letter-spacing: 0.06em;
 }
 :root[data-theme="pearl"] .landing .case-cta:hover {
-  color: #8b6722;
+  color: #6e4f1c;
 }
 
-/* Footer CTA card — pearl glass per spec */
+/* Footer CTA card — paper glass per spec */
 :root[data-theme="pearl"] .landing .foot-content {
-  background: rgba(255, 255, 255, 0.58);
-  border-color: rgba(190, 150, 82, 0.22);
+  background: rgba(255, 252, 244, 0.66);
+  border-color: rgba(178, 152, 105, 0.20);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.92),
-    0 20px 60px rgba(120, 104, 72, 0.12);
+    inset 0 1px 0 rgba(255, 255, 255, 0.94),
+    0 18px 48px rgba(92, 76, 46, 0.08);
 }
 :root[data-theme="pearl"] .landing .foot-content::before {
   background: linear-gradient(
     90deg,
     transparent,
-    rgba(184, 132, 62, 0.42),
+    rgba(190, 150, 82, 0.36),
     transparent
   );
 }
 :root[data-theme="pearl"] .landing .foot-copy {
-  color: #2F2D28;
+  color: #2e2b27;
 }
 :root[data-theme="pearl"] .landing .foot-cta {
-  background: linear-gradient(
-    180deg,
-    rgba(255, 252, 240, 0.96) 0%,
-    rgba(232, 200, 130, 0.94) 100%
-  );
-  color: rgba(70, 48, 18, 0.96);
-  border-color: rgba(190, 148, 54, 0.50);
+  background: linear-gradient(180deg, #c89a55 0%, #a07332 100%);
+  color: #fff7e2;
+  border-color: rgba(120, 86, 30, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 248, 220, 0.36),
+    0 12px 26px rgba(120, 86, 30, 0.26);
 }
 :root[data-theme="pearl"] .landing .foot-cta:hover {
-  border-color: rgba(190, 148, 54, 0.66);
-  box-shadow: 0 0 26px rgba(214, 179, 90, 0.26);
+  border-color: rgba(120, 86, 30, 0.72);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 248, 220, 0.46),
+    0 14px 30px rgba(120, 86, 30, 0.32),
+    0 0 22px rgba(214, 170, 88, 0.30);
+}
+
+/* ── Section headers ── */
+:root[data-theme="pearl"] .landing .section-eyebrow {
+  color: #b9904f;
+}
+:root[data-theme="pearl"] .landing .eyebrow-line {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(177, 132, 57, 0.40),
+    transparent
+  );
+}
+:root[data-theme="pearl"] .landing .section-title {
+  color: #2e2b27;
+  text-shadow: none;
+}
+
+/* ── Workflow rail — light paper circles with champagne ink. Sized up so
+   the technical chain is a clear, readable strip — not a row of small
+   faded dots. ── */
+:root[data-theme="pearl"] .landing .workflow-node {
+  /* 6 nodes × 148 + 5 links × 28 = 1028 < 1052 (section content width
+     at max-width 1100 − 2×24px padding). Earlier 160/180 was overflowing
+     by ~48px and forcing the last node to wrap onto a second row. */
+  flex: 0 0 148px;
+  max-width: 168px;
+  padding: 12px 8px;
+}
+:root[data-theme="pearl"] .landing .workflow-node-orb {
+  width: 56px;
+  height: 56px;
+  background: rgba(255, 252, 244, 0.82);
+  border: 1.5px solid rgba(177, 132, 57, 0.38);
+  color: #8a6a2a;
+  font-size: 0.8125rem;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    0 8px 20px rgba(92, 76, 46, 0.08);
+}
+:root[data-theme="pearl"] .landing .workflow-node:hover .workflow-node-orb {
+  border-color: rgba(177, 132, 57, 0.62);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.98),
+    0 10px 22px rgba(92, 76, 46, 0.14),
+    0 0 22px rgba(238, 204, 130, 0.34);
+}
+:root[data-theme="pearl"] .landing .workflow-node-title {
+  color: #1f1d19;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+:root[data-theme="pearl"] .landing .workflow-node-desc {
+  color: rgba(74, 64, 50, 0.70);
+  font-size: 0.75rem;
+}
+:root[data-theme="pearl"] .landing .workflow-link {
+  flex-basis: 28px;
+  margin-top: 42px;
+  height: 1.5px;
+  background: linear-gradient(
+    90deg,
+    rgba(177, 132, 57, 0.55),
+    rgba(177, 132, 57, 0.18)
+  );
 }
 
 /* ThemeSwitcher dropdown — match pearl panel border for the down-flipped
    arrow added in the :deep override above. */
 :root[data-theme="pearl"] .ts-root .ts-panel::after {
   border-bottom-color: rgba(255, 255, 255, 0.96);
+}
+
+/* Pearl: case meta line — slightly warmer than the dark default. */
+:root[data-theme="pearl"] .landing .case-meta-info {
+  color: rgba(74, 64, 50, 0.60);
+}
+:root[data-theme="pearl"] .landing .case-meta-info .case-meta-duration {
+  color: #8a6a2a;
+}
+:root[data-theme="pearl"] .landing .case-meta-info .case-meta-dot {
+  color: rgba(74, 64, 50, 0.36);
+}
+
+/* ════════════════════════════════════════════════════════════════
+   Pearl-only — morning light drift.
+   A very faint warm-light blob anchored to the viewport that slowly
+   floats from upper-left toward upper-right. Reads as soft "sunlight
+   moving through a window" — supports the Morning Light theme name
+   without becoming animated decoration the user has to look at.
+
+   - position: fixed → viewport-anchored, no scroll jank
+   - z-index: 0 → behind every content surface (which all sit at z 1+)
+   - pointer-events: none → never blocks clicks on ThemeSwitcher / CTAs
+   - opacity stays in the 0.16–0.28 effective range
+   - prefers-reduced-motion: reduce → animation removed
+═══════════════════════════════════════════════════════════════════ */
+:root[data-theme="pearl"] .landing::after {
+  content: '';
+  position: fixed;
+  inset: -10%;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 38% 50% at 26% 16%, rgba(255, 240, 198, 0.34) 0%, transparent 100%),
+    radial-gradient(ellipse 30% 42% at 72% 22%, rgba(220, 232, 246, 0.22) 0%, transparent 100%);
+  animation: pearl-morning-drift 16s ease-in-out infinite alternate;
+  transform: translateZ(0);
+  will-change: transform, opacity;
+}
+@keyframes pearl-morning-drift {
+  0%   { transform: translate3d(0, 0, 0)         scale(1);    opacity: 0.85; }
+  50%  { transform: translate3d(2.2vw, -1vh, 0)  scale(1.04); opacity: 1;    }
+  100% { transform: translate3d(-1.2vw, 1vh, 0)  scale(1.02); opacity: 0.78; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme="pearl"] .landing::after {
+    animation: none;
+  }
 }
 </style>
