@@ -1330,7 +1330,7 @@ select.input {
   font-size: 0.9375rem;
   font-weight: 600;
   letter-spacing: 0.04em;
-  color: var(--primary-action-text);
+  color: var(--arc-300);
   border: 1px solid var(--primary-action-border);
   background: var(--primary-action-bg);
   backdrop-filter: blur(14px) saturate(140%);

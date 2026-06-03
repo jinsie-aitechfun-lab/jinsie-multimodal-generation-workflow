@@ -28,7 +28,7 @@
         </div>
 
         <button
-          v-for="key in themeOrder"
+          v-for="key in visibleThemeOrder"
           :key="key"
           role="option"
           :aria-selected="theme === key"
@@ -67,7 +67,7 @@
 import { ref, type Directive } from 'vue'
 import { useTheme, type ThemeKey } from '../../composables/useTheme'
 
-const { theme, themeMeta, themes, themeOrder, setTheme } = useTheme()
+const { theme, themeMeta, themes, visibleThemeOrder, setTheme } = useTheme()
 
 const open = ref(false)
 

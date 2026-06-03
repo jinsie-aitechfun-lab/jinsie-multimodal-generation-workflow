@@ -69,8 +69,15 @@
          LEFT SIDEBAR
     ═══════════════════════════════════ -->
     <aside class="sidebar">
-      <!-- Brand -->
-      <div class="sb-brand" aria-label="Jinsie AI Studio">
+      <!-- Brand — clickable: returns to landing page. Theme is preserved
+           by the module-level useTheme singleton + localStorage. -->
+      <button
+        type="button"
+        class="sb-brand"
+        aria-label="返回首页"
+        title="返回首页"
+        @click="goHome"
+      >
         <div class="sb-brand-hex">
           <svg width="28" height="28" viewBox="0 0 22 22" fill="none">
             <path d="M11 1.5L20.5 6.5V15.5L11 20.5L1.5 15.5V6.5Z"
@@ -85,7 +92,7 @@
           </svg>
         </div>
         <span class="sb-brand-dot"/>
-      </div>
+      </button>
 
       <!-- Navigation -->
       <nav class="sb-nav" role="tablist">
@@ -103,10 +110,19 @@
         </button>
       </nav>
 
-      <!-- Footer: header-actions slot + dev toggle -->
+      <!-- Footer: header-actions slot + dev toggle + identity tag -->
       <div class="sb-footer">
         <slot name="header-actions"/>
         <button v-if="devMode" class="sb-dev-btn" title="Dev mode" @click="$emit('toggle-dev')">⚙</button>
+
+        <!-- Lightweight identity — local-only, no auth / API. -->
+        <div class="sb-identity" aria-label="当前用户">
+          <div class="sb-identity-avatar" aria-hidden="true">J</div>
+          <div class="sb-identity-meta">
+            <div class="sb-identity-name">Jinsie</div>
+            <div class="sb-identity-role">创作者模式</div>
+          </div>
+        </div>
       </div>
     </aside>
 
@@ -133,6 +149,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { animate } from 'animejs'
+import { useRouter } from 'vue-router'
 import ThemeSwitcher from './ThemeSwitcher.vue'
 import { useTheme } from '../../composables/useTheme'
 
@@ -149,6 +166,14 @@ defineEmits<{
 
 // ── Theme (shared composable) ────────────────────
 const { theme: currentTheme, themeMeta } = useTheme()
+
+// ── Router (for brand-logo home navigation) ───────
+// Theme persistence is owned by useTheme (module-level ref + localStorage),
+// so navigating home does not need any extra plumbing here.
+const router = useRouter()
+function goHome() {
+  router.push('/')
+}
 
 // Accent helpers for inline-styled SVG / dynamic styles
 function tc(opacity: number, variant: 'a' | 'b' | 'c' = 'a'): string {
@@ -319,7 +344,7 @@ watch(() => props.modelValue, () => {
   box-shadow: var(--sidebar-shadow, 4px 0 32px rgba(0,0,0,0.55)), inset -1px 0 0 var(--sidebar-border, rgba(245,158,11,0.06));
 }
 
-/* ── Brand ── */
+/* ── Brand (clickable → returns to landing page) ── */
 .sb-brand {
   display: flex;
   flex-direction: column;
@@ -327,6 +352,23 @@ watch(() => props.modelValue, () => {
   gap: 6px;
   margin-bottom: 28px;
   opacity: 0;
+  /* Reset button defaults so it visually matches the previous <div> */
+  border: none;
+  background: transparent;
+  padding: 6px 4px;
+  cursor: pointer;
+  font-family: inherit;
+  border-radius: 12px;
+  transition: filter 0.2s ease, transform 0.2s ease, background 0.2s ease;
+}
+.sb-brand:hover {
+  transform: translateY(-1px);
+  filter: drop-shadow(0 0 14px var(--brand-glow, rgba(245,158,11,0.55)));
+  background: var(--item-hover-bg, rgba(245,158,11,0.06));
+}
+.sb-brand:focus-visible {
+  outline: 1px solid var(--accent-a-solid, var(--arc-300));
+  outline-offset: 2px;
 }
 
 .sb-brand-hex {
@@ -457,6 +499,60 @@ watch(() => props.modelValue, () => {
   transition: color 0.18s, background 0.18s;
 }
 .sb-dev-btn:hover { color: rgba(255,255,255,0.65); background: rgba(255,255,255,0.08); }
+
+/* ── Lightweight identity tag (local-only, no auth) ── */
+.sb-identity {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 8px 6px 4px;
+  width: 100%;
+  text-align: center;
+}
+
+.sb-identity-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--arc-300, #fbbf24);
+  background: color-mix(in srgb, var(--accent-a-solid, #f59e0b) 12%, transparent);
+  border: 1px solid var(--item-active-border, rgba(245,158,11,0.30));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10);
+}
+
+.sb-identity-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  line-height: 1.15;
+}
+
+.sb-identity-name {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.78);
+  letter-spacing: 0.02em;
+}
+
+.sb-identity-role {
+  font-size: 0.5625rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.38);
+}
+
+/* Pearl theme — flip text to dark on white */
+.s-root[data-theme="pearl"] .sb-identity-name { color: rgba(60, 66, 76, 0.85); }
+.s-root[data-theme="pearl"] .sb-identity-role { color: rgba(60, 66, 76, 0.50); }
 
 /* ══════════════════════════════════════════════════
    CONTENT AREA

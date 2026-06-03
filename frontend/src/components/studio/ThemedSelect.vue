@@ -214,6 +214,7 @@ const vClickOutside: Directive<HTMLElement, () => void> = {
   justify-content: space-between;
   gap: 8px;
   padding: 8px 10px;
+  margin-bottom: 10px;
   border-radius: 8px;
   color: var(--text-secondary, rgba(255,255,255,0.72));
   cursor: pointer;

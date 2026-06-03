@@ -74,7 +74,18 @@ export const THEMES: Record<ThemeKey, ThemeMeta> = {
   },
 }
 
+/* Full ordered list of theme keys — keeps CSS / type compatibility for any
+   consumer that still references blue/purple. DO NOT delete entries here:
+   theme definitions in style.css and per-theme overrides still target
+   them. To control which themes are SELECTABLE in the UI, use the
+   VISIBLE_THEME_ORDER list below instead. */
 export const THEME_ORDER: ThemeKey[] = ['gold', 'blue', 'purple', 'pearl']
+
+/* Themes currently surfaced in the landing/studio theme switcher. The
+   blue + purple variants are temporarily hidden until their per-theme
+   illustration assets are ready — the underlying CSS for those themes
+   remains intact and can be re-enabled by listing them here. */
+export const VISIBLE_THEME_ORDER: ThemeKey[] = ['gold', 'pearl']
 
 const STORAGE_KEY = 'studio_theme'
 const DEFAULT_THEME: ThemeKey = 'gold'
@@ -82,7 +93,11 @@ const DEFAULT_THEME: ThemeKey = 'gold'
 function readInitial(): ThemeKey {
   if (typeof window === 'undefined') return DEFAULT_THEME
   const stored = window.localStorage.getItem(STORAGE_KEY) as ThemeKey | null
-  return stored && stored in THEMES ? stored : DEFAULT_THEME
+  if (!stored || !(stored in THEMES)) return DEFAULT_THEME
+  // If a user previously selected a now-hidden theme (blue / purple),
+  // gracefully fall back to the default so the page renders well.
+  if (!VISIBLE_THEME_ORDER.includes(stored)) return DEFAULT_THEME
+  return stored
 }
 
 // Shared singleton state (module-level ref → all components see the same value)
@@ -136,6 +151,7 @@ export function useTheme() {
     themeMeta,
     themes: THEMES,
     themeOrder: THEME_ORDER,
+    visibleThemeOrder: VISIBLE_THEME_ORDER,
     setTheme,
     cycleTheme,
   }

@@ -76,6 +76,7 @@ const props = defineProps<{
   loading: boolean
   refreshingImages?: boolean   // true when image review refresh is running (top bar already covers it)
   cancelRequested?: boolean    // user has clicked "取消生成"; overrides running titles
+  pausedByUser?: boolean       // user explicitly cancelled image refresh — render as "已暂停", not "失败"
   errorMessage?: string
   workflowStatusMessage?: string
   workflowStatusProgress?: number | null
@@ -170,31 +171,47 @@ const progressPct = computed(() => {
 const progressLabel = computed(() => {
   // Cancel state wins over every "running" label so the user doesn't see
   // contradictory progress copy while the runner walks to its next
-  // checkpoint.
+  // checkpoint. pausedByUser is checked BEFORE hasBlockingError because
+  // cancelImageReviewRefresh sets errorMessage="已取消..." which would
+  // otherwise trip the "失败" branch — but a user-initiated pause is not
+  // a failure, and the copy should reflect that.
   if (props.cancelRequested) return '正在取消生成…'
+  if (props.pausedByUser) return `候选图已暂停（${imageAssetCount.value}/${sceneCount.value || '?'}）`
   if (hasBlockingError.value) return `候选图生成失败（${imageAssetCount.value}/${sceneCount.value || '?'}）`
   if (workflowInFlight.value) return '处理中…'
   if (indeterminate.value) return '准备中…'
   if (props.finalVideoUrl) return '已生成'
   if (props.renderInFlight || finalStatus.value === 'rendering') return '视频渲染中'
   if (!sceneCount.value) return '等待 Storyboard'
-  if (!assetsReady.value) return `候选图生成中（${imageAssetCount.value}/${sceneCount.value}）`
+  if (!assetsReady.value) {
+    if (props.refreshingImages) return `候选图生成中（${imageAssetCount.value}/${sceneCount.value}）`
+    if (imageAssetCount.value > 0) return `候选图已暂停（${imageAssetCount.value}/${sceneCount.value}）`
+    return `候选图待生成（0/${sceneCount.value}）`
+  }
   return '等待用户触发渲染'
 })
 
 const placeholderTitle = computed(() => {
   if (props.cancelRequested) return '正在取消生成'
+  if (props.pausedByUser) return '候选图已暂停'
   if (hasBlockingError.value) return '候选图生成失败'
   if (workflowInFlight.value) return '正在生成分镜'
   if (props.renderInFlight || finalStatus.value === 'rendering') return '正在生成视频'
   if (!sceneCount.value) return '等待分镜'
-  if (!assetsReady.value) return '等待候选图生成'
+  if (!assetsReady.value) {
+    if (props.refreshingImages) return '正在生成候选图'
+    if (imageAssetCount.value > 0) return '候选图已暂停'
+    return '候选图待生成'
+  }
   return '等待渲染'
 })
 
 const placeholderDesc = computed(() => {
   if (props.cancelRequested) {
     return '已发送取消请求，等待当前步骤结束后会停止后续生成。'
+  }
+  if (props.pausedByUser) {
+    return '已取消剩余候选图生成。可点击下方「继续生成候选图」恢复，或「放弃当前生成」清空草稿。'
   }
   if (hasBlockingError.value) {
     return blockingErrorMessage.value
@@ -209,7 +226,9 @@ const placeholderDesc = computed(() => {
     return '还没有可用的分镜。请先在「创作故事」页签输入故事主题，并点击「开始创作」生成内容。'
   }
   if (!assetsReady.value) {
-    return '系统正在准备每个场景的候选图，默认图生成后即可直接渲染，也可以手动改选。'
+    if (props.refreshingImages) return '系统正在准备每个场景的候选图，默认图生成后即可直接渲染，也可以手动改选。'
+    if (imageAssetCount.value > 0) return '剩余候选图尚未生成。点击下方「继续生成候选图」可恢复。'
+    return '候选图尚未生成。点击下方「立即生成候选图」开始。'
   }
   if (audioItemCount.value === 0) {
     return '当前缺少音频片段，请先完成音频生成。'
