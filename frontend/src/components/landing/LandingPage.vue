@@ -353,6 +353,66 @@
               <circle cx="100" cy="30" r="1.4" fill="currentColor" fill-opacity="0.7"/>
             </svg>
 
+            <!-- TRAIN: night sky + stars + little train + distant hills -->
+            <svg
+              v-else-if="caseItem.tone === 'train'"
+              viewBox="0 0 320 200"
+              preserveAspectRatio="xMidYMid slice"
+              class="case-svg"
+            >
+              <defs>
+                <linearGradient :id="`case-${caseItem.id}-sky`" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%"   stop-color="currentColor" stop-opacity="0.22"/>
+                  <stop offset="100%" stop-color="currentColor" stop-opacity="0.04"/>
+                </linearGradient>
+              </defs>
+              <rect x="0" y="0" width="320" height="200" :fill="`url(#case-${caseItem.id}-sky)`"/>
+              <!-- Stars scattered across the night sky -->
+              <circle cx="40"  cy="30" r="1.2" fill="currentColor" fill-opacity="0.85"/>
+              <circle cx="90"  cy="18" r="0.8" fill="currentColor" fill-opacity="0.70"/>
+              <circle cx="160" cy="38" r="1.4" fill="currentColor" fill-opacity="0.92"/>
+              <circle cx="220" cy="22" r="0.9" fill="currentColor" fill-opacity="0.75"/>
+              <circle cx="260" cy="44" r="1.1" fill="currentColor" fill-opacity="0.85"/>
+              <circle cx="295" cy="18" r="0.7" fill="currentColor" fill-opacity="0.60"/>
+              <circle cx="120" cy="50" r="0.8" fill="currentColor" fill-opacity="0.70"/>
+              <circle cx="200" cy="70" r="0.6" fill="currentColor" fill-opacity="0.55"/>
+              <!-- Distant hill -->
+              <path d="M 0 132 Q 80 110, 160 124 T 320 120 L 320 200 L 0 200 Z"
+                    fill="currentColor" fill-opacity="0.28"/>
+              <!-- Near hill -->
+              <path d="M 0 160 Q 80 146, 160 156 T 320 152 L 320 200 L 0 200 Z"
+                    fill="currentColor" fill-opacity="0.50"/>
+              <!-- Track line -->
+              <line x1="0" y1="172" x2="320" y2="172"
+                    stroke="currentColor" stroke-width="1" stroke-opacity="0.4"/>
+              <!-- Train silhouette with lit cabin windows -->
+              <g transform="translate(96,142)" fill="currentColor" fill-opacity="0.92">
+                <!-- Engine body -->
+                <rect x="0"  y="6"  width="52" height="14" rx="2"/>
+                <!-- Cabin -->
+                <rect x="44" y="0"  width="14" height="10" rx="1.5"/>
+                <!-- Chimney -->
+                <rect x="6"  y="0"  width="5"  height="6"/>
+                <!-- Lit windows along the side -->
+                <rect x="4"  y="10" width="4"  height="4" fill-opacity="0.55"/>
+                <rect x="12" y="10" width="4"  height="4" fill-opacity="0.55"/>
+                <rect x="20" y="10" width="4"  height="4" fill-opacity="0.55"/>
+                <rect x="28" y="10" width="4"  height="4" fill-opacity="0.55"/>
+                <rect x="36" y="10" width="4"  height="4" fill-opacity="0.55"/>
+                <!-- Wheels -->
+                <circle cx="6"  cy="22" r="3"/>
+                <circle cx="18" cy="22" r="3"/>
+                <circle cx="30" cy="22" r="3"/>
+                <circle cx="46" cy="22" r="3"/>
+              </g>
+              <!-- Sparkle dust trailing behind the train -->
+              <circle cx="80" cy="148" r="1"   fill="currentColor" fill-opacity="0.85"/>
+              <circle cx="70" cy="143" r="0.7" fill="currentColor" fill-opacity="0.60"/>
+              <circle cx="60" cy="151" r="0.8" fill="currentColor" fill-opacity="0.70"/>
+              <circle cx="48" cy="146" r="0.6" fill="currentColor" fill-opacity="0.50"/>
+              <circle cx="36" cy="152" r="0.5" fill="currentColor" fill-opacity="0.40"/>
+            </svg>
+
             <!-- Bottom gradient + title overlay -->
             <div class="case-overlay"></div>
             <div class="case-overlay-text">
@@ -486,7 +546,7 @@ const workflowSteps = [
 // portfolio strip rather than placeholder color blocks. First entry is a
 // fixed Reference Case (经典绘本《小老鼠吃月亮》) so the showcase opens with
 // recognizable provenance.
-type CaseTone = 'moon' | 'forest' | 'ocean'
+type CaseTone = 'moon' | 'forest' | 'ocean' | 'train'
 type CaseItem = {
   id: string
   title: string
@@ -517,6 +577,13 @@ const caseList: CaseItem[] = [
     subtitle: '池塘里的成长',
     tags: ['原创故事', '成长'],
     tone: 'ocean',
+  },
+  {
+    id: 'train',
+    title: '星光小火车',
+    subtitle: '奇幻旅程',
+    tags: ['奇幻故事', '成长'],
+    tone: 'train',
   },
 ]
 
@@ -1420,10 +1487,20 @@ function starStyle(i: number) {
    (routes to /studio) — meta-row "进入工作台 →" is purely affordance signal. */
 .case-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  /* Desktop: explicit 4-column layout so the showcase row reads as a
+     complete portfolio strip on wide viewports instead of leaving a
+     gap at the end. Cards collapse to 2×2 on tablet and 1 column on
+     mobile via the media queries below. */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 22px;
   max-width: 1080px;
   margin: 0 auto;
+}
+@media (max-width: 1100px) {
+  .case-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .case-grid { grid-template-columns: 1fr; }
 }
 
 .case-card {
@@ -1440,9 +1517,9 @@ function starStyle(i: number) {
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--arc-200) 10%, transparent),
     0 14px 32px rgba(0, 0, 0, 0.32);
-  transition: transform 0.26s cubic-bezier(0.2, 0.8, 0.2, 1),
-              border-color 0.22s,
-              box-shadow 0.26s;
+  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1),
+              border-color 0.18s,
+              box-shadow 0.2s;
 }
 /* Top hairline highlight (matches studio card aesthetic) */
 .case-card::before {
@@ -1462,12 +1539,14 @@ function starStyle(i: number) {
   z-index: 2;
 }
 .case-card:hover {
-  transform: translateY(-4px);
-  border-color: color-mix(in srgb, var(--arc-300) 50%, transparent);
+  /* Lighter lift (3px) + slightly brighter border. No extra arc-300
+     glow ring — that was reading as a strong halo on the page; the
+     subtle border + soft shadow expansion alone signals interactivity. */
+  transform: translateY(-3px);
+  border-color: color-mix(in srgb, var(--arc-300) 40%, transparent);
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--arc-200) 18%, transparent),
-    0 28px 56px rgba(0, 0, 0, 0.46),
-    0 0 36px color-mix(in srgb, var(--arc-300) 24%, transparent);
+    inset 0 1px 0 color-mix(in srgb, var(--arc-200) 14%, transparent),
+    0 22px 44px rgba(0, 0, 0, 0.38);
 }
 
 /* Poster thumbnail — fills card top, 16:10 cinematic ratio */
@@ -1508,6 +1587,14 @@ function starStyle(i: number) {
     #030a0d 100%
   );
 }
+.case-poster--train {
+  background: linear-gradient(
+    180deg,
+    #0d1428 0%,
+    #060914 60%,
+    #03060e 100%
+  );
+}
 
 .case-svg {
   position: absolute;
@@ -1515,10 +1602,13 @@ function starStyle(i: number) {
   width: 100%;
   height: 100%;
   display: block;
-  transition: transform 0.42s cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* Subtler poster zoom — 1.02 over 0.22s. Previous 1.05 / 0.42s
+     was pushing the illustration noticeably out of frame on hover
+     which read as motion-heavy on a quiet portfolio strip. */
+  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .case-card:hover .case-svg {
-  transform: scale(1.05);
+  transform: scale(1.02);
 }
 
 /* Bottom overlay — fades dark to transparent for title legibility */
@@ -1580,23 +1670,26 @@ function starStyle(i: number) {
   z-index: 3;
 }
 
-/* Play overlay — fades in on hover */
+/* Play overlay — fades in on hover. Both hover and focus-within are
+   targeted so keyboard users see the affordance too. Transitions
+   tightened to 0.2s to match the rest of the card hover. */
 .case-play {
   position: absolute;
   top: 50%;
   left: 50%;
   width: 56px;
   height: 56px;
-  transform: translate(-50%, -50%) scale(0.84);
+  transform: translate(-50%, -50%) scale(0.88);
   color: rgba(255, 245, 220, 0.95);
   opacity: 0;
-  transition: opacity 0.26s ease, transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: opacity 0.2s ease, transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
   pointer-events: none;
-  filter: drop-shadow(0 0 14px color-mix(in srgb, var(--arc-300) 55%, transparent));
+  filter: drop-shadow(0 0 12px color-mix(in srgb, var(--arc-300) 45%, transparent));
   z-index: 2;
 }
 .case-play svg { width: 100%; height: 100%; }
-.case-card:hover .case-play {
+.case-card:hover .case-play,
+.case-card:focus-within .case-play {
   opacity: 1;
   transform: translate(-50%, -50%) scale(1);
 }
@@ -1642,31 +1735,61 @@ function starStyle(i: number) {
   transform: translateX(3px);
 }
 
-/* ── Footer ── */
+/* ── Footer ──
+   Horizontal closing action bar — copy on the left, CTA on the right.
+   Replaces the previous vertically-stacked card so the page ends on a
+   slim, deliberate strip instead of a centred panel.
+   Background is a very low-alpha glass surface; per-theme tones (pearl
+   paper / dark gold gradient) come from the overrides below. Stacks
+   vertically on narrow viewports via the media query at the bottom. */
 .landing-foot {
   position: relative;
   z-index: 1;
-  padding: 48px 24px 72px;
+  padding: 32px 24px 56px;
 }
 .foot-content {
   position: relative;
-  max-width: 720px;
+  max-width: 780px;
   margin: 0 auto;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: 18px;
-  padding: 36px 28px;
-  border-radius: 18px;
-  border: 1px solid var(--border-glass);
-  background: var(--glass-bg);
-  backdrop-filter: blur(22px) saturate(150%);
-  -webkit-backdrop-filter: blur(22px) saturate(150%);
-  text-align: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 22px 28px;
+  border-radius: 24px;
+  border: 1px solid rgba(227, 174, 75, 0.13);
+  background: linear-gradient(
+    180deg,
+    rgba(18, 14, 7, 0.38),
+    rgba(8, 7, 5, 0.28)
+  );
+  backdrop-filter: blur(10px) saturate(140%);
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
+  text-align: left;
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--arc-200) 10%, transparent),
-    0 16px 38px rgba(0, 0, 0, 0.28);
+    inset 0 1px 0 color-mix(in srgb, var(--arc-200) 6%, transparent),
+    0 16px 42px rgba(0, 0, 0, 0.24);
   overflow: hidden;
+}
+.foot-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.foot-cta {
+  flex: 0 0 auto;
+}
+/* On narrow viewports the row collapses to a centred stack so the
+   button stays comfortably tappable and the copy doesn't get squeezed. */
+@media (max-width: 640px) {
+  .foot-content {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 16px;
+    padding: 22px 24px 22px;
+  }
+  .foot-copy { flex: 0 0 auto; }
 }
 .foot-content::before {
   content: '';
@@ -1693,21 +1816,26 @@ function starStyle(i: number) {
   border: 1px solid var(--border-arc);
   background: color-mix(in srgb, var(--arc-400) 10%, rgba(12, 9, 4, 0.92));
   color: rgba(255, 245, 220, 0.96);
-  padding: 11px 22px;
+  /* Slightly slimmer than the previous 11/22 — keeps the button as the
+     bar's focal point without making it visually heavy. */
+  padding: 10px 20px;
   border-radius: 999px;
   font-size: 0.875rem;
   font-weight: 600;
   letter-spacing: 0.06em;
   cursor: pointer;
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  transition: transform 0.18s, border-color 0.18s, box-shadow 0.18s;
+  transition: transform 0.18s, border-color 0.18s, box-shadow 0.18s, background 0.18s;
 }
 .foot-cta:hover {
+  /* Soft hover only: 1px lift + brighter border + a touch warmer
+     background. No external glow ring — keeps the closing bar quiet. */
   transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--arc-300) 50%, transparent);
-  box-shadow: 0 0 22px color-mix(in srgb, var(--arc-300) 22%, transparent);
+  border-color: color-mix(in srgb, var(--arc-300) 56%, transparent);
+  background: color-mix(in srgb, var(--arc-400) 16%, rgba(12, 9, 4, 0.92));
 }
 .foot-cta-arrow {
   transition: transform 0.18s;
@@ -1806,6 +1934,14 @@ function starStyle(i: number) {
    the same blue from the illustration, so the figure dissolves into the
    page instead of sitting on top of it. */
 :root[data-theme="pearl"] .landing {
+  /* Defensive token override scoped to .landing only. Lifts --text-
+     primary into the clearly-brown range so any selector that falls
+     through to the var (body colour, badge sub, etc) inherits the
+     same warm caramel tier as the explicit overrides below. */
+  --text-primary: #3A2F1E;
+  --text-secondary: rgba(94, 76, 50, 0.78);
+  --text-muted: rgba(94, 78, 52, 0.56);
+
   background-color: #faf3e4;
   background-image:
     /* Ice-blue morning mist — sized HUGE with falloff all the way to
@@ -1925,16 +2061,18 @@ function starStyle(i: number) {
   margin-bottom: 22px;
 }
 :root[data-theme="pearl"] .landing .hero-title-rest {
-  color: #1f1d19;
+  /* Hero "AI Video Studio" — lifted from the very dark #252119 to a
+     visibly brown #3A2D1E. Still strong for the brand wordmark, but
+     no longer reads as flat black against the cream paper. */
+  color: #3A2D1E;
   text-shadow: none;
-  /* Bump rest from 0.58em → 0.74em so the product name "AI Video Studio"
-     reads as primary copy, not a small caption under "Jinsie". */
   font-size: 0.74em;
   font-weight: 700;
   letter-spacing: 0.04em;
 }
 :root[data-theme="pearl"] .landing .hero-subtitle {
-  color: rgba(46, 43, 39, 0.82);
+  /* Warm dark brown @ 0.72. */
+  color: rgba(58, 50, 38, 0.72);
   font-weight: 500;
 }
 
@@ -2129,11 +2267,12 @@ function starStyle(i: number) {
   );
 }
 :root[data-theme="pearl"] .landing .case-card:hover {
-  border-color: rgba(190, 150, 82, 0.26);
+  /* Softer pearl hover — no champagne glow ring, just a slightly
+     warmer paper shadow expansion. */
+  border-color: rgba(190, 150, 82, 0.22);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.98),
-    0 20px 44px rgba(120, 92, 48, 0.09),
-    0 0 16px rgba(238, 204, 130, 0.12);
+    0 18px 38px rgba(120, 92, 48, 0.08);
 }
 /* Per-tone pearl poster backdrops — clean watercolor scenes with a hint
    more saturation than v1 so they don't read as muddy beige. SVG "ink"
@@ -2142,39 +2281,161 @@ function starStyle(i: number) {
 :root[data-theme="pearl"] .landing .case-poster {
   color: #a07a35;
 }
+
+/* ── MOON poster — clean moonlight blue-gray ───────────────────────
+   Backdrop is brighter (#F8F9F4 → #E7EEF3) and individual SVG shapes
+   are pulled out of the muddy single-currentColor scheme by targeting
+   them via their `fill-opacity` attribute (the existing differentiator
+   inside the inline SVG). The moon disc becomes a clean silver-blue,
+   the hill a soft cool blue, and the stars / mouse keep currentColor
+   so the overall ink stays consistent. */
 :root[data-theme="pearl"] .landing .case-poster--moon {
-  background: linear-gradient(
-    180deg,
-    #f7f8f4 0%,
-    #e8eef2 55%,
-    #dce5ed 100%
-  );
+  /* Brighter top to bottom — top is near-white moonlight, bottom is a
+     barely-tinted cool ice. Pulls the card away from the gray-blue
+     range that read as "dusty". */
+  background: linear-gradient(180deg, #FAFCFE 0%, #ECF1F6 55%, #DDE7EF 100%);
 }
 :root[data-theme="pearl"] .landing .case-poster--moon .case-svg {
-  color: #566981;
+  /* Calmer ink-blue — stars + sky tint follow this. Less saturated
+     than #70849A so the moonlight surface reads cleaner. */
+  color: #7B91A8;
 }
+/* Moon disc — clean pale silver, brighter than the earlier #8B9FB6. */
+:root[data-theme="pearl"] .landing .case-poster--moon .case-svg circle[r="34"] {
+  fill: #B7C5D6;
+  fill-opacity: 1;
+}
+/* Hill — very soft cool blue-gray, brighter and more transparent. */
+:root[data-theme="pearl"] .landing .case-poster--moon .case-svg path[fill-opacity="0.45"] {
+  fill: #D8E1EA;
+  fill-opacity: 0.9;
+}
+/* Mouse — slightly warmer / less gray so it reads as a silhouette
+   without looking dusty against the brighter sky. */
+:root[data-theme="pearl"] .landing .case-poster--moon .case-svg g[transform="translate(110,148)"] {
+  fill: #5E708A;
+  fill-opacity: 0.92;
+}
+
+/* ── FOREST poster — clean cream + sand champagne ──────────────────
+   Replace the muddy tan with a brighter cream → sand backdrop and
+   restage the ridge layers in distinct sand tones (back ridge palest,
+   front hill deepest) so the depth reads without going brown. Sun
+   core gets a saturated champagne pop. */
 :root[data-theme="pearl"] .landing .case-poster--forest {
-  background: linear-gradient(
-    180deg,
-    #fff4d0 0%,
-    #eed89b 58%,
-    #d8bd72 100%
-  );
+  /* Cream-sand backdrop — pulled toward whiter cream at the top and
+     lighter sand at the bottom so it reads as "warm morning" instead
+     of "old paper ochre". */
+  background: linear-gradient(180deg, #FFFAE8 0%, #F8E9C2 55%, #EFDBA8 100%);
 }
 :root[data-theme="pearl"] .landing .case-poster--forest .case-svg {
-  color: #806129;
+  /* Slightly cooler champagne — was #9F7A2E (a touch muddy). #A88234
+     keeps the warmth but lifts saturation so the sky tint + back trees
+     read as clean gold rather than tan. */
+  color: #A88234;
 }
+/* Sun core — brighter champagne pop */
+:root[data-theme="pearl"] .landing .case-poster--forest .case-svg circle[r="14"] {
+  fill: #C99A38;
+  fill-opacity: 1;
+}
+/* Back ridge — palest cream */
+:root[data-theme="pearl"] .landing .case-poster--forest .case-svg path[fill-opacity="0.22"] {
+  fill: #F4E3B6;
+  fill-opacity: 0.72;
+}
+/* Mid ridge — soft sand */
+:root[data-theme="pearl"] .landing .case-poster--forest .case-svg path[fill-opacity="0.38"] {
+  fill: #E2C988;
+  fill-opacity: 0.86;
+}
+/* Front hill — lighter than before (#B59548 was reading earthy);
+   #CBA862 sits in the warm sand tier and gives clearer separation
+   from the cream sky without going brown. */
+:root[data-theme="pearl"] .landing .case-poster--forest .case-svg path[fill-opacity="0.62"] {
+  fill: #CBA862;
+  fill-opacity: 0.86;
+}
+/* Front trees group — kept dark for silhouette readability, but
+   slightly warmer hue. */
+:root[data-theme="pearl"] .landing .case-poster--forest .case-svg g[fill-opacity="0.85"] {
+  fill: #8E6A26;
+  fill-opacity: 0.92;
+}
+
+/* ── OCEAN poster — bright lake teal ───────────────────────────────
+   Backdrop pushed brighter (#F1FBFC → #D8EEF4) so the water reads as
+   morning lake rather than cold gray. Wave lines get a saturated teal
+   via currentColor; lily pad and tadpole pulled out to a cleaner
+   mid-teal. */
 :root[data-theme="pearl"] .landing .case-poster--ocean {
-  background: linear-gradient(
-    180deg,
-    #edf8fa 0%,
-    #d4edf5 55%,
-    #bfdde9 100%
-  );
+  /* Clean lake-blue — top is near-white aqua, bottom is a clear cool
+     cyan instead of the previous slightly-dusty #D8EEF4. */
+  background: linear-gradient(180deg, #F5FCFD 0%, #E1F3F8 55%, #CFEAF3 100%);
 }
 :root[data-theme="pearl"] .landing .case-poster--ocean .case-svg {
-  color: #3f7790;
+  /* Slightly more saturated teal — sky tint + waves follow this. */
+  color: #4F8AA0;
 }
+/* Lily pad — brighter teal so it floats clearly on the water */
+:root[data-theme="pearl"] .landing .case-poster--ocean .case-svg ellipse[ry="10"] {
+  fill: #76A8BA;
+  fill-opacity: 0.82;
+}
+/* Tadpole silhouette — deep teal */
+:root[data-theme="pearl"] .landing .case-poster--ocean .case-svg g[transform="translate(120,118)"] {
+  fill: #437285;
+  fill-opacity: 0.92;
+}
+
+/* ── TRAIN poster — soft cream night sky with warm gold star + train ─
+   The 4th case ("星光小火车 / 奇幻旅程"). Background is a pale blue
+   morning-light sky (lighter than the dark theme's night) so it sits
+   alongside the other three pearl cards. Stars and the train silhouette
+   are pulled to distinct warm-gold / brown tones so the card stays
+   crisp instead of blending into a single muddy currentColor pass. */
+:root[data-theme="pearl"] .landing .case-poster--train {
+  /* Clear dawn sky — brighter pre-dawn cyan at the top, fades into a
+     soft slate blue at the bottom. Replaces the dusty cream-gray
+     palette so the night-train scene reads as "early morning" rather
+     than "old book paper". */
+  background: linear-gradient(180deg, #F4FAFD 0%, #DCE7F2 50%, #C5D5E5 100%);
+}
+:root[data-theme="pearl"] .landing .case-poster--train .case-svg {
+  /* Brighter warm gold — drives sky tint stops + star + dust ambient. */
+  color: #D8A845;
+}
+/* Big stars — pure clean champagne gold */
+:root[data-theme="pearl"] .landing .case-poster--train .case-svg circle[r="1.4"],
+:root[data-theme="pearl"] .landing .case-poster--train .case-svg circle[r="1.2"],
+:root[data-theme="pearl"] .landing .case-poster--train .case-svg circle[r="1.1"] {
+  fill: #E2B048;
+  fill-opacity: 1;
+}
+/* Small stars — softer gold sparkle */
+:root[data-theme="pearl"] .landing .case-poster--train .case-svg circle[r="0.9"],
+:root[data-theme="pearl"] .landing .case-poster--train .case-svg circle[r="0.8"],
+:root[data-theme="pearl"] .landing .case-poster--train .case-svg circle[r="0.7"] {
+  fill: #D8A845;
+  fill-opacity: 0.82;
+}
+/* Distant hill — soft dusty blue, less brown so it sits behind the
+   front hill as atmospheric depth. */
+:root[data-theme="pearl"] .landing .case-poster--train .case-svg path[fill-opacity="0.28"] {
+  fill: #A8B5C4;
+  fill-opacity: 0.55;
+}
+/* Near hill — warm gold-brown sand, not the previous gray-brown. */
+:root[data-theme="pearl"] .landing .case-poster--train .case-svg path[fill-opacity="0.50"] {
+  fill: #8E6E3C;
+  fill-opacity: 0.78;
+}
+/* Train silhouette — deep warm caramel brown. */
+:root[data-theme="pearl"] .landing .case-poster--train .case-svg g[transform="translate(96,142)"] {
+  fill: #5A4022;
+  fill-opacity: 0.94;
+}
+
 /* On pearl, flip the overlay from a dark wash to a soft cream paper fade,
    and switch title/subtitle to dark brown ink so they read on light. */
 :root[data-theme="pearl"] .landing .case-overlay {
@@ -2186,11 +2447,17 @@ function starStyle(i: number) {
   );
 }
 :root[data-theme="pearl"] .landing .case-overlay-subtitle {
-  color: rgba(68, 58, 43, 0.62);
+  /* Warm gray-brown — case subtitle ("改编自经典绘本" etc) */
+  color: rgba(110, 88, 56, 0.78);
   text-shadow: none;
 }
 :root[data-theme="pearl"] .landing .case-overlay-title {
-  color: #25221d;
+  /* Brown caramel — was #30281D which technically is warm but at that
+     luminance the eye reads it as black ink. #4E3A1E lifts the value
+     into a clearly-brown range while keeping >7:1 contrast on the
+     cream card surface, so the card titles read as "warm illustrated
+     headline" instead of "hard ink". */
+  color: #4E3A1E;
   text-shadow: none;
 }
 /* REFERENCE ribbon on pearl: bright cream pill */
@@ -2232,50 +2499,60 @@ function starStyle(i: number) {
   border-color: rgba(190, 150, 82, 0.22);
   color: #7a5a24;
 }
-/* "进入工作台 →" — a clearer, more pill-like link so it reads as the
-   card's primary action without competing with the hero CTA. */
+/* "进入工作台 →" — caramel-brown affordance link. Brighter than the
+   chip text so it reads as a CTA, but still warm not black. */
 :root[data-theme="pearl"] .landing .case-cta {
-  color: #7a5a24;
+  color: #8A641F;
   font-weight: 600;
   letter-spacing: 0.06em;
 }
 :root[data-theme="pearl"] .landing .case-cta:hover {
-  color: #5f4218;
+  color: #6F4C12;
 }
 
-/* Footer CTA card — paper glass per spec */
+/* Footer CTA bar — final visual collapse. Background dropped to 0.34
+   alpha so the page surface barely thickens here; border at 0.10 is
+   almost invisible; shadow flat. The bar reads as the button + copy
+   floating, with just enough surface to group them. */
 :root[data-theme="pearl"] .landing .foot-content {
-  background: rgba(255, 252, 244, 0.66);
-  border-color: rgba(178, 152, 105, 0.20);
+  background: rgba(255, 253, 248, 0.34);
+  border-color: rgba(188, 151, 84, 0.10);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.94),
-    0 18px 48px rgba(92, 76, 46, 0.08);
+    inset 0 1px 0 rgba(255, 255, 255, 0.82),
+    0 12px 28px rgba(126, 94, 36, 0.035);
+  backdrop-filter: blur(8px) saturate(140%);
+  -webkit-backdrop-filter: blur(8px) saturate(140%);
 }
 :root[data-theme="pearl"] .landing .foot-content::before {
+  /* Top hairline — softer on pearl so it doesn't read as a panel edge. */
   background: linear-gradient(
     90deg,
     transparent,
-    rgba(190, 150, 82, 0.36),
+    rgba(188, 151, 84, 0.22),
     transparent
   );
 }
 :root[data-theme="pearl"] .landing .foot-copy {
-  color: #2e2b27;
+  /* Foot CTA copy ("开始创作你的故事视频") — matches the new card-title
+     warm-brown tier so the closing line doesn't feel like a black
+     headline tucked under the bright section. */
+  color: #3D2F1E;
 }
 :root[data-theme="pearl"] .landing .foot-cta {
   background: linear-gradient(180deg, #c89a55 0%, #a07332 100%);
-  color: #fff7e2;
-  border-color: rgba(120, 86, 30, 0.55);
+  color: #FFF8E8;
+  border-color: rgba(120, 86, 30, 0.50);
+  /* Lighter shadow than before so the button looks like a slim
+     champagne pill on a near-transparent bar instead of a heavy chip. */
   box-shadow:
-    inset 0 1px 0 rgba(255, 248, 220, 0.36),
-    0 12px 26px rgba(120, 86, 30, 0.26);
+    inset 0 1px 0 rgba(255, 248, 220, 0.34),
+    0 8px 18px rgba(120, 86, 30, 0.18);
 }
 :root[data-theme="pearl"] .landing .foot-cta:hover {
-  border-color: rgba(120, 86, 30, 0.72);
+  border-color: rgba(120, 86, 30, 0.66);
   box-shadow:
-    inset 0 1px 0 rgba(255, 248, 220, 0.46),
-    0 14px 30px rgba(120, 86, 30, 0.32),
-    0 0 22px rgba(214, 170, 88, 0.30);
+    inset 0 1px 0 rgba(255, 248, 220, 0.42),
+    0 10px 22px rgba(120, 86, 30, 0.24);
 }
 
 /* ── Section headers ── */
@@ -2291,7 +2568,10 @@ function starStyle(i: number) {
   );
 }
 :root[data-theme="pearl"] .landing .section-title {
-  color: #2e2b27;
+  /* Section headers (完整 Story-to-Video 创作链路 / 案例展示) — lifted
+     into clearly-brown range (#3D2F1E) so they don't read as ink-black
+     stripes between the bright Workflow / Showcase sections. */
+  color: #3D2F1E;
   text-shadow: none;
 }
 
@@ -2325,12 +2605,13 @@ function starStyle(i: number) {
     0 0 22px rgba(238, 204, 130, 0.34);
 }
 :root[data-theme="pearl"] .landing .workflow-node-title {
-  color: #1f1d19;
+  color: #3A3124;
   font-size: 0.9375rem;
   font-weight: 600;
 }
 :root[data-theme="pearl"] .landing .workflow-node-desc {
-  color: rgba(74, 64, 50, 0.70);
+  /* Warm gray-brown @ 0.58 — caption tier under the node title. */
+  color: rgba(76, 64, 46, 0.58);
   font-size: 0.75rem;
 }
 :root[data-theme="pearl"] .landing .workflow-link {
@@ -2350,15 +2631,16 @@ function starStyle(i: number) {
   border-bottom-color: rgba(255, 255, 255, 0.96);
 }
 
-/* Pearl: case meta line — slightly warmer than the dark default. */
+/* Pearl: case meta line (60s · 画面风格 · AI 生成) — warm gray-brown
+   so it reads as a quiet caption tier under the bigger card title. */
 :root[data-theme="pearl"] .landing .case-meta-info {
-  color: rgba(68, 58, 43, 0.62);
+  color: rgba(78, 65, 47, 0.56);
 }
 :root[data-theme="pearl"] .landing .case-meta-info .case-meta-duration {
-  color: #7a5a24;
+  color: #8A641F;
 }
 :root[data-theme="pearl"] .landing .case-meta-info .case-meta-dot {
-  color: rgba(68, 58, 43, 0.34);
+  color: rgba(78, 65, 47, 0.32);
 }
 
 /* ════════════════════════════════════════════════════════════════
