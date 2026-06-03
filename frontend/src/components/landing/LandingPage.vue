@@ -1977,18 +1977,33 @@ function starStyle(i: number) {
   box-shadow: 0 6px 18px rgba(177, 132, 57, 0.10);
 }
 
+/* Hero flow bridge — pearl theme uses morning-gold light dust, not
+   technology-blue scan lines. Keep the track low-contrast so it reads
+   as sunlight crossing the paper surface. */
+:root[data-theme="pearl"] .landing .hero-flow-bridge {
+  left: 36%;
+  right: 11%;
+  top: 45%;
+  transform: translateY(-44%);
+}
 :root[data-theme="pearl"] .landing .hero-flow-path-base {
-  stroke: rgba(184, 132, 62, 0.20);
+  stroke: rgba(153, 111, 38, 0.50);
+  stroke-width: 1.15;
 }
 :root[data-theme="pearl"] .landing .hero-flow-path-live {
-  stroke: rgba(184, 132, 62, 0.48);
-  filter: drop-shadow(0 0 7px rgba(142, 197, 255, 0.24));
+  stroke: rgba(236, 184, 92, 0.58);
+  stroke-width: 1.55;
+  filter:
+    drop-shadow(0 0 8px rgba(255, 236, 190, 0.36))
+    drop-shadow(0 0 16px rgba(181, 138, 58, 0.32));
 }
 :root[data-theme="pearl"] .landing .hero-flow-spark {
-  background: rgba(184, 132, 62, 0.62);
+  width: 4.5px;
+  height: 4.5px;
+  background: rgba(153, 111, 38, 0.62);
   box-shadow:
-    0 0 10px rgba(214, 179, 90, 0.42),
-    0 0 20px rgba(142, 197, 255, 0.24);
+    0 0 10px rgba(255, 236, 190, 0.36),
+    0 0 20px rgba(181, 138, 58, 0.34);
 }
 
 /* ─ Storybook Poster — pearl ("morning fog studio") ─
