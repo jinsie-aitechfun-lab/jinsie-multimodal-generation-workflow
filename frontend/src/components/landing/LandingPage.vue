@@ -1810,7 +1810,7 @@ function starStyle(i: number) {
   background-image:
     /* Ice-blue morning mist — sized HUGE with falloff all the way to
        100% so it has no perceptible boundary. */
-    radial-gradient(ellipse 90% 100% at 82% 30%, rgba(196, 220, 238, 0.48) 0%, transparent 100%),
+    radial-gradient(ellipse 90% 100% at 82% 30%, rgba(196, 220, 238, 0.42) 0%, transparent 100%),
     /* Warm cream halo — top-left. */
     radial-gradient(ellipse 70% 70% at 18% 18%, rgba(252, 240, 210, 0.50) 0%, transparent 100%),
     /* Soft warm wash at the bottom-center. */
@@ -1836,7 +1836,7 @@ function starStyle(i: number) {
     rgba(190, 218, 240, 0.30) 0%,
     transparent 64%
   );
-  opacity: 0.46;
+  opacity: 0.40;
 }
 :root[data-theme="pearl"] .landing .bg-ambient {
   background:
@@ -2066,12 +2066,13 @@ function starStyle(i: number) {
    because the inherited `intersect` / `source-in` from base would
    drop a single-layer mask on WebKit. */
 :root[data-theme="pearl"] .landing .hero-storybook-art {
+  opacity: 0.90;
   mask-image:
-    linear-gradient(to bottom, transparent 0%, #000 12%, #000 88%, transparent 100%) !important;
+    linear-gradient(to bottom, transparent 0%, #000 10%, #000 90%, transparent 100%) !important;
   mask-composite: add !important;
   mask-repeat: no-repeat !important;
   -webkit-mask-image:
-    linear-gradient(to bottom, transparent 0%, #000 12%, #000 88%, transparent 100%) !important;
+    linear-gradient(to bottom, transparent 0%, #000 10%, #000 90%, transparent 100%) !important;
   -webkit-mask-composite: source-over !important;
   -webkit-mask-repeat: no-repeat !important;
 }
@@ -2085,9 +2086,9 @@ function starStyle(i: number) {
   z-index: 0;
   pointer-events: none;
   background:
-    radial-gradient(ellipse 62% 56% at 58% 46%, rgba(255, 236, 188, 0.52) 0%, transparent 100%),
-    radial-gradient(ellipse 46% 40% at 72% 64%, rgba(248, 220, 162, 0.34) 0%, transparent 100%);
-  filter: blur(32px);
+    radial-gradient(ellipse 62% 56% at 58% 46%, rgba(255, 236, 188, 0.38) 0%, transparent 100%),
+    radial-gradient(ellipse 46% 40% at 72% 64%, rgba(248, 220, 162, 0.22) 0%, transparent 100%);
+  filter: blur(26px);
 }
 /* Bottom mist is minimal now — just a hint so the figure doesn't end on
    a hard rectangular edge. Previous wash was hiding the video cards. */
@@ -2101,7 +2102,7 @@ function starStyle(i: number) {
     180deg,
     transparent 0%,
     transparent 82%,
-    rgba(255, 252, 244, 0.14) 100%
+    rgba(255, 252, 244, 0.06) 100%
   );
 }
 /* (Pearl ::before override removed — no fade overlay on either theme.) */
@@ -2112,12 +2113,12 @@ function starStyle(i: number) {
    Posters get lighter tone-specific backdrops so the warm-gold SVG ink
    reads on the page; ribbon + overlay text switch to warm brown tones. */
 :root[data-theme="pearl"] .landing .case-card {
-  background: rgba(255, 252, 244, 0.74);
-  border-color: rgba(178, 152, 105, 0.20);
+  background: rgba(255, 253, 248, 0.88);
+  border-color: rgba(186, 151, 84, 0.16);
   border-radius: 22px;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.94),
-    0 18px 42px rgba(92, 76, 46, 0.08);
+    inset 0 1px 0 rgba(255, 255, 255, 0.96),
+    0 18px 42px rgba(120, 92, 48, 0.07);
 }
 :root[data-theme="pearl"] .landing .case-card::before {
   background: linear-gradient(
@@ -2128,11 +2129,11 @@ function starStyle(i: number) {
   );
 }
 :root[data-theme="pearl"] .landing .case-card:hover {
-  border-color: rgba(190, 150, 82, 0.38);
+  border-color: rgba(190, 150, 82, 0.26);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.98),
-    0 24px 50px rgba(92, 76, 46, 0.14),
-    0 0 24px rgba(238, 204, 130, 0.22);
+    0 20px 44px rgba(120, 92, 48, 0.09),
+    0 0 16px rgba(238, 204, 130, 0.12);
 }
 /* Per-tone pearl poster backdrops — clean watercolor scenes with a hint
    more saturation than v1 so they don't read as muddy beige. SVG "ink"
@@ -2144,33 +2145,35 @@ function starStyle(i: number) {
 :root[data-theme="pearl"] .landing .case-poster--moon {
   background: linear-gradient(
     180deg,
-    #eef0f6 0%,
-    #d8dbeb 60%,
-    #c2c8de 100%
+    #f7f8f4 0%,
+    #e8eef2 55%,
+    #dce5ed 100%
   );
 }
 :root[data-theme="pearl"] .landing .case-poster--moon .case-svg {
-  color: #5d6a8a;
+  color: #566981;
 }
 :root[data-theme="pearl"] .landing .case-poster--forest {
   background: linear-gradient(
     180deg,
-    #f6ecce 0%,
-    #e6d29a 100%
+    #fff4d0 0%,
+    #eed89b 58%,
+    #d8bd72 100%
   );
 }
 :root[data-theme="pearl"] .landing .case-poster--forest .case-svg {
-  color: #8a6a2a;
+  color: #806129;
 }
 :root[data-theme="pearl"] .landing .case-poster--ocean {
   background: linear-gradient(
     180deg,
-    #dfeaf2 0%,
-    #b9d3e2 100%
+    #edf8fa 0%,
+    #d4edf5 55%,
+    #bfdde9 100%
   );
 }
 :root[data-theme="pearl"] .landing .case-poster--ocean .case-svg {
-  color: #43718e;
+  color: #3f7790;
 }
 /* On pearl, flip the overlay from a dark wash to a soft cream paper fade,
    and switch title/subtitle to dark brown ink so they read on light. */
@@ -2178,16 +2181,16 @@ function starStyle(i: number) {
   background: linear-gradient(
     180deg,
     transparent 0%,
-    rgba(255, 252, 244, 0.42) 55%,
-    rgba(255, 252, 244, 0.86) 100%
+    rgba(255, 253, 248, 0.34) 55%,
+    rgba(255, 253, 248, 0.82) 100%
   );
 }
 :root[data-theme="pearl"] .landing .case-overlay-subtitle {
-  color: rgba(84, 70, 48, 0.62);
+  color: rgba(68, 58, 43, 0.62);
   text-shadow: none;
 }
 :root[data-theme="pearl"] .landing .case-overlay-title {
-  color: #2f2a22;
+  color: #25221d;
   text-shadow: none;
 }
 /* REFERENCE ribbon on pearl: bright cream pill */
@@ -2207,29 +2210,37 @@ function starStyle(i: number) {
 /* Play badge — always faintly visible on pearl so each card reads as a
    playable video work, not a flat illustration. Strengthens on hover. */
 :root[data-theme="pearl"] .landing .case-play {
-  color: #6e4f1c;
-  filter: drop-shadow(0 0 10px rgba(238, 204, 130, 0.55));
-  opacity: 0.34;
+  color: rgba(122, 90, 36, 0.50);
+  filter: drop-shadow(0 0 8px rgba(238, 204, 130, 0.32));
+  opacity: 0;
   transform: translate(-50%, -50%) scale(0.92);
+  pointer-events: none;
+  transition: opacity 180ms ease, transform 180ms ease;
 }
-:root[data-theme="pearl"] .landing .case-card:hover .case-play {
+:root[data-theme="pearl"] .landing .case-card:hover .case-play,
+:root[data-theme="pearl"] .landing .case-card:focus-within .case-play {
+  color: rgba(122, 90, 36, 0.82);
   opacity: 1;
   transform: translate(-50%, -50%) scale(1);
 }
+:root[data-theme="pearl"] .landing .case-meta {
+  background: rgba(255, 253, 248, 0.94);
+  border-top: 1px solid rgba(188, 158, 96, 0.12);
+}
 :root[data-theme="pearl"] .landing .case-tag {
-  background: rgba(246, 229, 185, 0.36);
-  border-color: rgba(177, 132, 57, 0.28);
-  color: #6e4f1c;
+  background: rgba(255, 248, 232, 0.58);
+  border-color: rgba(190, 150, 82, 0.22);
+  color: #7a5a24;
 }
 /* "进入工作台 →" — a clearer, more pill-like link so it reads as the
    card's primary action without competing with the hero CTA. */
 :root[data-theme="pearl"] .landing .case-cta {
-  color: #8a6a2a;
+  color: #7a5a24;
   font-weight: 600;
   letter-spacing: 0.06em;
 }
 :root[data-theme="pearl"] .landing .case-cta:hover {
-  color: #6e4f1c;
+  color: #5f4218;
 }
 
 /* Footer CTA card — paper glass per spec */
@@ -2341,49 +2352,22 @@ function starStyle(i: number) {
 
 /* Pearl: case meta line — slightly warmer than the dark default. */
 :root[data-theme="pearl"] .landing .case-meta-info {
-  color: rgba(74, 64, 50, 0.60);
+  color: rgba(68, 58, 43, 0.62);
 }
 :root[data-theme="pearl"] .landing .case-meta-info .case-meta-duration {
-  color: #8a6a2a;
+  color: #7a5a24;
 }
 :root[data-theme="pearl"] .landing .case-meta-info .case-meta-dot {
-  color: rgba(74, 64, 50, 0.36);
+  color: rgba(68, 58, 43, 0.34);
 }
 
 /* ════════════════════════════════════════════════════════════════
-   Pearl-only — morning light drift.
-   A very faint warm-light blob anchored to the viewport that slowly
-   floats from upper-left toward upper-right. Reads as soft "sunlight
-   moving through a window" — supports the Morning Light theme name
-   without becoming animated decoration the user has to look at.
-
-   - position: fixed → viewport-anchored, no scroll jank
-   - z-index: 0 → behind every content surface (which all sit at z 1+)
-   - pointer-events: none → never blocks clicks on ThemeSwitcher / CTAs
-   - opacity stays in the 0.16–0.28 effective range
-   - prefers-reduced-motion: reduce → animation removed
+   Pearl-only — soft morning air shimmer.
+   This is intentionally NOT a sun orb, ring, radar circle or lens flare.
+   It is a very subtle atmospheric layer: warm morning haze drifting over
+   the right side of the hero and a tiny amount of gold dust shimmer.
 ═══════════════════════════════════════════════════════════════════ */
 :root[data-theme="pearl"] .landing::after {
-  content: '';
-  position: fixed;
-  inset: -10%;
-  z-index: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(ellipse 38% 50% at 26% 16%, rgba(255, 240, 198, 0.34) 0%, transparent 100%),
-    radial-gradient(ellipse 30% 42% at 72% 22%, rgba(220, 232, 246, 0.22) 0%, transparent 100%);
-  animation: pearl-morning-drift 16s ease-in-out infinite alternate;
-  transform: translateZ(0);
-  will-change: transform, opacity;
-}
-@keyframes pearl-morning-drift {
-  0%   { transform: translate3d(0, 0, 0)         scale(1);    opacity: 0.85; }
-  50%  { transform: translate3d(2.2vw, -1vh, 0)  scale(1.04); opacity: 1;    }
-  100% { transform: translate3d(-1.2vw, 1vh, 0)  scale(1.02); opacity: 0.78; }
-}
-@media (prefers-reduced-motion: reduce) {
-  :root[data-theme="pearl"] .landing::after {
-    animation: none;
-  }
+  content: none;
 }
 </style>
