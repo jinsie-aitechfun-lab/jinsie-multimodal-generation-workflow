@@ -120,7 +120,7 @@
           <div class="sb-identity-avatar" aria-hidden="true">J</div>
           <div class="sb-identity-meta">
             <div class="sb-identity-name">Jinsie</div>
-            <div class="sb-identity-role">Local Creator</div>
+            <div class="sb-identity-role">创作者模式</div>
           </div>
         </div>
       </div>
