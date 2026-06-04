@@ -214,7 +214,7 @@
           v-for="caseItem in caseList"
           :key="caseItem.id"
           :class="['case-card', `case-card--${caseItem.tone}`]"
-          @click="goStudio"
+          @click="openShowcaseCase(caseItem)"
         >
           <!-- Thumbnail surface — per-tone illustration -->
           <div :class="['case-poster', `case-poster--${caseItem.tone}`]" aria-hidden="true">
@@ -473,11 +473,81 @@
         </button>
       </div>
     </footer>
+
+    <!-- ── Showcase video preview modal ──
+         Renders only when a case with `videoSrc` is opened. Teleported to
+         <body> so it sits above every Landing layer regardless of the
+         stacking context of the card it was opened from. Decorative
+         framing (kicker / title / desc / actions) is plain CSS; no extra
+         dependencies. -->
+    <Teleport to="body">
+      <div
+        v-if="activeShowcaseCase"
+        class="showcase-modal-backdrop"
+        @click="closeShowcaseCase"
+      >
+        <section
+          class="showcase-modal"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="activeShowcaseCase.title"
+          @click.stop
+        >
+          <button
+            type="button"
+            class="showcase-modal-close"
+            aria-label="关闭预览"
+            @click="closeShowcaseCase"
+          >
+            ×
+          </button>
+
+          <header class="showcase-modal-header">
+            <div v-if="activeShowcaseCase.isReference" class="showcase-modal-kicker">
+              Reference Showcase · 灵感样片
+            </div>
+            <h3 class="showcase-modal-title">{{ activeShowcaseCase.title }}</h3>
+            <p class="showcase-modal-desc">
+              {{ activeShowcaseCase.description }}
+            </p>
+          </header>
+
+          <video
+            v-if="activeShowcaseCase.videoSrc"
+            ref="showcaseVideoRef"
+            class="showcase-modal-video"
+            :src="activeShowcaseCase.videoSrc"
+            controls
+            autoplay
+            playsinline
+            preload="metadata"
+          />
+
+          <div class="showcase-modal-actions">
+            <button
+              type="button"
+              class="showcase-modal-primary"
+              @click="onShowcaseModalEnterStudio"
+            >
+              进入 Studio
+              <span aria-hidden="true">→</span>
+            </button>
+            <button
+              type="button"
+              class="showcase-modal-secondary"
+              @click="closeShowcaseCase"
+            >
+              关闭
+            </button>
+          </div>
+        </section>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import ThemeSwitcher from '../studio/ThemeSwitcher.vue'
 
@@ -521,6 +591,53 @@ function goStudio() {
   router.push('/studio')
 }
 
+/* ── Showcase video preview modal ──
+   Only cases that declare a `videoSrc` open a modal player when the
+   card body is clicked; the other cards continue to navigate to the
+   Studio so the existing "进入 Studio" flow stays intact. The "进入工作台"
+   button on every card always goes to /studio (unchanged). */
+const activeShowcaseCase = ref<CaseItem | null>(null)
+const showcaseVideoRef = ref<HTMLVideoElement | null>(null)
+
+function openShowcaseCase(item: CaseItem) {
+  if (!item.videoSrc) {
+    goStudio()
+    return
+  }
+  activeShowcaseCase.value = item
+}
+
+function closeShowcaseCase() {
+  const v = showcaseVideoRef.value
+  if (v) {
+    try {
+      v.pause()
+      v.currentTime = 0
+    } catch {
+      /* ignore — video element may already be detached */
+    }
+  }
+  activeShowcaseCase.value = null
+}
+
+function onShowcaseModalEnterStudio() {
+  closeShowcaseCase()
+  goStudio()
+}
+
+function handleShowcaseKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && activeShowcaseCase.value) {
+    closeShowcaseCase()
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', handleShowcaseKeydown)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleShowcaseKeydown)
+})
+
 function scrollTo(id: string) {
   if (typeof document === 'undefined') return
   const el = document.getElementById(id)
@@ -554,15 +671,28 @@ type CaseItem = {
   tags: string[]
   tone: CaseTone
   badge?: string  // optional top-right ribbon (e.g. "REFERENCE")
+  /** Optional video preview — when present, clicking the card body opens
+      a modal player instead of navigating to /studio. Static file under
+      `frontend/public/`; never bundled. */
+  videoSrc?: string
+  /** Long description shown inside the preview modal. */
+  description?: string
+  /** Marks the entry as a Reference Showcase (inspiration sample) so the
+      modal renders the "灵感样片" kicker and Reference framing. */
+  isReference?: boolean
 }
 const caseList: CaseItem[] = [
   {
     id: 'moon',
     title: '小老鼠吃月亮',
-    subtitle: '改编自经典绘本',
-    tags: ['经典绘本', 'Reference'],
+    subtitle: '原创亲子故事参考样片',
+    tags: ['灵感样片', '亲子故事'],
     tone: 'moon',
     badge: 'REFERENCE',
+    isReference: true,
+    videoSrc: '/showcase/mouse-moon-reference.mp4',
+    description:
+      '《小老鼠吃月亮》是一支原创亲子故事参考样片，也是 Jinsie AI Video Studio 的产品灵感来源。该样片通过多工具手工流程完成，用于展示从故事脚本、分镜画面、配音字幕到视频成片的目标创作效果。',
   },
   {
     id: 'forest',
@@ -1898,6 +2028,166 @@ function starStyle(i: number) {
   display: none;
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   Showcase video preview modal — base (dark gold/blue/purple themes).
+   Pearl-specific tones live in the non-scoped pearl block below.
+   Layered via <Teleport to="body"> so z-index is unaffected by the
+   landing page stacking context; backdrop sits at 99999.
+═══════════════════════════════════════════════════════════════════ */
+.showcase-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: rgba(6, 5, 3, 0.72);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  animation: showcase-modal-fade 0.22s ease-out;
+}
+@keyframes showcase-modal-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.showcase-modal {
+  position: relative;
+  width: min(720px, 100%);
+  max-height: calc(100vh - 64px);
+  overflow: auto;
+  padding: 26px 28px 22px;
+  border-radius: 20px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--arc-400) 12%, rgba(14, 10, 4, 0.94)) 0%,
+    rgba(8, 6, 3, 0.96) 100%
+  );
+  border: 1px solid color-mix(in srgb, var(--arc-300) 32%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--arc-200) 18%, transparent),
+    0 32px 80px rgba(0, 0, 0, 0.62),
+    0 0 32px color-mix(in srgb, var(--arc-300) 18%, transparent);
+  color: rgba(255, 245, 220, 0.96);
+}
+.showcase-modal-close {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--arc-300) 28%, transparent);
+  background: rgba(0, 0, 0, 0.32);
+  color: rgba(255, 245, 220, 0.86);
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.18s, border-color 0.18s, color 0.18s;
+}
+.showcase-modal-close:hover {
+  background: rgba(0, 0, 0, 0.50);
+  border-color: color-mix(in srgb, var(--arc-300) 50%, transparent);
+  color: var(--arc-200);
+}
+.showcase-modal-header {
+  margin-bottom: 14px;
+  padding-right: 36px; /* keep clear of the absolute close button */
+}
+.showcase-modal-kicker {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--arc-300) 88%, transparent);
+  margin-bottom: 6px;
+}
+.showcase-modal-title {
+  margin: 0 0 8px;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: rgba(255, 248, 232, 0.98);
+}
+.showcase-modal-desc {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.7;
+  color: rgba(255, 245, 220, 0.72);
+}
+.showcase-modal-video {
+  display: block;
+  width: 100%;
+  margin: 16px 0 18px;
+  border-radius: 12px;
+  background: #000;
+  aspect-ratio: 16 / 9;
+  border: 1px solid color-mix(in srgb, var(--arc-300) 20%, transparent);
+}
+.showcase-modal-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.showcase-modal-primary {
+  appearance: none;
+  border: 1px solid var(--border-arc);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--arc-400) 22%, rgba(20, 14, 6, 0.92)) 0%,
+    rgba(10, 8, 4, 0.96) 100%
+  );
+  color: rgba(255, 245, 220, 0.96);
+  padding: 11px 22px;
+  border-radius: 999px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: transform 0.18s, border-color 0.18s, box-shadow 0.18s;
+}
+.showcase-modal-primary:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--arc-300) 56%, transparent);
+  box-shadow: 0 0 22px color-mix(in srgb, var(--arc-300) 24%, transparent);
+}
+.showcase-modal-secondary {
+  appearance: none;
+  border: 1px solid color-mix(in srgb, var(--arc-300) 28%, transparent);
+  background: transparent;
+  color: color-mix(in srgb, var(--arc-200) 80%, transparent);
+  padding: 10px 18px;
+  border-radius: 999px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: border-color 0.18s, color 0.18s, background 0.18s;
+}
+.showcase-modal-secondary:hover {
+  border-color: color-mix(in srgb, var(--arc-300) 50%, transparent);
+  color: var(--arc-200);
+  background: color-mix(in srgb, var(--arc-400) 8%, transparent);
+}
+@media (max-width: 560px) {
+  .showcase-modal-backdrop { padding: 16px; }
+  .showcase-modal { padding: 22px 20px 18px; }
+  .showcase-modal-title { font-size: 1.125rem; }
+  .showcase-modal-actions { flex-direction: column; align-items: stretch; }
+  .showcase-modal-primary,
+  .showcase-modal-secondary { width: 100%; justify-content: center; text-align: center; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .showcase-modal-backdrop { animation: none; }
+}
+
 </style>
 
 <style>
@@ -2649,5 +2939,76 @@ function starStyle(i: number) {
 ═══════════════════════════════════════════════════════════════════ */
 :root[data-theme="pearl"] .landing::after {
   content: none;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   Showcase video preview modal — pearl theme override.
+   Paper-glass card with warm ink-brown typography, soft champagne
+   accents on borders and the primary button.
+═══════════════════════════════════════════════════════════════════ */
+:root[data-theme="pearl"] .showcase-modal-backdrop {
+  /* Lighter scrim — keeps the page visible behind the modal instead
+     of going to near-black. */
+  background: rgba(46, 38, 22, 0.46);
+}
+:root[data-theme="pearl"] .showcase-modal {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 252, 244, 0.96) 0%,
+    rgba(252, 245, 230, 0.94) 100%
+  );
+  border-color: rgba(188, 151, 84, 0.32);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.94),
+    0 28px 64px rgba(126, 94, 36, 0.20),
+    0 0 28px rgba(238, 204, 130, 0.12);
+  color: #3D2F1E;
+}
+:root[data-theme="pearl"] .showcase-modal-close {
+  background: rgba(255, 253, 248, 0.78);
+  border-color: rgba(188, 151, 84, 0.30);
+  color: #8A641F;
+}
+:root[data-theme="pearl"] .showcase-modal-close:hover {
+  background: rgba(255, 253, 248, 0.92);
+  border-color: rgba(120, 86, 30, 0.56);
+  color: #6F4C12;
+}
+:root[data-theme="pearl"] .showcase-modal-kicker {
+  color: #8A641F;
+}
+:root[data-theme="pearl"] .showcase-modal-title {
+  color: #2F271C;
+}
+:root[data-theme="pearl"] .showcase-modal-desc {
+  color: rgba(76, 64, 46, 0.82);
+}
+:root[data-theme="pearl"] .showcase-modal-video {
+  border-color: rgba(188, 151, 84, 0.22);
+  background: #1a1410;
+}
+:root[data-theme="pearl"] .showcase-modal-primary {
+  background: linear-gradient(180deg, #c89a55 0%, #a07332 100%);
+  color: #FFF8E8;
+  border-color: rgba(120, 86, 30, 0.50);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 248, 220, 0.34),
+    0 10px 22px rgba(120, 86, 30, 0.20);
+}
+:root[data-theme="pearl"] .showcase-modal-primary:hover {
+  border-color: rgba(120, 86, 30, 0.66);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 248, 220, 0.42),
+    0 12px 26px rgba(120, 86, 30, 0.26);
+}
+:root[data-theme="pearl"] .showcase-modal-secondary {
+  border-color: rgba(151, 132, 96, 0.36);
+  color: #6E5828;
+  background: rgba(255, 253, 248, 0.36);
+}
+:root[data-theme="pearl"] .showcase-modal-secondary:hover {
+  border-color: rgba(120, 86, 30, 0.56);
+  color: #4F3A14;
+  background: rgba(255, 253, 248, 0.62);
 }
 </style>
