@@ -2159,20 +2159,18 @@ function starStyle(i: number) {
   opacity: 1;
 }
 :root[data-theme="pearl"] .landing .hwi-icon {
-  width: 18px;
-  height: 18px;
+  /* Sizes (width / height / font-size) inherit from base scoped CSS so
+     the strip matches the dark theme exactly. Pearl only changes colour
+     and removes the drop-shadow halo. */
   color: rgba(181, 138, 58, 0.76);
   filter: none;
   transition: color 0.18s;
 }
 :root[data-theme="pearl"] .landing .hwi-label {
-  font-size: 0.625rem;
-  letter-spacing: 0.18em;
   color: #6F6048;
   transition: color 0.18s;
 }
 :root[data-theme="pearl"] .landing .hwi-arrow {
-  font-size: 0.8125rem;
   color: rgba(181, 138, 58, 0.42);
 }
 /* Hover: subtle champagne pop on the label + icon for the row item. */
