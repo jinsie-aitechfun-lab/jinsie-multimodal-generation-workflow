@@ -827,6 +827,10 @@ const workflowRunStatusMessage = computed(() => {
 // Unified cleanup invoked when the server confirms a workflow has been
 // cancelled (status === 'cancelled'). Brings every running indicator back
 // to idle so the UI no longer needs a page refresh after a cancel.
+// NOTE: text fields / reviewPlaceholders / payload are intentionally NOT
+// wiped here — after a cancel the user still needs to see what was
+// produced so they can decide between "立即生成候选图" (resume) and
+// "放弃当前生成" (full reset via performDiscardCurrentDraft).
 function resetWorkflowRuntimeState() {
   loading.value = false
   cancelRequested.value = false
@@ -838,9 +842,13 @@ function resetWorkflowRuntimeState() {
   workflowStatusData.value = null
   currentWorkflowResponse.value = null
   imageReviewRefreshCancelled.value = false
+  imageRefreshPausedByUser.value = false
   sceneRefreshQueue.value = []
   sceneRefreshingId.value = ''
+  selectingSceneId.value = ''
   clearImageReviewAutoRefreshTimer()
+  imageReviewRefreshAbortController?.abort()
+  imageReviewRefreshAbortController = null
   try {
     localStorage.removeItem(STORAGE_KEY_WORKFLOW)
   } catch {
@@ -1902,6 +1910,9 @@ function performDiscardCurrentDraft() {
   clearImageReviewAutoRefreshTimer()
   reviewAutoRefreshFiredOnce = false
   restoreAutoRefreshFired = false
+  // Reactive mirror — without this, the cancelled-refresh marker copy
+  // would leak into the next run's placeholder text.
+  imageRefreshPausedByUser.value = false
 
   // Wipe everything that applyWorkflowResponse populates.
   currentWorkflowResponse.value = null
@@ -1930,13 +1941,32 @@ function performDiscardCurrentDraft() {
   loading.value = false
   finalVideoRenderInFlight.value = false
   finalVideoRendering.value = false
+  // Additional in-flight UI state — without these the next run could
+  // briefly inherit the cancelled run's per-scene selection / timing.
+  workflowRunElapsedSec.value = 0
+  selectingSceneId.value = ''
+  userHasInteractedWithImages.value = false
+  mockAudioIndexUrl.value = ''
+  mockAudioSceneGroups.value = []
+  mockAudioDirectoryText.value = ''
 
-  // Clear draft-related localStorage. Preserve FORM / SESSION / TAB / DEV /
-  // RECENT_VIDEOS / LAST_VIDEO_URL — those are user-level state, not draft.
+  // Regenerate the session id. The backend's RunnerSessionStore keys
+  // its in-memory `previous_session_data` (last_story / last_storyboard /
+  // last_render_plan) by session_id; reusing the same session_id after
+  // a discard would seed the next run's session_memory_summary with the
+  // previous run's topic — the cleanest fix is to mint a fresh session
+  // on discard so the backend treats the next run as brand new.
+  workflowForm.value.sessionId = `demo-session-${Date.now().toString(36)}`
+
+  // Clear draft-related localStorage. Also clear SESSION so a page
+  // reload between discard and the next run doesn't restore the stale
+  // session id. FORM / TAB / DEV / RECENT_VIDEOS / LAST_VIDEO_URL stay
+  // (those are user-level state, not part of this draft).
   try {
     localStorage.removeItem(STORAGE_KEY_WORKFLOW)
     localStorage.removeItem(STORAGE_KEY_PAYLOAD)
     localStorage.removeItem(STORAGE_KEY_REFRESH_CANCELLED)
+    localStorage.removeItem(STORAGE_KEY_SESSION)
   } catch { /* ignore */ }
 
   // Drop the user back on 创作故事 — clean starting point for the next run.
@@ -2150,6 +2180,20 @@ async function waitForAsyncWorkflowOutputs(
 }
 
 async function runWorkflow() {
+  // Defensive belt: abort any lingering image refresh from a previous
+  // (cancelled but not discarded) run before we start a brand new one.
+  // Without this, an orphan refresh promise could resolve mid-run and
+  // overwrite the new image_review / selected_assets with stale data.
+  imageReviewRefreshAbortController?.abort()
+  imageReviewRefreshAbortController = null
+  imageReviewRefreshCancelled.value = false
+  imageRefreshPausedByUser.value = false
+  // Drop the previous run's "paused by user" marker so its presence in
+  // localStorage doesn't shape this run's UI copy.
+  try {
+    localStorage.removeItem(STORAGE_KEY_REFRESH_CANCELLED)
+  } catch { /* ignore */ }
+
   clearImageReviewAutoRefreshTimer()
   resultText.value = ''
   currentWorkflowResponse.value = null
@@ -2168,6 +2212,8 @@ async function runWorkflow() {
   narrationText.value = ''
   subtitlesText.value = ''
   renderPlanText.value = ''
+  characterCandidatesText.value = ''
+  characterManifestText.value = ''
   reviewAutoRefreshFiredOnce = false
   clearImageReviewAutoRefreshTimer()
   finalVideoText.value = ''
@@ -2175,6 +2221,12 @@ async function runWorkflow() {
   finalVideoRendering.value = false
   finalVideoRenderInFlight.value = false
   stepSummaries.value = []
+  errorMessage.value = ''
+  workflowStatusData.value = null
+  userHasInteractedWithImages.value = false
+  mockAudioIndexUrl.value = ''
+  mockAudioSceneGroups.value = []
+  mockAudioDirectoryText.value = ''
   activeTab.value = 'review'
 
   const form = workflowForm.value
