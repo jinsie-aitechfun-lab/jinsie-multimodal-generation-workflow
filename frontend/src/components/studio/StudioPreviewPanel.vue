@@ -210,20 +210,34 @@
           <span class="pp-hist-main-count">{{ allVideoUrls.length }} 个</span>
         </div>
         <div class="pp-hist-main-grid">
-          <button
+          <div
             v-for="(url, idx) in allVideoUrls"
             :key="url"
             class="pp-hist-card"
-            @click="selectVideo(url)"
           >
-            <div class="pp-hist-card-frame">
-              <video class="pp-hist-card-video" :src="url" preload="metadata" :muted="true"/>
-              <div class="pp-hist-card-overlay">
-                <span class="pp-hist-card-play">▶</span>
+            <button
+              type="button"
+              class="pp-hist-card-main"
+              @click="selectVideo(url)"
+            >
+              <div class="pp-hist-card-frame">
+                <video class="pp-hist-card-video" :src="url" preload="metadata" :muted="true"/>
+                <div class="pp-hist-card-overlay">
+                  <span class="pp-hist-card-play">▶</span>
+                </div>
               </div>
-            </div>
-            <div class="pp-hist-card-label">视频 {{ idx + 1 }}</div>
-          </button>
+              <div class="pp-hist-card-label">视频 {{ idx + 1 }}</div>
+            </button>
+            <button
+              type="button"
+              class="pp-hist-card-delete"
+              aria-label="从历史记录中删除"
+              title="从历史记录中删除"
+              @click.stop="requestDeleteVideo(url)"
+            >
+              ×
+            </button>
+          </div>
         </div>
       </div>
 
