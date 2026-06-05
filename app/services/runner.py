@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import http.client
 import json
 import ast
 import re
 import os
+import socket
 import subprocess
 import time
 from dataclasses import dataclass
@@ -352,6 +354,18 @@ class WorkflowRunner:
             or self._story_model_name()
         )
 
+    # Transient network failures that warrant a quick retry rather than a
+    # straight fall-through to template generation. Listed at class level
+    # so it's discoverable from one place.
+    _LLM_RETRYABLE_ERRORS = (
+        http.client.RemoteDisconnected,
+        http.client.IncompleteRead,
+        ConnectionError,           # ConnectionResetError, ConnectionAbortedError, etc.
+        socket.timeout,
+        TimeoutError,
+    )
+    _LLM_RETRY_BACKOFF_SECONDS = (0.8, 2.0)  # 3 attempts total: 0, 0.8s, 2.0s
+
     def _call_llm_chat(
         self,
         *,
@@ -360,27 +374,69 @@ class WorkflowRunner:
         payload: Dict[str, Any],
         timeout: int,
     ) -> str:
-        """Send one OpenAI-compatible chat/completions request; return raw content string."""
-        req = urllib_request.Request(
-            url=f"{api_base_url.rstrip('/')}/chat/completions",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            method="POST",
-        )
-        with urllib_request.urlopen(req, timeout=timeout) as resp:
-            raw = resp.read()
-        if not raw:
-            raise RuntimeError("LLM response is empty")
-        data = json.loads(raw.decode("utf-8", errors="ignore"))
-        content = (
-            (((data.get("choices") or [{}])[0]).get("message") or {}).get("content") or ""
-        ).strip()
-        if not content:
-            raise RuntimeError("LLM content is empty")
-        return content
+        """Send one OpenAI-compatible chat/completions request; return raw content string.
+
+        Retries up to 3 times on transient network errors (RemoteDisconnected,
+        connection resets, timeouts, HTTP 5xx). 4xx errors and empty responses
+        are not retried — they indicate a real problem, not a transient blip.
+        """
+        url = f"{api_base_url.rstrip('/')}/chat/completions"
+        body = json.dumps(payload).encode("utf-8")
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+        last_err: Optional[BaseException] = None
+        # The first attempt has zero wait; subsequent attempts back off.
+        for attempt_index in range(len(self._LLM_RETRY_BACKOFF_SECONDS) + 1):
+            if attempt_index > 0:
+                time.sleep(self._LLM_RETRY_BACKOFF_SECONDS[attempt_index - 1])
+            try:
+                req = urllib_request.Request(
+                    url=url,
+                    data=body,
+                    headers=headers,
+                    method="POST",
+                )
+                with urllib_request.urlopen(req, timeout=timeout) as resp:
+                    raw = resp.read()
+                if not raw:
+                    raise RuntimeError("LLM response is empty")
+                data = json.loads(raw.decode("utf-8", errors="ignore"))
+                content = (
+                    (((data.get("choices") or [{}])[0]).get("message") or {}).get("content") or ""
+                ).strip()
+                if not content:
+                    raise RuntimeError("LLM content is empty")
+                return content
+            except urllib_error.HTTPError as e:
+                # Only retry 5xx server errors. 4xx is a client mistake
+                # (bad key, malformed payload, quota exhausted) — retrying
+                # won't change the outcome.
+                if 500 <= e.code < 600:
+                    last_err = e
+                    continue
+                raise
+            except self._LLM_RETRYABLE_ERRORS as e:
+                last_err = e
+                continue
+            except urllib_error.URLError as e:
+                # URLError wraps lower-level network errors. Most are
+                # transient (DNS, refused, reset); retry them. The
+                # underlying reason is in e.reason — non-network reasons
+                # (e.g. unknown URL scheme) are rare and still safe to
+                # retry because they'd reproduce, not hang.
+                last_err = e
+                continue
+
+        # All attempts exhausted — surface the last exception so callers
+        # can decide whether to fall back to template or fail outright.
+        if last_err is not None:
+            raise last_err
+        # Defensive — loop always either returns or sets last_err, but
+        # raising a generic error here keeps the type checker happy.
+        raise RuntimeError("LLM call failed after retries (no exception recorded)")
 
     def _story_provider_name(self) -> str:
         return (os.getenv("STORY_PROVIDER") or DEFAULT_STORY_PROVIDER).strip()
