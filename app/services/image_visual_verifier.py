@@ -139,8 +139,25 @@ class OpenAICompatibleImageVisualVerifier:
         image_path: Path,
         prompt: str,
         characters: List[Dict[str, Any]],
+        expected_species_counts: Optional[Dict[str, int]] = None,
     ) -> Dict[str, Any]:
         character_summary = _character_summary(characters)
+        count_text = ""
+        if expected_species_counts:
+            count_text = (
+                "\n\nExpected cast counts (count individuals you see, "
+                "group by species; ignore tiny background creatures unless "
+                "they look like a duplicated main character):\n"
+                + "\n".join(
+                    f"- {species}: exactly {n}"
+                    for species, n in expected_species_counts.items()
+                )
+                + "\nIf you see MORE of any species than the expected count "
+                "(e.g. the cast calls for 1 squirrel but you see 3), include "
+                '"extra_same_species_subjects" in anatomy_leakage_issues and '
+                "lower the score significantly. Same-species duplicates are "
+                "only OK when the expected count itself is >= 2."
+            )
         instruction = (
             "You are a visual reviewer for children's story image candidates.\n"
             "Return ONLY compact JSON with these keys: score, passed, "
@@ -157,6 +174,7 @@ class OpenAICompatibleImageVisualVerifier:
             "Penalize: missing required characters, merged characters, "
             "traits explicitly listed in must_avoid appearing on a character.\n"
             f"Scene prompt:\n{prompt}\n\nRequired characters:\n{character_summary or '- none'}"
+            f"{count_text}"
         )
 
         payload = {

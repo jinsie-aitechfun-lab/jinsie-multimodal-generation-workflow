@@ -130,6 +130,38 @@ class RunnerStoryboardSupport:
             "Each prompt must describe a vivid, distinct illustration scene."
         )
 
+        # When the manifest lists >=2 characters, every scene description
+        # must name every species — otherwise the downstream image
+        # prompt's per-scene text only mentions one species, and the
+        # diffusion model renders both required characters as that
+        # species (e.g. two mirrored squirrels for a "rabbit+squirrel"
+        # story).
+        try:
+            multi_character_mode = (
+                isinstance(manifest_items, list) and len([
+                    item for item in manifest_items
+                    if isinstance(item, dict)
+                    and (
+                        str(item.get("display_name") or "").strip()
+                        or str(item.get("species") or "").strip()
+                    )
+                ]) >= 2
+            )
+        except Exception:
+            multi_character_mode = False
+
+        character_naming_rule = ""
+        if multi_character_mode:
+            character_naming_rule = (
+                "5. EVERY scene description MUST explicitly name ALL of the "
+                "required characters listed above. If the narration mentions "
+                "only one character explicitly, you must still include the "
+                "other character(s) by their species or display name in the "
+                "description (e.g. 'while the squirrel watches from behind a "
+                "tree'). Do NOT write a scene that only names one species — "
+                "this is the most common failure mode.\n"
+            )
+
         user_prompt = (
             f"Story topic: {topic}\n"
             f"Art style: {visual_style} illustration, cute chibi anime, soft warm colors\n"
@@ -145,7 +177,9 @@ class RunnerStoryboardSupport:
             "   Example: 'The rabbit dashes forward with powerful leaps, ears streaming behind, while the turtle plods steadily on the dusty track.'\n"
             "2. Then describe the SPECIFIC environment/location matching the narration.\n"
             "3. End with the required lighting palette for that scene.\n"
-            "4. Each scene must be visually DISTINCT from all others — different action, location, and color.\n\n"
+            "4. Each scene must be visually DISTINCT from all others — different action, location, and color.\n"
+            + character_naming_rule +
+            "\n"
             "Return ONLY valid JSON, no markdown:\n"
             '{"scenes": [{"scene_id": "scene_01", "visual_description": "..."}, ...]}'
         )

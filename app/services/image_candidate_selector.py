@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -27,6 +28,20 @@ COLOR_KEYWORDS = {
 }
 
 MIN_PASS_SCORE = 45.0
+
+
+def _alias_matches(alias: str, haystack: str) -> bool:
+    # ASCII aliases match on word boundaries to avoid false positives like
+    # "long-eared" containing "red", "furred" containing "red", or
+    # "preview" containing "red". Non-ASCII aliases (Chinese) match as
+    # plain substrings since CJK has no whitespace boundaries.
+    alias_lc = alias.lower().strip()
+    if not alias_lc:
+        return False
+    if all(ord(ch) < 128 for ch in alias_lc):
+        pattern = r"(?<![a-z])" + re.escape(alias_lc) + r"(?![a-z])"
+        return re.search(pattern, haystack) is not None
+    return alias_lc in haystack
 
 # Vision-dominant scoring tunables. When the visual verifier returns a score:
 #  - metadata contribution is capped (no more drowning the signal in
@@ -128,7 +143,7 @@ def _extract_expected_colors(prompt: str, characters: List[Dict[str, Any]]) -> L
 
     found: List[str] = []
     for color_name, aliases in COLOR_KEYWORDS.items():
-        if any(alias.lower() in haystack for alias in aliases):
+        if any(_alias_matches(alias, haystack) for alias in aliases):
             found.append(color_name)
 
     # Only fall back to prompt text when no character profile is available.
@@ -137,7 +152,7 @@ def _extract_expected_colors(prompt: str, characters: List[Dict[str, Any]]) -> L
 
     prompt_haystack = str(prompt or "").lower()
     for color_name, aliases in COLOR_KEYWORDS.items():
-        if any(alias.lower() in prompt_haystack for alias in aliases):
+        if any(_alias_matches(alias, prompt_haystack) for alias in aliases):
             found.append(color_name)
 
     return found
@@ -158,7 +173,7 @@ def _extract_forbidden_colors(characters: List[Dict[str, Any]]) -> List[str]:
     haystack = " | ".join(texts).lower()
     found: List[str] = []
     for color_name, aliases in COLOR_KEYWORDS.items():
-        if any(alias.lower() in haystack for alias in aliases):
+        if any(_alias_matches(alias, haystack) for alias in aliases):
             found.append(color_name)
 
     return found
@@ -314,6 +329,7 @@ def _score_candidate(
     color_ratios: Dict[str, float] = {}
     forbidden_matched_colors: List[str] = []
     forbidden_color_ratios: Dict[str, float] = {}
+    metadata_hard_failures: List[str] = []
 
     if image is not None and expected_colors:
         matched_colors, color_ratios = _color_hits(
@@ -332,6 +348,47 @@ def _score_candidate(
             score -= 18.0
             reasons.append("matched_colors:none")
             reasons.append("expected_color_missing_penalty")
+
+        # Multi-character coverage penalty. Without this, a candidate
+        # that hits ONE of the two expected character colors (e.g.
+        # brown for the squirrel but no white for the rabbit — i.e.
+        # two squirrels) can outscore a candidate that hits BOTH
+        # because the matched single color contributed more saturated
+        # ratio. Penalise candidates that don't cover every expected
+        # color in a multi-character scene so the picker prefers
+        # candidates where ALL required characters are visible.
+        if (
+            quality_gates.get("multi_character_scene")
+            and len(expected_colors) >= 2
+        ):
+            missing_colors = [
+                c for c in expected_colors if c not in matched_colors
+            ]
+            if missing_colors:
+                # Per missing color, drop ~15 points so a candidate
+                # missing one required color drops well below one that
+                # covers both. Bounded so a single miss doesn't push
+                # the score into runaway-negative territory.
+                miss_penalty = min(15.0 * len(missing_colors), 30.0)
+                score -= miss_penalty
+                reasons.append(
+                    "multi_character_color_coverage_missing:"
+                    + ",".join(missing_colors)
+                )
+                reasons.append(
+                    f"multi_character_coverage_penalty:{miss_penalty:.1f}"
+                )
+                # Hard fail: in vision_dominant mode the metadata score
+                # is capped to <=25, so the penalty above is swallowed and
+                # the visual verifier alone decides. The verifier often
+                # gives a beautiful single-animal image a high score even
+                # though a required species is missing. Treat
+                # multi-character missing colors as a hard fail at the
+                # metadata layer so it survives into vision_dominant
+                # mode and caps the final score below MIN_PASS_SCORE.
+                metadata_hard_failures.append(
+                    "multi_character_missing_colors:" + ",".join(missing_colors)
+                )
 
     elif not expected_colors:
         score += 2.0
@@ -364,11 +421,32 @@ def _score_candidate(
     visual_hard_failures: List[str] = []
     if image is not None and visual_verifier is not None:
         try:
-            visual_review = visual_verifier(
-                image_path=path,
-                prompt=prompt,
-                characters=characters,
-            )
+            # Pass expected per-species counts so the verifier can flag
+            # candidates with extra same-species individuals (e.g. cast
+            # asks for 1 squirrel but image has 3). Same-species casts
+            # like "rabbit + rabbit mom" are correctly handled because
+            # the count for "rabbit" is 2, not 1.
+            try:
+                from app.services.runner_image_prompts_support import (
+                    species_count_map,
+                )
+                expected_counts = dict(species_count_map(characters))
+            except Exception:
+                expected_counts = {}
+            try:
+                visual_review = visual_verifier(
+                    image_path=path,
+                    prompt=prompt,
+                    characters=characters,
+                    expected_species_counts=expected_counts or None,
+                )
+            except TypeError:
+                # Legacy verifier signature without expected_species_counts.
+                visual_review = visual_verifier(
+                    image_path=path,
+                    prompt=prompt,
+                    characters=characters,
+                )
             raw_score = float(visual_review.get("score") or 0.0)
             visual_score_value = max(0.0, min(100.0, raw_score))
 
@@ -406,7 +484,9 @@ def _score_candidate(
         reasons.append(f"capped_metadata_floor:{capped_metadata:.1f}")
         for failure in visual_hard_failures:
             reasons.append(f"visual_hard_fail:{failure}")
-        if visual_hard_failures:
+        for failure in metadata_hard_failures:
+            reasons.append(f"metadata_hard_fail:{failure}")
+        if visual_hard_failures or metadata_hard_failures:
             score = min(score, MIN_PASS_SCORE - HARD_FAIL_MARGIN)
         if visual_review.get("passed") is False:
             reasons.append("visual_review_failed")
@@ -414,6 +494,10 @@ def _score_candidate(
     else:
         score_mode = "metadata_only"
         reasons.append("score_mode:metadata_only")
+        for failure in metadata_hard_failures:
+            reasons.append(f"metadata_hard_fail:{failure}")
+        if metadata_hard_failures:
+            score = min(score, MIN_PASS_SCORE - HARD_FAIL_MARGIN)
 
     passed = score >= MIN_PASS_SCORE
 
@@ -432,6 +516,7 @@ def _score_candidate(
         "quality_gates": quality_gates,
         "visual_review": visual_review,
         "visual_hard_failures": visual_hard_failures,
+        "metadata_hard_failures": metadata_hard_failures,
     }
 
 
@@ -477,12 +562,21 @@ def select_best_candidate(
     if not scored:
         raise ValueError("candidate_asset_refs is empty")
 
-    scored.sort(
-        key=lambda item: (
+    # Sort primarily by "no hard failure" (candidates that cleared all hard
+    # checks always rank above candidates with any hard failure, regardless
+    # of score), then by score. This guarantees a wrong-species image (e.g.
+    # one rabbit only) never wins over a correct one even if the visual
+    # verifier loved its composition.
+    def _sort_key(item: Dict[str, Any]) -> tuple:
+        has_hard_fail = bool(
+            item.get("visual_hard_failures") or item.get("metadata_hard_failures")
+        )
+        return (
+            0 if has_hard_fail else 1,
             float(item.get("score") or 0.0),
-        ),
-        reverse=True,
-    )
+        )
+
+    scored.sort(key=_sort_key, reverse=True)
 
     best = scored[0]
     best_score = float(best.get("score") or 0.0)
