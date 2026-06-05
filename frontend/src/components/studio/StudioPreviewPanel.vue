@@ -88,17 +88,31 @@
             <span class="pp-history-count">{{ allVideoUrls.length }} 个</span>
           </div>
           <div class="pp-history-list">
-            <button
+            <div
               v-for="(url, idx) in allVideoUrls"
               :key="url"
               :class="['pp-thumb', { 'pp-thumb--active': url === displayUrl }]"
-              @click="selectVideo(url)"
-              :title="`视频 ${idx + 1}`"
             >
-              <video class="pp-thumb-video" :src="url" preload="metadata" :muted="true"/>
-              <div class="pp-thumb-overlay"><span class="pp-thumb-play">▶</span></div>
-              <div class="pp-thumb-index">{{ idx + 1 }}</div>
-            </button>
+              <button
+                type="button"
+                class="pp-thumb-main"
+                :title="`视频 ${idx + 1}`"
+                @click="selectVideo(url)"
+              >
+                <video class="pp-thumb-video" :src="url" preload="metadata" :muted="true"/>
+                <div class="pp-thumb-overlay"><span class="pp-thumb-play">▶</span></div>
+                <div class="pp-thumb-index">{{ idx + 1 }}</div>
+              </button>
+              <button
+                type="button"
+                class="pp-thumb-delete"
+                aria-label="从历史记录中删除"
+                title="从历史记录中删除"
+                @click.stop="requestDeleteVideo(url)"
+              >
+                ×
+              </button>
+            </div>
           </div>
         </div>
       </template>
@@ -157,20 +171,34 @@
             <span class="pp-hist-main-count">{{ allVideoUrls.length }} 个</span>
           </div>
           <div class="pp-hist-main-grid">
-            <button
+            <div
               v-for="(url, idx) in allVideoUrls"
               :key="url"
               class="pp-hist-card"
-              @click="selectVideo(url)"
             >
-              <div class="pp-hist-card-frame">
-                <video class="pp-hist-card-video" :src="url" preload="metadata" :muted="true"/>
-                <div class="pp-hist-card-overlay">
-                  <span class="pp-hist-card-play">▶</span>
+              <button
+                type="button"
+                class="pp-hist-card-main"
+                @click="selectVideo(url)"
+              >
+                <div class="pp-hist-card-frame">
+                  <video class="pp-hist-card-video" :src="url" preload="metadata" :muted="true"/>
+                  <div class="pp-hist-card-overlay">
+                    <span class="pp-hist-card-play">▶</span>
+                  </div>
                 </div>
-              </div>
-              <div class="pp-hist-card-label">视频 {{ idx + 1 }}</div>
-            </button>
+                <div class="pp-hist-card-label">视频 {{ idx + 1 }}</div>
+              </button>
+              <button
+                type="button"
+                class="pp-hist-card-delete"
+                aria-label="从历史记录中删除"
+                title="从历史记录中删除"
+                @click.stop="requestDeleteVideo(url)"
+              >
+                ×
+              </button>
+            </div>
           </div>
         </div>
       </template>
@@ -334,10 +362,21 @@ const props = defineProps<{
   cancelRequested?: boolean
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   (e: 'set-topic', topic: string): void
   (e: 'cancel'): void
+  (e: 'delete-video', url: string): void
 }>()
+
+/* Local-only history delete. Bubbles the URL up to the parent — the
+   parent shows a themed confirm dialog (matching the rest of the app)
+   and owns the localStorage persistence. stopPropagation is on the
+   button itself in the template so the parent thumbnail click (which
+   selects/plays the video) doesn't fire. */
+function requestDeleteVideo(url: string) {
+  if (!url) return
+  emit('delete-video', url)
+}
 
 // ── All unique video URLs (current first, then history) ──
 const allVideoUrls = computed(() => {
@@ -728,18 +767,59 @@ const doneCount = computed(
 }
 
 .pp-hist-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 6px;
+  padding: 0;
+  background: transparent;
+  text-align: left;
+  transition: transform 0.18s;
+}
+.pp-hist-card:hover { transform: translateY(-2px); }
+.pp-hist-card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
   padding: 0;
   border: none;
   background: transparent;
   cursor: pointer;
   font-family: inherit;
   text-align: left;
-  transition: transform 0.18s;
 }
-.pp-hist-card:hover { transform: translateY(-2px); }
+.pp-hist-card-delete {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid rgba(245,158,11,0.24);
+  border-radius: 999px;
+  background: rgba(8,6,3,0.78);
+  color: rgba(255,245,220,0.82);
+  font-size: 15px;
+  line-height: 1;
+  font-family: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.16s ease, background 0.16s, border-color 0.16s, color 0.16s;
+  z-index: 2;
+}
+.pp-hist-card:hover .pp-hist-card-delete,
+.pp-hist-card:focus-within .pp-hist-card-delete {
+  opacity: 1;
+}
+.pp-hist-card-delete:hover {
+  background: rgba(180,60,40,0.74);
+  border-color: rgba(245,158,11,0.50);
+  color: #fff;
+}
 
 .pp-hist-card-frame {
   position: relative;
@@ -1268,7 +1348,8 @@ const doneCount = computed(
   color: rgba(111,106,95,0.76);
 }
 
-/* Thumbnail button */
+/* Thumbnail tile (was a button — now a div wrapping a main button +
+   delete button so the × doesn't trigger the play click). */
 .pp-thumb {
   position: relative;
   flex-shrink: 0;
@@ -1278,9 +1359,48 @@ const doneCount = computed(
   overflow: hidden;
   border: 1.5px solid rgba(255,255,255,0.08);
   background: #000;
-  cursor: pointer;
-  padding: 0;
   transition: border-color 0.18s, box-shadow 0.18s, transform 0.18s;
+}
+.pp-thumb-main {
+  position: absolute;
+  inset: 0;
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+}
+.pp-thumb-delete {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid rgba(245,158,11,0.22);
+  border-radius: 999px;
+  background: rgba(8,6,3,0.72);
+  color: rgba(255,245,220,0.78);
+  font-size: 14px;
+  line-height: 1;
+  font-family: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.16s ease, background 0.16s, border-color 0.16s, color 0.16s;
+  z-index: 2;
+}
+.pp-thumb:hover .pp-thumb-delete,
+.pp-thumb:focus-within .pp-thumb-delete {
+  opacity: 1;
+}
+.pp-thumb-delete:hover {
+  background: rgba(180,60,40,0.72);
+  border-color: rgba(245,158,11,0.46);
+  color: #fff;
 }
 
 .pp-thumb:hover {
