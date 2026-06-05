@@ -374,6 +374,8 @@ function performDeleteRecentVideo() {
   deleteVideoTarget.value = null
   if (!target) return
 
+  // Strip from the recent list FIRST so any reactive consumer sees the
+  // post-delete state.
   recentFinalVideoUrls.value = recentFinalVideoUrls.value.filter(
     (item) => item !== target,
   )
@@ -391,15 +393,99 @@ function performDeleteRecentVideo() {
     /* UI state still reflects the deletion */
   }
 
-  if (finalVideoUrl.value === target) {
+  const wasCurrent = finalVideoUrl.value === target
+
+  if (wasCurrent) {
+    // CRITICAL: deleting the currently-playing video is treated as
+    // discarding the run that produced it. If we only clear
+    // `finalVideoUrl` and leave `currentWorkflowResponse` /
+    // `STORAGE_KEY_WORKFLOW` in place, two reactive paths immediately
+    // try to "finish" the run and restart generation:
+    //
+    //   · The watcher on `isWorkflowReadyForRender` (the auto-render
+    //     trigger) uses `if (finalVideoUrl.value) return` as its
+    //     "already done" guard. With finalVideoUrl emptied but the
+    //     completed response still present, the guard fails and the
+    //     watcher calls renderFinalVideoIfReady() → backend re-renders.
+    //
+    //   · `resumePendingSceneGenerationAfterRestore()` uses the same
+    //     finalVideoUrl guard. On any subsequent restore / nav back,
+    //     it sees pending placeholders + empty finalVideoUrl and fires
+    //     `refreshImageReview()` → backend regenerates candidate images.
+    //
+    // The only safe fix is to fully sever the workflow association the
+    // same way 放弃当前生成 does: wipe response / payload / status /
+    // placeholders / per-step text + drop the persisted workflow_id /
+    // payload / refresh-cancel marker. The blacklist below is kept as
+    // belt-and-suspenders in case any other code path still tries to
+    // restore the URL by string match.
     finalVideoUrl.value = ''
+    finalVideoText.value = ''
+    finalVideoAudioEnabled.value = true
+    finalVideoRenderInFlight.value = false
+    finalVideoRendering.value = false
+
+    currentWorkflowResponse.value = null
+    currentWorkflowPayload.value = null
+    workflowStatusData.value = null
+    activeWorkflowId.value = ''
+    loading.value = false
+    cancelRequested.value = false
+    workflowRunElapsedSec.value = 0
+
+    // Stop any in-flight image refresh so it can't resolve after this
+    // wipe and overwrite the cleaned state with stale data.
+    imageReviewRefreshAbortController?.abort()
+    imageReviewRefreshAbortController = null
+    refreshingImageReview.value = false
+    imageReviewRefreshCancelled.value = false
+    imageRefreshPausedByUser.value = false
+    sceneRefreshQueue.value = []
+    sceneRefreshingId.value = ''
+    clearImageReviewAutoRefreshTimer()
+    reviewAutoRefreshFiredOnce = false
+    restoreAutoRefreshFired = false
+
+    // Drop every per-run preview field so review tab doesn't keep
+    // showing the deleted run's story / images / audio.
+    storyText.value = ''
+    storyboardText.value = ''
+    imagePromptsText.value = ''
+    imageAssetsText.value = ''
+    imageReviewText.value = ''
+    videoPromptsText.value = ''
+    narrationText.value = ''
+    subtitlesText.value = ''
+    renderPlanText.value = ''
+    stepSummaries.value = []
+    characterCandidatesText.value = ''
+    characterManifestText.value = ''
+    resultText.value = ''
+    reviewPlaceholders.value = []
+    selectingSceneId.value = ''
+    userHasInteractedWithImages.value = false
+    mockAudioIndexUrl.value = ''
+    mockAudioSceneGroups.value = []
+    mockAudioDirectoryText.value = ''
+    errorMessage.value = ''
+
+    // Forget the workflow on disk too. Without these removals, a page
+    // refresh would re-read outputs.json via the reattach path and the
+    // blacklist would only intercept finalVideoUrl — currentWorkflow-
+    // Response would still be populated, re-triggering the watcher
+    // chain described above.
     try {
       localStorage.removeItem(STORAGE_KEY_VIDEO_URL)
+      localStorage.removeItem(STORAGE_KEY_WORKFLOW)
+      localStorage.removeItem(STORAGE_KEY_PAYLOAD)
+      localStorage.removeItem(STORAGE_KEY_REFRESH_CANCELLED)
     } catch { /* ignore */ }
   }
 
-  // Persist the deletion so a page reload that re-reads outputs.json
-  // (via applyWorkflowResponse) can't bring the URL back to life.
+  // Persist the deletion as a defensive backstop. Even after the full
+  // workflow wipe above, if any other code path (e.g. SPA nav from the
+  // Landing showcase that reads outputs by direct URL) tries to push
+  // the URL back into recent list, the blacklist will reject it.
   deletedVideoUrlsSet.value = new Set(deletedVideoUrlsSet.value)
   deletedVideoUrlsSet.value.add(target)
   persistDeletedVideoUrlsSet()
@@ -719,6 +805,20 @@ onMounted(() => {
       waitForAsyncWorkflowOutputs(savedWorkflowId)
         .then(asyncData => {
           if (asyncData) {
+            // Same blacklist guard as the direct-results path below —
+            // if the user already deleted this run's final video, don't
+            // resurrect it on async reattach either.
+            const restoredFinalUrl = extractFinalVideoUrl(asyncData)
+            if (restoredFinalUrl && deletedVideoUrlsSet.value.has(restoredFinalUrl)) {
+              try {
+                localStorage.removeItem(STORAGE_KEY_WORKFLOW)
+                localStorage.removeItem(STORAGE_KEY_PAYLOAD)
+                localStorage.removeItem(STORAGE_KEY_VIDEO_URL)
+                localStorage.removeItem(STORAGE_KEY_REFRESH_CANCELLED)
+              } catch { /* ignore */ }
+              currentWorkflowPayload.value = null
+              return
+            }
             applyWorkflowResponse(asyncData)
             // Match runWorkflow()'s post-completion path so the deferred
             // candidate-image refresh kicks in automatically (sets
@@ -755,6 +855,26 @@ onMounted(() => {
             .catch(() => {})
         }
         if (data.outputs || data.steps) {
+          // Defensive guard: if the fetched workflow's final-video URL is
+          // on the user's deletion blacklist, they've already discarded
+          // this run. Calling applyWorkflowResponse would populate
+          // currentWorkflowResponse with the deleted run's data, which
+          // then triggers the isWorkflowReadyForRender watcher and gets
+          // stuck on "等待用户触发渲染" because the URL is blocked from
+          // restoration but the rest of the response is live. Wipe the
+          // persisted workflow keys and bail so the new tab loads to a
+          // clean idle state instead of resurrecting the deleted run.
+          const restoredFinalUrl = extractFinalVideoUrl(data as WorkflowRunResponse)
+          if (restoredFinalUrl && deletedVideoUrlsSet.value.has(restoredFinalUrl)) {
+            try {
+              localStorage.removeItem(STORAGE_KEY_WORKFLOW)
+              localStorage.removeItem(STORAGE_KEY_PAYLOAD)
+              localStorage.removeItem(STORAGE_KEY_VIDEO_URL)
+              localStorage.removeItem(STORAGE_KEY_REFRESH_CANCELLED)
+            } catch { /* ignore */ }
+            currentWorkflowPayload.value = null
+            return
+          }
           applyWorkflowResponse(data)
           resumePendingSceneGenerationAfterRestore()
         }

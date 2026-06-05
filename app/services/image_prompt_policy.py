@@ -161,6 +161,20 @@ def build_scene_action_binding_block(
     if story:
         parts.append(f"must match this story moment: {story}")
 
+    # Without any scene-specific text from the storyboard, the block above
+    # collapses into a generic instruction that's identical for every
+    # scene. The hint below forces a difference even in that degraded
+    # state. Caller (runner_image_prompts_support) also provides a
+    # scene-position anchor higher up in the prompt; this is a defense-in-
+    # depth so the block never reads "depict the current scene action"
+    # with no actual scene attached.
+    if not visual and not story:
+        parts.append(
+            "the storyboard's per-scene text was empty; rely on the scene "
+            "position anchor and required characters to make this scene "
+            "visibly different from any other scene of the same story"
+        )
+
     parts.append(
         "keep every required character visually consistent while changing only pose, framing, background, and action"
     )

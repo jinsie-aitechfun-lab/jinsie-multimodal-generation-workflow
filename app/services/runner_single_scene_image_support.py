@@ -11,6 +11,7 @@ from app.services.image_quality_retry_policy import (
     quality_max_retries,
     summarize_selection_for_history,
 )
+from app.services.runner_image_prompts_support import ensure_multi_character_anchor
 
 
 class RunnerSingleSceneImageSupport:
@@ -142,6 +143,17 @@ class RunnerSingleSceneImageSupport:
             fallback_scene_title=str(scene.get("scene_title") or "").strip(),
         )
 
+        # Last-mile multi-character guard: if the scene has 2+ required
+        # characters but base_prompt lacks the anti-mirror anchor (most
+        # commonly because outputs["image_prompts"] was missing this
+        # scene_id and we fell back to bare visual_description), prepend
+        # the roster block so the diffusion model still gets the
+        # "two different species, not two X, not two Y" signal.
+        base_prompt = ensure_multi_character_anchor(
+            base_prompt,
+            asset_meta.get("characters") or [],
+        )
+
         candidate_asset_refs: List[Dict[str, Any]] = []
 
         for candidate_index, candidate_suffix in enumerate(["candidate_a", "candidate_b"]):
@@ -218,6 +230,13 @@ class RunnerSingleSceneImageSupport:
             scene=scene,
             prompt_item=prompt_item,
             fallback_scene_title=str(scene.get("scene_title") or "").strip(),
+        )
+        # Last-mile multi-character guard — same purpose as the pillow
+        # branch above. Critical here because the API path drives
+        # generation for the real image-provider integration.
+        base_prompt = ensure_multi_character_anchor(
+            base_prompt,
+            asset_meta.get("characters") or [],
         )
         negative_prompt = self.scene_negative_prompt_from_characters(
             asset_meta["characters"]

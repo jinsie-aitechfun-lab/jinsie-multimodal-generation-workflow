@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
+from app.services.runner_image_prompts_support import (
+    build_anatomy_separation_rules,
+    species_count_map,
+)
+
 
 class RunnerSceneCharactersSupport:
     """Scene-level character binding and prompt-contract helpers.
@@ -243,6 +248,7 @@ class RunnerSceneCharactersSupport:
         required_names: List[str] = []
         primary_names: List[str] = []
         secondary_names: List[str] = []
+        manifest_items: List[Dict[str, Any]] = []
 
         for binding in scene_characters:
             if not isinstance(binding, dict):
@@ -260,6 +266,8 @@ class RunnerSceneCharactersSupport:
             name = display_name or species
             if not name:
                 continue
+
+            manifest_items.append(manifest_item)
 
             if name not in required_names:
                 required_names.append(name)
@@ -291,9 +299,6 @@ class RunnerSceneCharactersSupport:
             "do not merge multiple characters into one body",
             "do not create a hybrid creature that combines traits from multiple required characters",
             "do not replace one character with another character",
-            "anatomy separation: only rabbit characters may have long upright ears; only turtle characters may have shells",
-            "turtle anatomy rule: turtles must have an earless rounded reptile head with no external ears",
-            "rabbit anatomy rule: rabbits must not have a shell or turtle body",
             "give every required character clear readable scale and enough visual space",
             f"{primary_text} may lead the action, but must not hide, replace, or visually erase the other required characters",
         ]
@@ -306,6 +311,24 @@ class RunnerSceneCharactersSupport:
         parts.append(
             "if any required scene character is missing, the image is invalid and should be regenerated"
         )
+
+        # Dynamic per-cast anatomy rules — derived from each character's
+        # profile, not hardcoded to any species. Same-species casts get
+        # empty string (no cross-species body-part conflict to guard).
+        anatomy_rules = build_anatomy_separation_rules(manifest_items)
+        if anatomy_rules:
+            parts.append(anatomy_rules)
+
+        # Expected per-species count callout. For "rabbit + rabbit mom"
+        # this becomes "expected cast count: 2 rabbits"; for
+        # "rabbit + squirrel" it becomes "expected cast count: 1 rabbit, 1 squirrel".
+        counts = species_count_map(manifest_items)
+        if counts:
+            count_text = ", ".join(
+                f"{n} {sp if n == 1 else sp + 's'}"
+                for sp, n in counts.items()
+            )
+            parts.append(f"expected cast count: {count_text}")
 
         return "; ".join(parts)
 

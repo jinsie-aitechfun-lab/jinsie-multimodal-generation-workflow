@@ -16,6 +16,10 @@ from app.services.image_provider_types import (
     QueueExecutionResult,
     QueuePolicy,
 )
+from app.services.runner_image_prompts_support import (
+    build_multi_character_negative_prompt,
+    ensure_multi_character_anchor,
+)
 
 
 class ImageProviderQueue:
@@ -128,6 +132,12 @@ class ImageProviderQueue:
                     prompt_item=prompt_item,
                     fallback_scene_title=scene_title,
                 )
+                # Last-mile multi-character guard for the queue batch path.
+                # See ensure_multi_character_anchor() for full context.
+                base_prompt = ensure_multi_character_anchor(
+                    base_prompt,
+                    asset_meta.get("characters") or [],
+                )
 
                 candidate_asset_refs = self._generate_shot_candidates(
                     provider=provider,
@@ -237,6 +247,13 @@ class ImageProviderQueue:
                     scene=scene,
                     prompt_item=prompt_item,
                     fallback_scene_title=str(scene.get("scene_title") or "").strip(),
+                )
+                # Last-mile multi-character guard for the queue scene-mode
+                # path. See ensure_multi_character_anchor() for full
+                # context.
+                base_prompt = ensure_multi_character_anchor(
+                    base_prompt,
+                    asset_meta.get("characters") or [],
                 )
 
                 candidate_asset_refs = self._generate_scene_candidates(
@@ -474,6 +491,15 @@ class ImageProviderQueue:
         img2img_reference_path: Optional[Path] = None,
     ) -> List[Dict[str, Any]]:
         candidate_asset_refs: List[Dict[str, Any]] = []
+        shot_characters = (
+            prompt_item.get("characters")
+            or parent_scene.get("characters")
+            or []
+        )
+        # Multi-character negative prompt — empty string for solo scenes
+        # so it never dilutes the per-character forbidden_traits / safety
+        # negatives already injected by the adapter.
+        multi_negative = build_multi_character_negative_prompt(shot_characters)
 
         for candidate_index, candidate_suffix in enumerate(["candidate_a", "candidate_b"]):
             candidate_prompt = base_prompt
@@ -532,6 +558,7 @@ class ImageProviderQueue:
                     "character_anchor": character_anchor,
                     "reference_images": reference_images,
                     "img2img_reference_path": img2img_reference_path,
+                    "negative_prompt": multi_negative,
                 },
             )
 
@@ -580,6 +607,12 @@ class ImageProviderQueue:
         img2img_reference_path: Optional[Path] = None,
     ) -> List[Dict[str, Any]]:
         candidate_asset_refs: List[Dict[str, Any]] = []
+        scene_characters = (
+            prompt_item.get("characters")
+            or scene.get("characters")
+            or []
+        )
+        multi_negative = build_multi_character_negative_prompt(scene_characters)
 
         for candidate_index, candidate_suffix in enumerate(["candidate_a", "candidate_b"]):
             candidate_scene = self._runner._scene_candidate_variant(
@@ -622,6 +655,7 @@ class ImageProviderQueue:
                     "character_anchor": character_anchor,
                     "reference_images": reference_images,
                     "img2img_reference_path": img2img_reference_path,
+                    "negative_prompt": multi_negative,
                 },
             )
 
