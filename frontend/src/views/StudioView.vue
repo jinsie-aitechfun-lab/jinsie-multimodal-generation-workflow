@@ -303,6 +303,9 @@ const recentFinalVideoUrls = ref<string[]>([])
 function pushRecentFinalVideoUrl(url: string) {
   const u = String(url || '').trim()
   if (!u) return
+  // Respect the user-driven deletion blacklist so a deleted URL stays
+  // gone after page reload / reattach.
+  if (deletedVideoUrlsSet.value.has(u)) return
 
   // 去重：最新的放最前
   recentFinalVideoUrls.value = [
@@ -320,6 +323,86 @@ function pushRecentFinalVideoUrl(url: string) {
   } catch {
     /* quota / serialisation failures are non-fatal */
   }
+}
+
+/* ── History video delete ───────────────────────────────────────────
+   The history list is just URLs persisted in localStorage; no backend
+   record exists, so removal here never touches `assets/mock/*`.
+
+   Two-step UX so the dialog matches the rest of the studio:
+     1. `requestDeleteRecentVideo(url)` opens a themed confirm dialog
+        (deleteVideoTarget holds the pending URL).
+     2. `performDeleteRecentVideo()` runs the actual deletion after the
+        user clicks 删除 in the dialog.
+
+   To make the deletion survive a page reload we maintain a SET of
+   deleted URLs in localStorage. Without that, applyWorkflowResponse
+   would re-read outputs.json on reattach and push the URL right back
+   into the recent list. The set is consulted by
+   `pushRecentFinalVideoUrl` and `applyWorkflowResponse` so the
+   blacklisted URL can't sneak back in. */
+const deleteVideoTarget = ref<string | null>(null)
+const deletedVideoUrlsSet = ref<Set<string>>(new Set())
+
+function persistDeletedVideoUrlsSet() {
+  try {
+    if (deletedVideoUrlsSet.value.size > 0) {
+      localStorage.setItem(
+        STORAGE_KEY_DELETED_VIDEOS,
+        JSON.stringify(Array.from(deletedVideoUrlsSet.value)),
+      )
+    } else {
+      localStorage.removeItem(STORAGE_KEY_DELETED_VIDEOS)
+    }
+  } catch {
+    /* localStorage quota / unavailability is non-fatal */
+  }
+}
+
+function requestDeleteRecentVideo(url: string) {
+  const target = String(url || '').trim()
+  if (!target) return
+  deleteVideoTarget.value = target
+}
+
+function cancelDeleteRecentVideo() {
+  deleteVideoTarget.value = null
+}
+
+function performDeleteRecentVideo() {
+  const target = deleteVideoTarget.value
+  deleteVideoTarget.value = null
+  if (!target) return
+
+  recentFinalVideoUrls.value = recentFinalVideoUrls.value.filter(
+    (item) => item !== target,
+  )
+
+  try {
+    if (recentFinalVideoUrls.value.length > 0) {
+      localStorage.setItem(
+        STORAGE_KEY_RECENT_VIDEOS,
+        JSON.stringify(recentFinalVideoUrls.value),
+      )
+    } else {
+      localStorage.removeItem(STORAGE_KEY_RECENT_VIDEOS)
+    }
+  } catch {
+    /* UI state still reflects the deletion */
+  }
+
+  if (finalVideoUrl.value === target) {
+    finalVideoUrl.value = ''
+    try {
+      localStorage.removeItem(STORAGE_KEY_VIDEO_URL)
+    } catch { /* ignore */ }
+  }
+
+  // Persist the deletion so a page reload that re-reads outputs.json
+  // (via applyWorkflowResponse) can't bring the URL back to life.
+  deletedVideoUrlsSet.value = new Set(deletedVideoUrlsSet.value)
+  deletedVideoUrlsSet.value.add(target)
+  persistDeletedVideoUrlsSet()
 }
 const finalVideoRendering = ref(false)
 const workflowForm = ref<any>({ ...DEFAULT_WORKFLOW_FORM })
@@ -438,6 +521,13 @@ const STORAGE_KEY_TAB = 'jinsie_active_tab'
 const STORAGE_KEY_SESSION = 'jinsie_session_id'
 const STORAGE_KEY_VIDEO_URL = 'jinsie_last_video_url'
 const STORAGE_KEY_RECENT_VIDEOS = 'jinsie_recent_video_urls'
+// Set of URLs the user has explicitly removed from history. Without this,
+// a page refresh would re-import the deleted URL because the workflow
+// outputs.json on disk still references it — applyWorkflowResponse would
+// extract finalVideoUrl and push it back into RECENT_VIDEOS. The blacklist
+// is consulted in pushRecentFinalVideoUrl + applyWorkflowResponse so the
+// deletion survives reload without touching backend files.
+const STORAGE_KEY_DELETED_VIDEOS = 'jinsie_deleted_video_urls'
 const STORAGE_KEY_DEV = 'jinsie_dev_mode'
 const STORAGE_KEY_WORKFLOW = 'jinsie_workflow_id'
 const STORAGE_KEY_PAYLOAD = 'jinsie_workflow_payload'
@@ -508,6 +598,20 @@ onMounted(() => {
       if (savedForm.visualStyle === 'cute chibi anime') {
         savedForm.visualStyle = 'cute_chibi_anime'
       }
+      // V1.0 visible-option coercion. WorkflowRunPanel hides
+      // storyboard_preview / assets_only / en-US / storybook from
+      // their respective selects; if a stored form carries one of
+      // those legacy values, snap it back to the supported default
+      // so the dropdown doesn't render with a blank current value.
+      if (savedForm.outputMode && savedForm.outputMode !== 'full_video') {
+        savedForm.outputMode = 'full_video'
+      }
+      if (savedForm.language && savedForm.language !== 'zh-CN') {
+        savedForm.language = 'zh-CN'
+      }
+      if (savedForm.videoProvider && savedForm.videoProvider !== 'mock') {
+        savedForm.videoProvider = 'mock'
+      }
       workflowForm.value = { ...DEFAULT_WORKFLOW_FORM, ...savedForm }
     } catch { /* ignore malformed */ }
   }
@@ -529,6 +633,26 @@ onMounted(() => {
     }
   }
 
+  // Restore the user's "deleted from history" set BEFORE rebuilding
+  // recentFinalVideoUrls / pushing savedVideoUrl, so a blacklisted URL
+  // can't re-enter the list during init.
+  const savedDeletedVideosStr = localStorage.getItem(STORAGE_KEY_DELETED_VIDEOS)
+  if (savedDeletedVideosStr) {
+    try {
+      const parsedDeleted = JSON.parse(savedDeletedVideosStr)
+      if (Array.isArray(parsedDeleted)) {
+        deletedVideoUrlsSet.value = new Set(
+          parsedDeleted.filter(
+            (item): item is string =>
+              typeof item === 'string' && item.length > 0,
+          ),
+        )
+      }
+    } catch {
+      /* corrupt JSON — treat as empty blacklist */
+    }
+  }
+
   // Restore the full recent-videos list first (so multi-session history
   // survives a refresh); then push the last video url for de-dup.
   const savedRecentVideosStr = localStorage.getItem(STORAGE_KEY_RECENT_VIDEOS)
@@ -538,6 +662,9 @@ onMounted(() => {
       if (Array.isArray(parsed)) {
         recentFinalVideoUrls.value = parsed
           .filter((item): item is string => typeof item === 'string' && item.length > 0)
+          // Strip any previously-deleted URL that might still linger in
+          // the recent list (e.g. older builds wrote it without checking).
+          .filter((item) => !deletedVideoUrlsSet.value.has(item))
           .slice(0, 10)
       }
     } catch {
@@ -1234,13 +1361,24 @@ function applyWorkflowResponse(data: WorkflowRunResponse) {
   renderPlanText.value = extractRenderPlanText(data)
   finalVideoText.value = extractFinalVideoText(data)
   finalVideoAudioEnabled.value = (data.outputs as any)?.final_video?.audio_enabled ?? true
-  finalVideoUrl.value = extractFinalVideoUrl(data)
-  if (finalVideoUrl.value) {
-    pushRecentFinalVideoUrl(finalVideoUrl.value)
-    localStorage.setItem(STORAGE_KEY_VIDEO_URL, finalVideoUrl.value)
-    // Pipeline is fully done — drop the "user cancelled refresh" marker
-    // so a brand-new workflow after this isn't accidentally blocked.
-    clearImageRefreshCancelledMarker()
+  {
+    const extractedVideoUrl = extractFinalVideoUrl(data)
+    // If the user has explicitly deleted this URL from history, do NOT
+    // resurrect it on reattach / outputs reload. Without this guard a
+    // page refresh after delete would re-import the URL via the
+    // workflow_id→outputs.json restore path.
+    if (extractedVideoUrl && deletedVideoUrlsSet.value.has(extractedVideoUrl)) {
+      finalVideoUrl.value = ''
+    } else {
+      finalVideoUrl.value = extractedVideoUrl
+      if (finalVideoUrl.value) {
+        pushRecentFinalVideoUrl(finalVideoUrl.value)
+        localStorage.setItem(STORAGE_KEY_VIDEO_URL, finalVideoUrl.value)
+        // Pipeline is fully done — drop the "user cancelled refresh"
+        // marker so a brand-new workflow after this isn't blocked.
+        clearImageRefreshCancelledMarker()
+      }
+    }
   }
   extractMockAudioState(data)
   stepSummaries.value = buildStepSummaries(data)
@@ -2534,6 +2672,7 @@ async function runWorkflow() {
         :example-topics="EXAMPLE_TOPICS"
         @set-topic="setExampleTopic"
         @cancel="cancelActivePhase"
+        @delete-video="requestDeleteRecentVideo"
       />
     </section>
       <section v-if="activeTab === 'review'" class="review-layout">
@@ -2814,6 +2953,27 @@ async function runWorkflow() {
           <div class="confirm-actions">
             <button class="confirm-btn confirm-btn-ghost" @click="cancelDiscardDialog">取消</button>
             <button class="confirm-btn confirm-btn-primary" @click="performDiscardCurrentDraft">放弃</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <Teleport to="body">
+    <Transition name="confirm-fade">
+      <div
+        v-if="deleteVideoTarget"
+        class="confirm-overlay"
+        role="dialog"
+        aria-modal="true"
+        @click.self="cancelDeleteRecentVideo"
+      >
+        <div class="confirm-dialog">
+          <h3 class="confirm-title">从历史记录中删除该视频？</h3>
+          <p class="confirm-message">这只会移除本地历史记录，不会删除已生成的文件。</p>
+          <div class="confirm-actions">
+            <button class="confirm-btn confirm-btn-ghost" @click="cancelDeleteRecentVideo">取消</button>
+            <button class="confirm-btn confirm-btn-primary" @click="performDeleteRecentVideo">删除</button>
           </div>
         </div>
       </div>

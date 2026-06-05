@@ -132,6 +132,28 @@ const VIDEO_PROVIDER_OPTS: EnumOption[] = [
   { value: 'mock',      label: '绘本视频模式' },
   { value: 'storybook', label: '分镜播放模式' },
 ]
+
+/* ── V1.0 visible-option whitelists ──────────────────────────────────
+   The full _OPTS arrays above stay intact so the underlying types /
+   API payload / runtime constants are unchanged; the UI just renders
+   a subset for V1.0. Re-enable an option later by adding its `value`
+   back to the matching _V1_VALUES set.
+   - output mode  : 完整视频 only (分镜预览 / 仅生成素材 隐藏)
+   - language     : 中文 only (英文 隐藏)
+   - video provider: 绘本视频模式 only (分镜播放模式 隐藏)         */
+const OUTPUT_MODE_V1_VALUES = new Set(['full_video'])
+const LANGUAGE_V1_VALUES = new Set(['zh-CN'])
+const VIDEO_PROVIDER_V1_VALUES = new Set(['mock'])
+
+const OUTPUT_MODE_OPTS_VISIBLE: EnumOption[] = OUTPUT_MODE_OPTS.filter((o) =>
+  OUTPUT_MODE_V1_VALUES.has(o.value),
+)
+const LANGUAGE_OPTS_VISIBLE: EnumOption[] = LANGUAGE_OPTS.filter((o) =>
+  LANGUAGE_V1_VALUES.has(o.value),
+)
+const VIDEO_PROVIDER_OPTS_VISIBLE: EnumOption[] = VIDEO_PROVIDER_OPTS.filter((o) =>
+  VIDEO_PROVIDER_V1_VALUES.has(o.value),
+)
 const VOICE_MODE_OPTS: EnumOption[] = [
   { value: 'single',    label: '单人旁白' },
   { value: 'multi',     label: '亲子轮流' },
@@ -628,7 +650,7 @@ function getTopicManualMismatchWarning(): string {
           <span>视频模式</span>
           <ThemedSelect
             :model-value="formState.videoProvider"
-            :options="withFallback(VIDEO_PROVIDER_OPTS, formState.videoProvider)"
+            :options="VIDEO_PROVIDER_OPTS_VISIBLE"
             @update:model-value="(v: string) => updateFormState('videoProvider', v)"
           />
         </label>
@@ -637,7 +659,7 @@ function getTopicManualMismatchWarning(): string {
           <span>输出模式</span>
           <ThemedSelect
             :model-value="formState.outputMode"
-            :options="withFallback(OUTPUT_MODE_OPTS, formState.outputMode)"
+            :options="OUTPUT_MODE_OPTS_VISIBLE"
             @update:model-value="(v: string) => updateFormState('outputMode', v)"
           />
         </label>
@@ -837,7 +859,7 @@ function getTopicManualMismatchWarning(): string {
           <span>语言</span>
           <ThemedSelect
             :model-value="formState.language"
-            :options="withFallback(LANGUAGE_OPTS, formState.language)"
+            :options="LANGUAGE_OPTS_VISIBLE"
             @update:model-value="(v: string) => updateFormState('language', v)"
           />
         </label>
