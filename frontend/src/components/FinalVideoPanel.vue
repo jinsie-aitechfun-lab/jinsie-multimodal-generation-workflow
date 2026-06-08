@@ -233,7 +233,7 @@ const placeholderDesc = computed(() => {
   if (audioItemCount.value === 0) {
     return '当前缺少音频片段，请先完成音频生成。'
   }
-  return '候选图已就绪，系统已自动为每个场景挑选最佳画面。点击按钮即可开始渲染。'
+  return '候选图已就绪，系统已自动为每个场景挑选最佳画面。'
 })
 </script>
 
