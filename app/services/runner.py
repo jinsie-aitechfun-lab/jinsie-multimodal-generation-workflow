@@ -373,12 +373,19 @@ class WorkflowRunner:
         api_key: str,
         payload: Dict[str, Any],
         timeout: int,
+        workflow_id: Optional[str] = None,
     ) -> str:
         """Send one OpenAI-compatible chat/completions request; return raw content string.
 
         Retries up to 3 times on transient network errors (RemoteDisconnected,
         connection resets, timeouts, HTTP 5xx). 4xx errors and empty responses
         are not retried — they indicate a real problem, not a transient blip.
+
+        If ``workflow_id`` is provided, the retry loop checks the cancellation
+        registry between attempts and raises ``WorkflowCancelledError`` as soon
+        as the user has requested cancel. This shortens worst-case cancel
+        latency from ~3×timeout to ~1×timeout for any step that hits this
+        method.
         """
         url = f"{api_base_url.rstrip('/')}/chat/completions"
         body = json.dumps(payload).encode("utf-8")
@@ -387,11 +394,27 @@ class WorkflowRunner:
             "Content-Type": "application/json",
         }
 
+        def _raise_if_cancelled() -> None:
+            if workflow_id and _is_cancelled(workflow_id):
+                raise WorkflowCancelledError(workflow_id, partial_outputs={})
+
         last_err: Optional[BaseException] = None
         # The first attempt has zero wait; subsequent attempts back off.
+        # Cancellation is observed before every attempt (including the first,
+        # for the case where cancel arrived between step boundary and the
+        # call site) and during the backoff sleep so the user doesn't wait
+        # for a full timeout when they've already asked to stop.
         for attempt_index in range(len(self._LLM_RETRY_BACKOFF_SECONDS) + 1):
+            _raise_if_cancelled()
             if attempt_index > 0:
-                time.sleep(self._LLM_RETRY_BACKOFF_SECONDS[attempt_index - 1])
+                # Sleep in small slices so cancel responds within ~0.2s
+                # rather than the full backoff duration.
+                backoff = self._LLM_RETRY_BACKOFF_SECONDS[attempt_index - 1]
+                slept = 0.0
+                while slept < backoff:
+                    time.sleep(min(0.2, backoff - slept))
+                    slept += 0.2
+                    _raise_if_cancelled()
             try:
                 req = urllib_request.Request(
                     url=url,
@@ -416,10 +439,12 @@ class WorkflowRunner:
                 # won't change the outcome.
                 if 500 <= e.code < 600:
                     last_err = e
+                    _raise_if_cancelled()
                     continue
                 raise
             except self._LLM_RETRYABLE_ERRORS as e:
                 last_err = e
+                _raise_if_cancelled()
                 continue
             except urllib_error.URLError as e:
                 # URLError wraps lower-level network errors. Most are
@@ -428,6 +453,7 @@ class WorkflowRunner:
                 # (e.g. unknown URL scheme) are rare and still safe to
                 # retry because they'd reproduce, not hang.
                 last_err = e
+                _raise_if_cancelled()
                 continue
 
         # All attempts exhausted — surface the last exception so callers
@@ -544,7 +570,12 @@ class WorkflowRunner:
                 api_key=api_key,
                 payload=payload,
                 timeout=timeout,
+                workflow_id=ctx.workflow_id,
             )
+        except WorkflowCancelledError:
+            # User-requested cancel must propagate, not fall back to the
+            # secondary provider. The runner's step boundary will catch it.
+            raise
         except Exception as primary_err:
             fallback_url = self._llm_fallback_api_base_url()
             fallback_key = self._llm_fallback_api_key()
@@ -560,6 +591,7 @@ class WorkflowRunner:
                 api_key=fallback_key,
                 payload=fallback_payload,
                 timeout=timeout,
+                workflow_id=ctx.workflow_id,
             )
             provider_used = "fallback"
             fallback_reason = f"{type(primary_err).__name__}: {primary_err}"

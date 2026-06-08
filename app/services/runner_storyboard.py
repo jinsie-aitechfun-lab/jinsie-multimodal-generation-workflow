@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Optional
 
+from app.services.runner_errors import WorkflowCancelledError
+
 
 class RunnerStoryboardSupport:
     """Storyboard and sentence-shot helpers extracted from WorkflowRunner.
@@ -212,13 +214,18 @@ class RunnerStoryboardSupport:
 
         try:
             timeout = runner._story_timeout_seconds()
+            workflow_id = str(getattr(ctx, "workflow_id", "") or "")
             try:
                 content = runner._call_llm_chat(
                     api_base_url=runner._llm_api_base_url(),
                     api_key=api_key,
                     payload=payload,
                     timeout=timeout,
+                    workflow_id=workflow_id,
                 )
+            except WorkflowCancelledError:
+                # Propagate cancel — the runner's step boundary handles it.
+                raise
             except Exception:
                 fallback_url = runner._llm_fallback_api_base_url()
                 fallback_key = runner._llm_fallback_api_key()
@@ -231,9 +238,12 @@ class RunnerStoryboardSupport:
                     api_key=fallback_key,
                     payload=fallback_payload,
                     timeout=timeout,
+                    workflow_id=workflow_id,
                 )
             return _parse_descriptions(content)
 
+        except WorkflowCancelledError:
+            raise
         except Exception:
             return {}
 
