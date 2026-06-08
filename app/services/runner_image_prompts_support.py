@@ -66,18 +66,24 @@ def _scene_action_fallback(
     narration: str,
     scene_title: str,
 ) -> str:
-    """If visual_description is empty (storyboard LLM enrichment failed),
-    synthesize a scene-specific action hint from whatever IS available so
-    the scene_anchor and scene_action_block don't end up empty. Without
-    this, an LLM failure makes every scene's "visual focus" collapse to
-    the same string and the prompts become indistinguishable."""
-    visual = clean_image_prompt_text(visual_description)
+    """Build a scene-specific "visual focus" string for the image prompt.
+
+    Combines narration (which is per-scene unique because the story-text
+    splitter gives each scene its own paragraph) with the LLM-enriched
+    visual_description (which can be missing or recycled across cycled
+    scenes when LLM enrichment partially fails). Putting narration FIRST
+    guarantees each scene's prompt carries its own plot beat in the
+    high-weight region of the prompt, even if visual_description fell
+    back to a blueprint duplicate.
+    """
+    narration_clean = clean_image_prompt_text(narration)[:160] if narration else ""
+    visual = clean_image_prompt_text(visual_description) if visual_description else ""
+    if narration_clean and visual:
+        return f"{narration_clean}; {visual}"
+    if narration_clean:
+        return narration_clean
     if visual:
-        return visual
-    story = clean_image_prompt_text(narration)
-    if story:
-        # Trim long narration to a focused visual hint
-        return story[:200]
+        return visual[:200]
     title = clean_image_prompt_text(scene_title)
     if title:
         return f"the scene depicting {title}"
