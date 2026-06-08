@@ -1,9 +1,103 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Dict, List, Optional
 
 from app.services.runner_errors import WorkflowCancelledError
+
+
+# Internal-process markers that must not leak into user-facing titles.
+# These are produced by `expand_scene_blueprints()` when a 180s preset
+# cycles through the 6 base templates 3 times — the cycle index is
+# encoded as "· 延展 N" / "· 扩展 N" / "· 阶段 N" but those phrases
+# read like internal scaffolding to the user.
+_TITLE_ENGINEERING_MARKERS = (
+    "延展", "扩展", "延伸", "阶段",
+    "segment", "chunk", "beat",
+)
+
+# Generic story-arc labels that the blueprint uses as scaffolding. They
+# are not engineering markers per se, but they repeat across cycles
+# (scene 1 / 7 / 13 all start as "故事开场"), so they should be replaced
+# with scene-specific titles whenever the LLM enrichment can supply one.
+_GENERIC_ARC_TITLES = (
+    "故事开场", "遇到问题", "行动推进", "温暖收束", "回味结尾", "片尾定格",
+)
+
+
+def _has_engineering_marker(title: str) -> bool:
+    if not title:
+        return True
+    lowered = title.lower()
+    return any(marker.lower() in lowered for marker in _TITLE_ENGINEERING_MARKERS)
+
+
+def _is_generic_arc_title(title: str) -> bool:
+    if not title:
+        return False
+    base = title.strip()
+    return base in _GENERIC_ARC_TITLES
+
+
+def _natural_title_from_narration(narration: str, max_chars: int = 10) -> str:
+    """Heuristic extraction of a 4-10 char Chinese title from narration.
+
+    Strategy: walk clauses (split on Chinese commas / periods) and pick the
+    first clause whose length lands in the target range. No animal /
+    keyword tables — purely structural.
+    """
+    if not narration:
+        return ""
+    text = " ".join(str(narration).split())
+    sentences = re.split(r"[。！？!?\n]", text)
+    for sent in sentences:
+        clauses = re.split(r"[，、；：,;:]", sent)
+        for clause in clauses:
+            clause = clause.strip()
+            if 4 <= len(clause) <= max_chars:
+                return clause
+    # Fallback: head of first sentence.
+    head = sentences[0].strip() if sentences else text
+    return head[:max_chars].rstrip("，、；：,;:") if head else ""
+
+
+def _sanitize_scene_title(
+    *,
+    blueprint_title: str,
+    llm_title: str,
+    narration: str,
+    scene_index_1based: int,
+) -> str:
+    """Return the user-facing title for a scene.
+
+    Resolution chain — no fixed title table, no scene-index labels:
+      1. LLM-supplied natural title (if non-empty, clean, length 4-12)
+      2. Engineering-marker-stripped blueprint title if it survives the
+         generic-arc check (rare — most blueprint titles are generic)
+      3. Narration-extracted natural clause (4-10 chars)
+      4. "场景 NN" as last resort
+    """
+    candidate = (llm_title or "").strip()
+    if candidate and not _has_engineering_marker(candidate):
+        # Trim long LLM titles to a reasonable headline length.
+        return candidate[:12]
+
+    stripped = re.sub(
+        r"\s*[·\-—()【】\[\]（）]\s*(?:延展|扩展|延伸|阶段|segment|chunk|beat)\s*\d*\s*[)\]）】]*",
+        "",
+        blueprint_title or "",
+        flags=re.IGNORECASE,
+    ).strip()
+
+    if stripped and not _has_engineering_marker(stripped) and not _is_generic_arc_title(stripped):
+        return stripped[:12]
+
+    natural = _natural_title_from_narration(narration)
+    if natural:
+        return natural
+
+    return f"场景 {scene_index_1based:02d}"
 
 
 class RunnerStoryboardSupport:
@@ -40,10 +134,15 @@ class RunnerStoryboardSupport:
         scenes: List[Dict[str, Any]] = []
         for index, blueprint in enumerate(blueprints, start=1):
             narration = paragraphs[index - 1] if index <= len(paragraphs) else ""
+            # Capture the blueprint title as `internal_title` so debugging
+            # can still see the original scaffold (e.g. "故事开场 · 延展 2")
+            # while user-facing `scene_title` gets cleaned below.
+            blueprint_title = str(blueprint.get("scene_title") or "").strip()
             scenes.append(
                 {
                     "scene_id": f"scene_{index:02d}",
-                    "scene_title": blueprint["scene_title"],
+                    "scene_title": blueprint_title,
+                    "internal_title": blueprint_title,
                     "visual_description": blueprint["visual_description"],
                     "narration": narration,
                     "duration_sec": per_scene_duration,
@@ -53,12 +152,41 @@ class RunnerStoryboardSupport:
                 }
             )
 
-        # Enrich visual_description per scene using LLM based on actual narration
-        llm_descriptions = self._generate_scene_visual_descriptions(ctx, scenes, outputs)
-        for scene in scenes:
+        # LLM enrichment: per-scene visual_description AND scene_title
+        # together so each scene gets a story-specific title derived from
+        # its actual narration content (instead of cycling the blueprint
+        # arc labels + "延展 N" engineering markers).
+        llm_enrichment = self._generate_scene_visual_descriptions(ctx, scenes, outputs)
+        for index, scene in enumerate(scenes, start=1):
             sid = scene["scene_id"]
-            if sid in llm_descriptions:
-                scene["visual_description"] = llm_descriptions[sid]
+            payload = llm_enrichment.get(sid) or {}
+            llm_desc = payload.get("visual_description") if isinstance(payload, dict) else ""
+            llm_title = payload.get("scene_title") if isinstance(payload, dict) else ""
+            if llm_desc:
+                scene["visual_description"] = llm_desc
+            scene["scene_title"] = _sanitize_scene_title(
+                blueprint_title=scene.get("internal_title") or "",
+                llm_title=str(llm_title or "").strip(),
+                narration=str(scene.get("narration") or ""),
+                scene_index_1based=index,
+            )
+
+        # Tail-end deduplication of visual_description: even with LLM
+        # enrichment, some scenes can come back with identical or
+        # near-identical descriptions when the LLM fails on a subset of
+        # entries. Re-derive from narration for any scene whose
+        # visual_description matches an earlier scene's verbatim.
+        seen_descriptions: set = set()
+        for index, scene in enumerate(scenes, start=1):
+            desc = (scene.get("visual_description") or "").strip()
+            narration = (scene.get("narration") or "").strip()
+            if desc and desc in seen_descriptions and narration:
+                replacement = narration[:240].strip()
+                if replacement:
+                    scene["visual_description"] = replacement
+                    desc = replacement
+            if desc:
+                seen_descriptions.add(desc)
 
         return {
             "scene_count": scene_count,
@@ -182,8 +310,21 @@ class RunnerStoryboardSupport:
             "4. Each scene must be visually DISTINCT from all others — different action, location, and color.\n"
             + character_naming_rule +
             "\n"
+            "ALSO produce a `scene_title` for each scene — a natural, "
+            "user-facing short title in Simplified Chinese, 4-10 characters, "
+            "derived from the narration's specific action / object / "
+            "discovery. The title MUST be scene-specific (different from "
+            "every other scene's title in this story). Do NOT use generic "
+            "story-arc labels like '故事开场', '遇到问题', '行动推进', "
+            "'温暖收束', '回味结尾'. Do NOT include any internal markers "
+            "like '延展', '扩展', '阶段', 'segment', 'chunk', 'beat'. "
+            "Examples of good titles: '林间晨光', '星光坠落', '小溪边的脚印', "
+            "'树洞旁的发现', '月下重逢' (these are examples only — invent "
+            "titles that match this specific story).\n"
+            "\n"
             "Return ONLY valid JSON, no markdown:\n"
-            '{"scenes": [{"scene_id": "scene_01", "visual_description": "..."}, ...]}'
+            '{"scenes": [{"scene_id": "scene_01", "scene_title": "...", '
+            '"visual_description": "..."}, ...]}'
         )
 
         payload = {
@@ -196,7 +337,7 @@ class RunnerStoryboardSupport:
             "max_tokens": 1200,
         }
 
-        def _parse_descriptions(raw_content: str) -> Dict[str, str]:
+        def _parse_descriptions(raw_content: str) -> Dict[str, Dict[str, str]]:
             content = raw_content
             if content.startswith("```"):
                 content = content.split("```")[1]
@@ -204,12 +345,18 @@ class RunnerStoryboardSupport:
                     content = content[4:]
             content = content.strip()
             result = json.loads(content)
-            out: Dict[str, str] = {}
+            out: Dict[str, Dict[str, str]] = {}
             for item in result.get("scenes") or []:
                 sid = str(item.get("scene_id") or "").strip()
+                if not sid:
+                    continue
                 desc = str(item.get("visual_description") or "").strip()
-                if sid and desc:
-                    out[sid] = desc
+                title = str(item.get("scene_title") or "").strip()
+                if desc or title:
+                    out[sid] = {
+                        "visual_description": desc,
+                        "scene_title": title,
+                    }
             return out
 
         try:
