@@ -58,6 +58,53 @@ if ASSETS_DIR.exists():
     app.mount("/assets", StaticFiles(directory=str(ASSETS_DIR)), name="assets")
 
 
+@app.on_event("startup")
+def _abandon_orphaned_workflows() -> None:
+    """Clean up status files that survived a previous server crash / restart.
+
+    When uvicorn dies in the middle of a workflow run, the per-workflow
+    status.json is left at "processing" or "cancel_requested" forever.
+    A subsequent client reattach reads that stale status, enters the
+    cancelling-UI state, and polls forever because no process is going
+    to advance the status to a terminal value. Mark these as
+    "abandoned" on startup so the frontend can treat them as a clean
+    terminal state and recover.
+    """
+    mock_dir = ASSETS_DIR / "mock"
+    if not mock_dir.exists():
+        return
+
+    transient_states = {"processing", "cancel_requested"}
+    rewritten = 0
+    for status_path in mock_dir.glob("*/status.json"):
+        try:
+            with open(status_path, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+            if not content:
+                continue
+            data = json.loads(content)
+            existing = str(data.get("status") or "").strip().lower()
+            if existing not in transient_states:
+                continue
+            data["status"] = "abandoned"
+            data["abandoned_at"] = int(time.time())
+            data["abandoned_reason"] = (
+                f"server restarted while workflow status was '{existing}'"
+            )
+            with open(status_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            rewritten += 1
+        except (OSError, json.JSONDecodeError):
+            # Corrupt or unreadable status file — leave it; the frontend
+            # 404 path / polling timeout will eventually handle it.
+            continue
+
+    if rewritten:
+        print(
+            f"[startup] marked {rewritten} orphaned workflow(s) as 'abandoned'"
+        )
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}

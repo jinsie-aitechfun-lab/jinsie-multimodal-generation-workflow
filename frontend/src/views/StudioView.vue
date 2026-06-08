@@ -851,7 +851,22 @@ onMounted(() => {
           // Outputs not on disk yet — the run may still be in flight.
           return fetch(`${base}/v1/workflow/status/${savedWorkflowId}`)
             .then(r => r.ok ? r.json() : null)
-            .then(statusData => { reconnectInFlight(statusData) })
+            .then(statusData => {
+              // If the previous server crashed mid-run, the backend marks
+              // status as 'abandoned' on startup. Wipe the stale
+              // workflow_id from localStorage so we don't keep re-attaching
+              // to a dead run on every reload.
+              const stale = String(statusData?.status || '').trim().toLowerCase()
+              if (stale === 'abandoned' || stale === 'cancelled' || stale === 'failed') {
+                try {
+                  localStorage.removeItem(STORAGE_KEY_WORKFLOW)
+                  localStorage.removeItem(STORAGE_KEY_PAYLOAD)
+                  localStorage.removeItem(STORAGE_KEY_REFRESH_CANCELLED)
+                } catch { /* ignore */ }
+                return
+              }
+              reconnectInFlight(statusData)
+            })
             .catch(() => {})
         }
         if (data.outputs || data.steps) {
@@ -2404,11 +2419,14 @@ async function waitForAsyncWorkflowOutputs(
       continue
     }
 
-    if (status === 'cancelled') {
-      // Soft-terminate: don't throw (cancel isn't an error). Unify the UI
-      // back to idle here so every running surface — top progress bar,
-      // CTA, timeline, video preview, image review — drops "生成中"
-      // without waiting for a page refresh.
+    if (status === 'cancelled' || status === 'abandoned') {
+      // Soft-terminate: don't throw (cancel/server-restart isn't an error).
+      // Unify the UI back to idle here so every running surface — top
+      // progress bar, CTA, timeline, video preview, image review — drops
+      // "生成中" without waiting for a page refresh.
+      // 'abandoned' is written by the backend on startup for status files
+      // left orphaned by a previous server crash; treat it identically
+      // so stale workflow_ids in localStorage don't lock the UI forever.
       resetWorkflowRuntimeState()
       return null
     }
