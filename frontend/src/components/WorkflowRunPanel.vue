@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import ThemedSelect from './studio/ThemedSelect.vue'
 import InlineStatusPulse from './studio/InlineStatusPulse.vue'
 
@@ -359,6 +359,32 @@ function applyPresetMinimalSteps() {
   ])
 }
 
+// ---- topic char count + duration hint (UI only) ----
+// Char count is a rough character count of the user's topic input,
+// trimmed of surrounding whitespace. Intentionally simple — no token
+// counting, no per-language differentiation, because the goal is to
+// give the user a quick sense of how much detail they've provided,
+// not a precise NLP metric.
+const topicCharCount = computed(() => {
+  const text = String(props.formState.topic || '').trim()
+  return text.length
+})
+
+// Suggested final-story char range per video-duration preset. Mirrors
+// the backend's story plan (60s→280 / 120s→610 / 180s→920 target_chars
+// with ±10–15% bounds). Shown purely as informational guidance — the
+// LLM auto-expands the user's short topic into the full story length,
+// so this is "what the FINAL story will be like" rather than a target
+// for the topic field itself.
+const finalStoryCharHintForDuration = (duration: number): string => {
+  if (duration <= 60) return '约 180–260 字'
+  if (duration <= 120) return '约 360–520 字'
+  return '约 540–780 字'
+}
+const finalStoryCharHint = computed(() =>
+  finalStoryCharHintForDuration(Number(props.formState.durationSec || 120))
+)
+
 // ---- topic vs manual characters warning (UI only) ----
 function detectTopicSpecies(topic: string): Set<'cat' | 'dog' | 'rabbit' | 'turtle'> {
   const t = (topic || '').trim()
@@ -457,6 +483,13 @@ function getTopicManualMismatchWarning(): string {
       placeholder="请输入一个主题，例如：写一个关于小猫冒险的故事"
       @input="updateFormState('topic', ($event.target as HTMLTextAreaElement).value)"
     />
+    <!-- Character-count + final-story-length hint. Informational only —
+         the user's topic is a short prompt; the LLM expands it into the
+         full story. The "建议字数" reflects the FINAL generated story
+         length for the selected duration, not a target for this input. -->
+    <p class="topic-hint">
+      已输入 {{ topicCharCount }} 字 · 约 {{ formState.durationSec }} 秒视频通常对应{{ finalStoryCharHint }}的故事内容（由系统自动扩展）
+    </p>
 
     <!-- ═══════════ Basic configuration (always expanded) ═══════════ -->
     <section class="config-panel">
@@ -500,7 +533,7 @@ function getTopicManualMismatchWarning(): string {
         </label>
 
         <label class="field field-wide">
-          <span>视频时长（秒）</span>
+          <span>目标时长（秒）</span>
           <input
             :value="formState.durationSec"
             class="input"
@@ -515,7 +548,7 @@ function getTopicManualMismatchWarning(): string {
               )
             "
           />
-          <span class="hint">推荐默认 120 秒；支持 60 / 120 / 180 秒。</span>
+          <span class="hint">推荐默认约 120 秒；支持约 60 / 约 120 / 约 180 秒。实际成片时长会随故事字数、配音语速和分镜数量略有浮动。</span>
         </label>
       </div>
     </section>
@@ -1472,6 +1505,16 @@ select.input {
   margin: 10px 0 0;
   color: #f87171;
   font-size: 0.8125rem;
+}
+
+/* Topic-input character-count + duration hint. Subtler than `.hint`
+   (which is reserved for error / warning copy) — uses a muted neutral
+   tone so it reads as ambient guidance rather than a validation alert. */
+.topic-hint {
+  margin: 6px 0 0;
+  color: rgba(148, 163, 184, 0.85);
+  font-size: 0.8125rem;
+  line-height: 1.5;
 }
 
 .error {
