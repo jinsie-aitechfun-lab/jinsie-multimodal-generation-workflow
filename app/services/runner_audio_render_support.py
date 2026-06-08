@@ -509,6 +509,85 @@ class RunnerAudioRenderSupport:
                 "consider expanding narration text"
             )
 
+        # Total-duration speedup: when the LLM compression retry from
+        # story_retry_policy didn't bring the story fully under target
+        # (common case — LLM lands at ~110% of target), re-render the
+        # real TTS segments at a higher speed so the final video lands
+        # on the user's selected duration.
+        # Skipped for template_fallback (template text is pre-calibrated
+        # to target so speeding it up would undershoot).
+        # Cap at 1.5× to keep narration listenable for children content.
+        story_generation_source = str(
+            (outputs.get("story") or {}).get("generation_source") or ""
+        )
+        # 1.05 threshold: TTS natural rendering varies by ±3-5%, so anything
+        # within that range is treated as on-target. Beyond 5% overshoot
+        # triggers the speedup pass.
+        duration_too_long = (
+            target_duration_sec > 0
+            and real_generation_count > 0
+            and total_duration_sec > target_duration_sec * 1.05
+            and story_generation_source != "template_fallback"
+            and tts_enabled
+        )
+        duration_summary["duration_too_long"] = duration_too_long
+
+        if duration_too_long:
+            desired_speedup = total_duration_sec / target_duration_sec
+            speedup_factor = round(min(1.5, max(1.05, desired_speedup)), 3)
+            new_total = 0.0
+            adjusted_count = 0
+            for item, asset in zip(items, assets):
+                # Only the real TTS path is worth re-rendering; mock /
+                # placeholder segments have no rendered audio to speed up.
+                if asset.get("generation_mode") != "real_tts":
+                    new_total += float(item.get("duration_sec") or 0)
+                    continue
+                file_name = asset.get("file_name") or ""
+                if not file_name:
+                    new_total += float(item.get("duration_sec") or 0)
+                    continue
+                seg_output_path = run_dir / file_name
+                try:
+                    self._runner._generate_real_tts_audio(
+                        text=str(item.get("text", "")),
+                        speaker=str(item.get("speaker", "narrator")),
+                        voice_style=str(item.get("voice_style", ctx.input.voice_style)),
+                        output_path=seg_output_path,
+                        speed=speedup_factor,
+                    )
+                    new_duration = self._runner._probe_audio_duration_seconds(
+                        seg_output_path
+                    )
+                    if new_duration is not None and new_duration > 0:
+                        item["duration_sec"] = float(new_duration)
+                        item["duration_source"] = "ffprobe_total_speedup"
+                        asset["duration_sec"] = float(new_duration)
+                        asset["duration_source"] = "ffprobe_total_speedup"
+                        meta = asset.get("metadata") or {}
+                        meta["total_speedup_factor"] = speedup_factor
+                        meta["duration_source"] = "ffprobe_total_speedup"
+                        asset["metadata"] = meta
+                        new_total += float(new_duration)
+                        adjusted_count += 1
+                    else:
+                        new_total += float(item.get("duration_sec") or 0)
+                except Exception as error:
+                    # Single-segment TTS failure shouldn't break the run —
+                    # keep the original (pre-speedup) audio for that segment.
+                    print(
+                        f"[audio_render] speedup retry failed for {file_name}: {error}"
+                    )
+                    new_total += float(item.get("duration_sec") or 0)
+
+            total_duration_sec = new_total
+            duration_summary["total_duration_sec"] = round(new_total, 2)
+            duration_summary["global_speedup_factor"] = speedup_factor
+            duration_summary["speedup_segments_adjusted"] = adjusted_count
+            duration_summary["duration_gap_sec"] = round(
+                max(0.0, target_duration_sec - new_total), 2
+            )
+
         return {
             "enabled": True,
             "provider": overall_provider,
