@@ -25,10 +25,12 @@ class RunnerStoryTextSupport:
         return 18
 
     def duration_story_plan(self, duration_sec: int) -> Dict[str, int]:
-        # Char counts are scaled to ~4.67 chars/sec (the calibrated rate
-        # that produces ~60s audio for the 60s preset). Previously 120s
-        # and 180s used a higher implicit rate (~5.4 chars/sec), which
-        # consistently overshot their targets by ~20-30s.
+        # Char counts are calibrated against real TTS output. Round 1 (#111)
+        # rescaled 120s/180s assuming 4.67 chars/sec, which produced
+        # 120s ≈ 110s / 180s ≈ 165s (undershoot ~10s) because actual TTS
+        # speed measured ≈ 5.1 chars/sec. This round bumps 120s/180s to
+        # land on target while leaving 60s alone — it was already
+        # acceptable in production.
         supported = [
             {
                 "duration_sec": 60,
@@ -40,16 +42,16 @@ class RunnerStoryTextSupport:
             {
                 "duration_sec": 120,
                 "scene_count": 12,
-                "target_min_chars": 500,
-                "target_max_chars": 620,
-                "target_chars": 560,
+                "target_min_chars": 550,
+                "target_max_chars": 670,
+                "target_chars": 610,
             },
             {
                 "duration_sec": 180,
                 "scene_count": 18,
-                "target_min_chars": 770,
-                "target_max_chars": 910,
-                "target_chars": 840,
+                "target_min_chars": 830,
+                "target_max_chars": 1010,
+                "target_chars": 920,
             },
         ]
         for item in supported:
