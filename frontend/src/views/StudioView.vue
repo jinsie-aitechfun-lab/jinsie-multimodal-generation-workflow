@@ -1173,31 +1173,48 @@ const reviewRefreshProgress = computed(() => {
   }
 
   const queue = sceneRefreshQueue.value
-  const total = queue.length
-  if (total === 0) {
+  if (queue.length === 0) {
     return {
       text: '候选图生成中',
       percent: 0,
     }
   }
 
-  const currentIndex = Math.max(queue.indexOf(sceneRefreshingId.value), 0)
-  const currentSceneId = sceneRefreshingId.value || queue[currentIndex] || ''
-  const currentPlaceholder = reviewPlaceholders.value.find(
+  // Denominator alignment fix: use the FULL scene count (not the refresh
+  // queue length) so this top-bar progress matches `FinalVideoPanel`'s
+  // body counter `${imageAssetCount}/${sceneCount}`. Previously the top
+  // used `sceneRefreshQueue.length` which excludes the anchor scene
+  // (already rendered during the main workflow), so a 60s preset would
+  // show "3/5" while the body showed "2/6" — mathematically correct from
+  // each viewpoint, but visually confusing to users.
+  const placeholders = reviewPlaceholders.value
+  const totalScenes = placeholders.length || queue.length
+
+  const currentIndexInQueue = Math.max(queue.indexOf(sceneRefreshingId.value), 0)
+  const currentSceneId = sceneRefreshingId.value || queue[currentIndexInQueue] || ''
+  const currentPlaceholder = placeholders.find(
     (item) => item.scene_id === currentSceneId,
   )
   const currentSceneTitle = currentPlaceholder?.scene_title || currentSceneId
-  const completedCount = reviewPlaceholders.value.filter(
-    (item) => queue.includes(item.scene_id) && ['done', 'failed'].includes(item.state),
+
+  // Position of currently-rendering scene in the FULL scene list (1-based),
+  // so "X/total" reads as "rendering the Xth of total scenes".
+  const positionInFullList = currentSceneId
+    ? placeholders.findIndex((item) => item.scene_id === currentSceneId) + 1
+    : 0
+  const displayPosition = positionInFullList > 0 ? positionInFullList : currentIndexInQueue + 1
+
+  const completedCount = placeholders.filter(
+    (item) => ['done', 'failed'].includes(item.state),
   ).length
 
   return {
-    text: `候选图生成中：${currentIndex + 1}/${total}${
+    text: `候选图生成中：${displayPosition}/${totalScenes}${
       currentSceneTitle ? ` · ${currentSceneTitle}` : ''
     }`,
     percent: Math.max(
       5,
-      Math.min(100, Math.round((completedCount / total) * 100)),
+      Math.min(100, Math.round((completedCount / totalScenes) * 100)),
     ),
   }
 })
