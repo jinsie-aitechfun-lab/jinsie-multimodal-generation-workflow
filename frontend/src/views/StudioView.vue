@@ -1180,13 +1180,14 @@ const reviewRefreshProgress = computed(() => {
     }
   }
 
-  // Denominator alignment fix: use the FULL scene count (not the refresh
-  // queue length) so this top-bar progress matches `FinalVideoPanel`'s
-  // body counter `${imageAssetCount}/${sceneCount}`. Previously the top
-  // used `sceneRefreshQueue.length` which excludes the anchor scene
-  // (already rendered during the main workflow), so a 60s preset would
-  // show "3/5" while the body showed "2/6" — mathematically correct from
-  // each viewpoint, but visually confusing to users.
+  // Counter alignment fix: top bar must show the SAME numerator AND
+  // denominator as the body counter (`FinalVideoPanel:187`) so the user
+  // never sees two different "X/Y" values for the same in-flight run.
+  // Previously the top used `(currentIndex+1)/sceneRefreshQueue.length`
+  // — current position over refresh-queue length, which differs from
+  // the body's "completed/total". Now both use "completed/total". The
+  // current scene's natural title is still appended after the count
+  // for context.
   const placeholders = reviewPlaceholders.value
   const totalScenes = placeholders.length || queue.length
 
@@ -1197,19 +1198,12 @@ const reviewRefreshProgress = computed(() => {
   )
   const currentSceneTitle = currentPlaceholder?.scene_title || currentSceneId
 
-  // Position of currently-rendering scene in the FULL scene list (1-based),
-  // so "X/total" reads as "rendering the Xth of total scenes".
-  const positionInFullList = currentSceneId
-    ? placeholders.findIndex((item) => item.scene_id === currentSceneId) + 1
-    : 0
-  const displayPosition = positionInFullList > 0 ? positionInFullList : currentIndexInQueue + 1
-
   const completedCount = placeholders.filter(
     (item) => ['done', 'failed'].includes(item.state),
   ).length
 
   return {
-    text: `候选图生成中：${displayPosition}/${totalScenes}${
+    text: `候选图生成中：${completedCount}/${totalScenes}${
       currentSceneTitle ? ` · ${currentSceneTitle}` : ''
     }`,
     percent: Math.max(
