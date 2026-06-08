@@ -256,13 +256,25 @@ def validate_story_text(
     )
 
     story_char_count = runner._story_text_char_count(cleaned_text)
-    min_tolerance = 10 if int(story_plan.get("duration_sec") or 0) <= 60 else 20
+    duration_sec = int(story_plan.get("duration_sec") or 0)
+    target_max_chars = int(story_plan.get("target_max_chars") or 0)
+    min_tolerance = 10 if duration_sec <= 60 else 20
     effective_target_min = max(0, int(story_plan.get("target_min_chars") or 0) - min_tolerance)
     too_short = story_char_count < effective_target_min
-    too_long = (
-        int(story_plan.get("duration_sec") or 0) <= 60
-        and story_char_count > int(story_plan.get("target_max_chars") or 0)
+    # too_long fires on either:
+    #   1. raw char count exceeds the preset's target_max_chars, OR
+    #   2. predicted audio duration (chars / 5 chars-per-sec TTS rate)
+    #      exceeds the target duration by more than 5% — catches the case
+    #      where the LLM ignores target_chars and produces ~960 chars for
+    #      every preset, which makes 120s/180s land at ~200s.
+    # Previously this check was gated on duration_sec <= 60, leaving 120s
+    # and 180s presets with no upper-bound enforcement at all.
+    char_overshoot = target_max_chars > 0 and story_char_count > target_max_chars
+    audio_overshoot = (
+        duration_sec > 0
+        and story_char_count > int(duration_sec * 5.0 * 1.05)
     )
+    too_long = char_overshoot or audio_overshoot
     has_blocked_tokens = runner._story_text_has_blocked_tokens(cleaned_text)
     has_quality_issues = story_text_has_quality_issues(cleaned_text)
     has_topic_mismatch = not story_text_matches_topic(cleaned_text, topic)
