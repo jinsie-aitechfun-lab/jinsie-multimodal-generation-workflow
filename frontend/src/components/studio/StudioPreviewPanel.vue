@@ -462,12 +462,30 @@ const progressSteps = computed(() => {
 // Workflow chain for the current-work card — stage-aware:
 //   • renderInFlight     → all earlier steps done, video step active
 //   • refreshingImages   → story+storyboard done, image step active
-//   • isProcessing       → initial workflow run; derive from completedSteps
+//   • isProcessing       → initial workflow run; CAPPED at image step.
+//     See INITIAL_PHASE_MAX_IDX below for the no-regress contract.
 //   • finalVideoUrl set  → fully done
 //   • otherwise          → derive from completedSteps / totalSteps
 // Stage indices into STEP_DEFS:
 //   0 story · 1 storyboard · 2 images · 3 voice · 4 subtitles · 5 video
 type FlowState = 'done' | 'active' | 'pending'
+
+// During the initial workflow run, the backend's `completed_steps` walks
+// through ~11 internal stages including audio/subtitle/video — but those
+// stages run against PLACEHOLDER images, not real ones. Real image
+// generation only happens in the deferred-refresh phase that follows
+// (props.refreshingImages = true). So if we let the visualization advance
+// to "video done" during the initial run, the user sees "6/6 已完成"
+// momentarily — then refresh starts and the chain visually REGRESSES
+// back to "画面生成". That regression reads as a UI bug.
+//
+// Cap initial-phase advance at index 2 (image step). Story/storyboard
+// can show as "done"; image step stays "active" through the rest of the
+// initial run; audio/subtitle/video stay "pending" until the deferred
+// refresh actually completes and (eventually) the final-video re-render
+// fires. This keeps the chain MONOTONICALLY non-regressing across the
+// phase 1 → phase 2 boundary.
+const INITIAL_PHASE_MAX_IDX = 2  // image step
 
 function buildChainWithActive(activeIdx: number) {
   return STEP_DEFS.map((step, idx) => ({
@@ -484,16 +502,18 @@ const workflowChain = computed<{ id: string; label: string; flowLabel: string; s
   // therefore already done; the image step is the live one.
   if (props.refreshingImages) return buildChainWithActive(2)
 
-  // Initial workflow run — completedSteps drives the active index.
+  // Initial workflow run — completedSteps drives the active index, but
+  // never advance past the image step (see INITIAL_PHASE_MAX_IDX above).
   if (props.isProcessing) {
     const completed = props.completedSteps ?? 0
     const total = props.totalSteps ?? STEP_DEFS.length
     const ratio = total > 0 ? completed / total : 0
-    const activeIdx = Math.min(
+    const naiveIdx = Math.min(
       Math.floor(ratio * STEP_DEFS.length),
       STEP_DEFS.length - 1,
     )
-    return buildChainWithActive(activeIdx)
+    const cappedIdx = Math.min(naiveIdx, INITIAL_PHASE_MAX_IDX)
+    return buildChainWithActive(cappedIdx)
   }
 
   // Settled state with a finished video → mark everything done.
