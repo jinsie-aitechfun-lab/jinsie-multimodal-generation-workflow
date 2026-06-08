@@ -1173,31 +1173,42 @@ const reviewRefreshProgress = computed(() => {
   }
 
   const queue = sceneRefreshQueue.value
-  const total = queue.length
-  if (total === 0) {
+  if (queue.length === 0) {
     return {
       text: '候选图生成中',
       percent: 0,
     }
   }
 
-  const currentIndex = Math.max(queue.indexOf(sceneRefreshingId.value), 0)
-  const currentSceneId = sceneRefreshingId.value || queue[currentIndex] || ''
-  const currentPlaceholder = reviewPlaceholders.value.find(
+  // Counter alignment fix: top bar must show the SAME numerator AND
+  // denominator as the body counter (`FinalVideoPanel:187`) so the user
+  // never sees two different "X/Y" values for the same in-flight run.
+  // Previously the top used `(currentIndex+1)/sceneRefreshQueue.length`
+  // — current position over refresh-queue length, which differs from
+  // the body's "completed/total". Now both use "completed/total". The
+  // current scene's natural title is still appended after the count
+  // for context.
+  const placeholders = reviewPlaceholders.value
+  const totalScenes = placeholders.length || queue.length
+
+  const currentIndexInQueue = Math.max(queue.indexOf(sceneRefreshingId.value), 0)
+  const currentSceneId = sceneRefreshingId.value || queue[currentIndexInQueue] || ''
+  const currentPlaceholder = placeholders.find(
     (item) => item.scene_id === currentSceneId,
   )
   const currentSceneTitle = currentPlaceholder?.scene_title || currentSceneId
-  const completedCount = reviewPlaceholders.value.filter(
-    (item) => queue.includes(item.scene_id) && ['done', 'failed'].includes(item.state),
+
+  const completedCount = placeholders.filter(
+    (item) => ['done', 'failed'].includes(item.state),
   ).length
 
   return {
-    text: `候选图生成中：${currentIndex + 1}/${total}${
+    text: `候选图生成中：${completedCount}/${totalScenes}${
       currentSceneTitle ? ` · ${currentSceneTitle}` : ''
     }`,
     percent: Math.max(
       5,
-      Math.min(100, Math.round((completedCount / total) * 100)),
+      Math.min(100, Math.round((completedCount / totalScenes) * 100)),
     ),
   }
 })
