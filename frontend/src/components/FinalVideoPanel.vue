@@ -226,14 +226,14 @@ const placeholderDesc = computed(() => {
     return '还没有可用的分镜。请先在「创作故事」页签输入故事主题，并点击「开始创作」生成内容。'
   }
   if (!assetsReady.value) {
-    if (props.refreshingImages) return '系统正在准备每个场景的候选图，默认图生成后即可直接渲染，也可以手动改选。'
+    if (props.refreshingImages) return '系统正在为每个场景自动挑选最佳候选图，生成完成后即可直接渲染。'
     if (imageAssetCount.value > 0) return '剩余候选图尚未生成。点击下方「继续生成候选图」可恢复。'
     return '候选图尚未生成。点击下方「立即生成候选图」开始。'
   }
   if (audioItemCount.value === 0) {
     return '当前缺少音频片段，请先完成音频生成。'
   }
-  return '候选图已就绪。你可以直接使用默认图，也可以手动改选，然后点击按钮开始渲染。'
+  return '候选图已就绪，系统已自动为每个场景挑选最佳画面。'
 })
 </script>
 
