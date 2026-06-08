@@ -2798,6 +2798,7 @@ async function runWorkflow() {
           :cancel-requested="cancelRequestedAny"
           :status-label="workflowRunStatusMessage || (refreshingImageReview ? reviewRefreshProgress.text : '')"
           :elapsed-sec="workflowRunElapsedSec"
+          :completed-steps="workflowStatusData?.completed_steps ?? 0"
           :current-step-index="workflowStatusData?.current_step_index ?? 0"
           :total-steps="workflowStatusData?.total_steps ?? 0"
           @update:form-state="onUpdateFormState"

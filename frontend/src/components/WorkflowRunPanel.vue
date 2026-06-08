@@ -57,6 +57,13 @@ const props = defineProps<{
   cancelRequested?: boolean
   statusLabel?: string
   elapsedSec?: number
+  // `completedSteps` (preferred) is how many workflow steps have FINISHED.
+  // `currentStepIndex` (1-based "now running") is accepted for back-compat
+  // but the visual will use `completedSteps` when both are provided so the
+  // count here matches the "当前步骤：X（6/11）" text shown above.
+  // Showing two different numbers (current=7 vs completed=6) for the same
+  // run reads as a UI bug to users.
+  completedSteps?: number
   currentStepIndex?: number
   totalSteps?: number
 }>()
@@ -544,9 +551,9 @@ function getTopicManualMismatchWarning(): string {
             :text="statusLabel || '正在准备'"
           />
           <span
-            v-if="totalSteps && currentStepIndex"
+            v-if="totalSteps && (completedSteps !== undefined || currentStepIndex !== undefined)"
             class="runStateStep"
-          >{{ currentStepIndex }} / {{ totalSteps }}</span>
+          >{{ completedSteps !== undefined ? completedSteps : (currentStepIndex ?? 0) }} / {{ totalSteps }}</span>
           <span
             v-if="elapsedSec !== undefined && elapsedSec > 0"
             class="runStateElapsed"
