@@ -2907,6 +2907,7 @@ async function runWorkflow() {
                   :can-cancel="refreshingImageReview"
                   :cancel-requested="cancelRequested"
                   :cancellable="Boolean(activeWorkflowId)"
+                  :video-generated="Boolean(finalVideoUrl)"
                   @select-asset="({ sceneId, assetRef }) => selectImageAsset(sceneId, assetRef)"
                   @retry-scene="retryImageReviewScene"
                   @enhance-scene="enhanceImageReviewScene"

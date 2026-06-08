@@ -78,7 +78,28 @@ const props = defineProps<{
   // the lightweight "取消生成" entry inside this panel so the user can
   // cancel the whole workflow without leaving the review tab.
   cancellable?: boolean
+  // True once the final video has been rendered. Locks every candidate
+  // selection — once a video exists, the image roster the video was built
+  // from must not change underneath it (the displayed selection would no
+  // longer match the actual video frames).
+  videoGenerated?: boolean
 }>()
+
+// A scene's candidates are locked when:
+//   • the final video already exists for this run (any swap would let
+//     the displayed selection diverge from the rendered video), OR
+//   • the scene was auto-selected by the system (auto means auto —
+//     a manual override would defeat the "auto" guarantee in the UI).
+// Locked candidates still RENDER, but the click handler / focus state /
+// "可切换" label all switch to a read-only treatment so the user
+// understands the choice is final for this run.
+function isSelectionLocked(item: ImageReviewSelectedAsset): boolean {
+  if (props.videoGenerated) {
+    return true
+  }
+  const source = String(item?.selection_source || '').trim().toLowerCase()
+  return source === 'auto' || source === 'auto_selected'
+}
 
 const storyExpanded = ref(false)
 const normalizedStoryText = computed(() => String(props.storyText || '').trim())
@@ -603,8 +624,20 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                 class="asset-select-card"
                 :class="{
                   active: isSameAssetRef(candidate, entry.item.selected_asset_ref),
+                  'asset-select-card-locked': isSelectionLocked(entry.item),
                 }"
-                :disabled="loading || selectingSceneId === entry.sceneId"
+                :disabled="
+                  loading ||
+                  selectingSceneId === entry.sceneId ||
+                  isSelectionLocked(entry.item)
+                "
+                :title="
+                  isSelectionLocked(entry.item)
+                    ? (videoGenerated
+                        ? '视频已生成，候选图不可再切换'
+                        : '已自动选择，自动模式下不可手动切换')
+                    : undefined
+                "
                 @click="onSelect(entry.sceneId, candidate)"
               >
                 <div class="preview-card preview-card-candidate">
@@ -652,7 +685,9 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                         {{
                           isSameAssetRef(candidate, entry.item.selected_asset_ref)
                             ? '已选中'
-                            : '可切换'
+                            : (isSelectionLocked(entry.item)
+                                ? (videoGenerated ? '已锁定' : '自动模式')
+                                : '可切换')
                         }}
                       </span>
                     </div>
@@ -1446,6 +1481,18 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 
 .asset-select-card:disabled {
   cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* Locked candidates keep their image readable (so the user still sees
+   what was selected) but lose hover-affordance — the cursor becomes
+   not-allowed and the un-selected card visibly recedes so it doesn't
+   look like a live click target. The .active rule above still wins on
+   the selected card, so the chosen one stays highlighted. */
+.asset-select-card-locked {
+  cursor: not-allowed;
+}
+.asset-select-card-locked:not(.active) {
   opacity: 0.55;
 }
 
