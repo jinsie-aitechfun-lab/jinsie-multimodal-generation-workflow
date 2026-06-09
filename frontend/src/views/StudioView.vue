@@ -1889,11 +1889,6 @@ async function renderFinalVideoIfReady(baseResponse: WorkflowRunResponse) {
   }
 }
 
-function handleManualRender() {
-  if (!currentWorkflowResponse.value) return
-  renderFinalVideoIfReady(currentWorkflowResponse.value)
-}
-
 async function refreshImageReviewScene(sceneId: string, signal?: AbortSignal, qualityTierOverride?: string) {
   if (!currentWorkflowResponse.value || !currentWorkflowPayload.value) {
     return
@@ -2835,14 +2830,12 @@ async function runWorkflow() {
               <span v-if="finalVideoRenderInFlight" class="badge badge-arc" style="font-size:0.6rem;">渲染中</span>
               <span v-else-if="finalVideoUrl" class="badge badge-ok" style="font-size:0.6rem;">已完成</span>
               <span v-if="finalVideoAudioEnabled === false" class="badge badge-warn" style="font-size:0.6rem;">无声</span>
-              <!-- Manual render button -->
-              <button
-                v-if="workflowForm.renderMode === 'manual' && isWorkflowReadyForRender"
-                class="btn-primary review-render-btn"
-                @click="handleManualRender"
-              >
-                生成视频
-              </button>
+              <!-- Manual render CTA is rendered inside `FinalVideoPanel`'s
+                   body so it sits next to the "等待用户触发渲染" copy and
+                   the placeholder progress bar (where the user is
+                   actually looking). Keeping it in the panel body also
+                   means the styling stays in one place and uses the
+                   active theme's gradient (--arc-400 / --prism-400). -->
             </div>
             <div class="review-video-body">
               <FinalVideoPanel
