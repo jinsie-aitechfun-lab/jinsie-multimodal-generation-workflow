@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import ThemedSelect from './studio/ThemedSelect.vue'
 import InlineStatusPulse from './studio/InlineStatusPulse.vue'
 
@@ -359,32 +359,6 @@ function applyPresetMinimalSteps() {
   ])
 }
 
-// ---- topic char count + duration hint (UI only) ----
-// Char count is a rough character count of the user's topic input,
-// trimmed of surrounding whitespace. Intentionally simple — no token
-// counting, no per-language differentiation, because the goal is to
-// give the user a quick sense of how much detail they've provided,
-// not a precise NLP metric.
-const topicCharCount = computed(() => {
-  const text = String(props.formState.topic || '').trim()
-  return text.length
-})
-
-// Suggested final-story char range per video-duration preset. Mirrors
-// the backend's story plan (60s→280 / 120s→610 / 180s→920 target_chars
-// with ±10–15% bounds). Shown purely as informational guidance — the
-// LLM auto-expands the user's short topic into the full story length,
-// so this is "what the FINAL story will be like" rather than a target
-// for the topic field itself.
-const finalStoryCharHintForDuration = (duration: number): string => {
-  if (duration <= 60) return '约 180–260 字'
-  if (duration <= 120) return '约 360–520 字'
-  return '约 540–780 字'
-}
-const finalStoryCharHint = computed(() =>
-  finalStoryCharHintForDuration(Number(props.formState.durationSec || 120))
-)
-
 // ---- topic vs manual characters warning (UI only) ----
 function detectTopicSpecies(topic: string): Set<'cat' | 'dog' | 'rabbit' | 'turtle'> {
   const t = (topic || '').trim()
@@ -483,13 +457,11 @@ function getTopicManualMismatchWarning(): string {
       placeholder="请输入一个主题，例如：写一个关于小猫冒险的故事"
       @input="updateFormState('topic', ($event.target as HTMLTextAreaElement).value)"
     />
-    <!-- Character-count + final-story-length hint. Informational only —
-         the user's topic is a short prompt; the LLM expands it into the
-         full story. The "建议字数" reflects the FINAL generated story
-         length for the selected duration, not a target for this input. -->
-    <p class="topic-hint">
-      已输入 {{ topicCharCount }} 字 · 约 {{ formState.durationSec }} 秒视频通常对应{{ finalStoryCharHint }}的故事内容（由系统自动扩展）
-    </p>
+    <!-- Informational only: the user's topic is a short prompt; the LLM
+         expands it into the full story according to the selected duration. -->
+    <span class="hint topic-hint">
+      系统会根据约 {{ formState.durationSec }} 秒目标时长，将主题扩展为完整故事内容。
+    </span>
 
     <!-- ═══════════ Basic configuration (always expanded) ═══════════ -->
     <section class="config-panel">
@@ -1507,13 +1479,15 @@ select.input {
   font-size: 0.8125rem;
 }
 
-/* Topic-input character-count + duration hint. Subtler than `.hint`
-   (which is reserved for error / warning copy) — uses a muted neutral
-   tone so it reads as ambient guidance rather than a validation alert. */
+/* Topic duration hint. Subtler than `.hint` (which is reserved for
+   error / warning copy), using the theme's normal secondary text tone. */
 .topic-hint {
-  margin: 6px 0 0;
-  color: rgba(148, 163, 184, 0.85);
+  display: block;
+  margin: 10px 0 0;
+  color: var(--text-secondary);
   font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   line-height: 1.5;
 }
 
