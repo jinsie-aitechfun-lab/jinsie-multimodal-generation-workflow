@@ -700,6 +700,7 @@ const caseList: CaseItem[] = [
     subtitle: '原创亲子故事',
     tags: ['插画风', '亲子'],
     tone: 'forest',
+    videoSrc: '/showcase/forest-companions.mp4',
   },
   {
     id: 'ocean',
@@ -707,6 +708,7 @@ const caseList: CaseItem[] = [
     subtitle: '池塘里的成长',
     tags: ['原创故事', '成长'],
     tone: 'ocean',
+    videoSrc: '/showcase/tadpole-adventure.mp4',
   },
   {
     id: 'train',
@@ -714,6 +716,7 @@ const caseList: CaseItem[] = [
     subtitle: '奇幻旅程',
     tags: ['奇幻故事', '成长'],
     tone: 'train',
+    videoSrc: '/showcase/starlight-train.mp4',
   },
 ]
 

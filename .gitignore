@@ -86,6 +86,4 @@ scripts/_archive/
 # Runtime-generated assets (audio, images, video — never commit)
 # =========================
 assets/mock/
-frontend/public/showcase/mouse-moon-reference.mp4
-frontend/public/showcase/mouse-moon-reference.web.mp4
 frontend/public/showcase/*private*.mp4
