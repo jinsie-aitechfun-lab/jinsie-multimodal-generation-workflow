@@ -55,6 +55,32 @@
           <span class="ph-status-dot"/>
           {{ progressLabel }}
         </div>
+
+        <!-- Manual-mode render CTA. Shows in the BODY of the placeholder
+             (the same area the user is already looking at) so it's
+             impossible to miss. Visible only when:
+               • renderMode === 'manual' (auto mode self-renders via watcher)
+               • assets are ready (candidates done + audio present)
+               • no render currently in flight
+               • no final video URL yet
+             The header also has a smaller version of this button for
+             alignment with the section title; keeping both is harmless,
+             body version is the user's primary affordance.
+        -->
+        <button
+          v-if="
+            renderMode === 'manual' &&
+            assetsReady &&
+            !renderInFlight &&
+            !finalVideoUrl &&
+            audioItemCount > 0
+          "
+          type="button"
+          class="ph-render-cta"
+          @click="emit('render')"
+        >
+          生成视频
+        </button>
       </div>
     </div>
 
@@ -80,6 +106,15 @@ const props = defineProps<{
   errorMessage?: string
   workflowStatusMessage?: string
   workflowStatusProgress?: number | null
+  // Render mode drives both the banner copy and an in-body prominent
+  // render button. In 'manual' mode the user is responsible for clicking
+  // through (or swapping a candidate first); in 'auto' mode the system
+  // auto-triggers the render watcher and the button stays hidden.
+  renderMode?: 'auto' | 'manual'
+}>()
+
+const emit = defineEmits<{
+  (e: 'render'): void
 }>()
 
 function asObj(v: unknown): UnknownRecord | null {
@@ -226,12 +261,19 @@ const placeholderDesc = computed(() => {
     return '还没有可用的分镜。请先在「创作故事」页签输入故事主题，并点击「开始创作」生成内容。'
   }
   if (!assetsReady.value) {
-    if (props.refreshingImages) return '系统正在为每个场景自动挑选最佳候选图，生成完成后即可直接渲染。'
+    if (props.refreshingImages) {
+      return props.renderMode === 'manual'
+        ? '系统正在为每个场景生成候选图，生成完成后请审核并点击「生成视频」。'
+        : '系统正在为每个场景自动挑选最佳候选图，生成完成后即可直接渲染。'
+    }
     if (imageAssetCount.value > 0) return '剩余候选图尚未生成。点击下方「继续生成候选图」可恢复。'
     return '候选图尚未生成。点击下方「立即生成候选图」开始。'
   }
   if (audioItemCount.value === 0) {
     return '当前缺少音频片段，请先完成音频生成。'
+  }
+  if (props.renderMode === 'manual') {
+    return '候选图已就绪，你可以在下方审核每个场景的画面、必要时切换备选，确认后点击「生成视频」开始合成。'
   }
   return '候选图已就绪，系统已自动为每个场景挑选最佳画面。'
 })
@@ -420,6 +462,34 @@ const placeholderDesc = computed(() => {
 }
 
 .ph-dot { opacity: 0.5; }
+
+/* Manual-mode "生成视频" CTA. Placed inside the placeholder body so the
+   user looking at "等待用户触发渲染" can't miss the action. Sized to
+   anchor visual attention without dominating the placeholder card. */
+.ph-render-cta {
+  margin: 16px auto 0;
+  padding: 10px 28px;
+  border: 1px solid var(--primary-action-border, rgba(224, 180, 82, 0.32));
+  border-radius: 10px;
+  background: var(--primary-action-bg, linear-gradient(135deg, rgba(10, 8, 4, 0.96), rgba(164, 116, 34, 0.50)));
+  color: var(--primary-action-text, rgba(255, 238, 190, 0.96));
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  box-shadow: var(--primary-action-shadow, 0 12px 28px rgba(0, 0, 0, 0.30));
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.ph-render-cta:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.06);
+  border-color: var(--primary-action-border-hover, rgba(232, 192, 96, 0.48));
+  box-shadow: var(--primary-action-shadow-hover, 0 14px 32px rgba(0, 0, 0, 0.36));
+}
+.ph-render-cta:active { transform: translateY(0); }
 
 /* Minimal status chip shown when global bar is covering the progress */
 .ph-status-chip {

@@ -545,7 +545,18 @@ def repair_retry_story_text(
     ]
     has_warm_ending = any(marker in cleaned[-40:] for marker in ending_markers)
 
-    if cleaned and not has_warm_ending:
+    # Only force-append the canned closing sentence when the story is
+    # clearly truncated — i.e. ends WITHOUT proper Chinese punctuation
+    # (mid-sentence). Previously this fired whenever the last 40 chars
+    # lacked one of a short list of "warmth" keywords, which over-fired
+    # on perfectly fine endings ("明天又是新的一天" / "他们慢慢走回家" /
+    # etc.) and ended up REPLACING the LLM's own ending with the
+    # cliché "心里暖暖的，明白勇敢尝试就会带来美好的收获。" — which
+    # then leaked into the user's perceived story quality.
+    ends_with_punctuation = bool(cleaned) and cleaned[-1] in "。！？!?"
+    needs_forced_closing = bool(cleaned) and not ends_with_punctuation and not has_warm_ending
+
+    if needs_forced_closing:
         closing_sentence = build_story_closing_sentence(topic)
         sentences = [
             item.strip()

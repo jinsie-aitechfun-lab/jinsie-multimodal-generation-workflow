@@ -457,6 +457,11 @@ function getTopicManualMismatchWarning(): string {
       placeholder="请输入一个主题，例如：写一个关于小猫冒险的故事"
       @input="updateFormState('topic', ($event.target as HTMLTextAreaElement).value)"
     />
+    <!-- Informational only: the user's topic is a short prompt; the LLM
+         expands it into the full story according to the selected duration. -->
+    <span class="hint topic-hint">
+      系统会根据约 {{ formState.durationSec }} 秒目标时长，将主题扩展为完整故事内容。
+    </span>
 
     <!-- ═══════════ Basic configuration (always expanded) ═══════════ -->
     <section class="config-panel">
@@ -500,7 +505,7 @@ function getTopicManualMismatchWarning(): string {
         </label>
 
         <label class="field field-wide">
-          <span>视频时长（秒）</span>
+          <span>目标时长（秒）</span>
           <input
             :value="formState.durationSec"
             class="input"
@@ -515,7 +520,7 @@ function getTopicManualMismatchWarning(): string {
               )
             "
           />
-          <span class="hint">推荐默认 120 秒；支持 60 / 120 / 180 秒。</span>
+          <span class="hint">推荐默认约 120 秒；支持约 60 / 约 120 / 约 180 秒。实际成片时长会随故事字数、配音语速和分镜数量略有浮动。</span>
         </label>
       </div>
     </section>
@@ -1472,6 +1477,18 @@ select.input {
   margin: 10px 0 0;
   color: #f87171;
   font-size: 0.8125rem;
+}
+
+/* Topic duration hint. Subtler than `.hint` (which is reserved for
+   error / warning copy), using the theme's normal secondary text tone. */
+.topic-hint {
+  display: block;
+  margin: 10px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.5;
 }
 
 .error {
