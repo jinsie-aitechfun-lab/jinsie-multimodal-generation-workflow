@@ -1026,6 +1026,25 @@ const workflowIsProcessing = computed(() => {
   return Boolean(loading.value || (status === 'processing' && !response?.outputs))
 })
 
+// Manual-mode wait state — assets are ready for video render but the user
+// hasn't clicked the "生成视频" button yet. Distinct from the three
+// "active phase" flags (processing / refreshing / rendering) because
+// nothing is running on the backend; we still want the top progress bar
+// and the workflow-chain visualization to STAY visible so the user
+// doesn't think the run silently stopped. Without this, the chain &
+// top bar both vanish during the wait and the page looks frozen.
+const awaitingManualRender = computed(() => {
+  return Boolean(
+    workflowForm.value.renderMode === 'manual' &&
+      isWorkflowReadyForRender.value &&
+      !finalVideoUrl.value &&
+      !finalVideoRenderInFlight.value &&
+      !workflowIsProcessing.value &&
+      !refreshingImageReview.value &&
+      currentWorkflowResponse.value,
+  )
+})
+
 function formatElapsedTime(totalSec: number): string {
   const normalizedSec = Math.max(0, Math.floor(totalSec))
   const minutes = Math.floor(normalizedSec / 60)
@@ -2771,10 +2790,18 @@ async function runWorkflow() {
   <StudioLayout v-model="activeTab" :tabs="studioTabs" :dev-mode="devMode" @toggle-dev="toggleDevMode">
     <template #progress>
       <StudioProgress
-        :visible="workflowIsProcessing || refreshingImageReview"
-        :percent="workflowStatusProgress ?? (refreshingImageReview ? reviewRefreshProgress.percent : 0)"
-        :label="workflowIsProcessing ? workflowRunStatusMessage : reviewRefreshProgress.text"
-        :cancellable="phaseCancellable"
+        :visible="workflowIsProcessing || refreshingImageReview || awaitingManualRender"
+        :percent="
+          awaitingManualRender
+            ? 85
+            : (workflowStatusProgress ?? (refreshingImageReview ? reviewRefreshProgress.percent : 0))
+        "
+        :label="
+          awaitingManualRender
+            ? '候选图已就绪，等待你点击「生成视频」'
+            : (workflowIsProcessing ? workflowRunStatusMessage : reviewRefreshProgress.text)
+        "
+        :cancellable="phaseCancellable && !awaitingManualRender"
         :cancel-requested="cancelRequestedAny"
         @cancel="cancelActivePhase"
       />
@@ -2809,6 +2836,7 @@ async function runWorkflow() {
         :render-in-flight="finalVideoRenderInFlight"
         :is-processing="workflowIsProcessing"
         :refreshing-images="refreshingImageReview"
+        :awaiting-manual-render="awaitingManualRender"
         :status-label="workflowRunStatusMessage || (refreshingImageReview ? reviewRefreshProgress.text : '')"
         :completed-steps="workflowStatusData?.completed_steps ?? 0"
         :total-steps="workflowStatusData?.total_steps ?? 0"

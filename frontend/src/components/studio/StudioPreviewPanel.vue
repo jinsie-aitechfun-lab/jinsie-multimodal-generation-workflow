@@ -367,6 +367,11 @@ const props = defineProps<{
   renderInFlight?: boolean
   isProcessing?: boolean
   refreshingImages?: boolean
+  // Manual-mode wait state: assets are ready but the user hasn't clicked
+  // the "生成视频" button yet. Backend isn't running anything; we still
+  // want the workflow chain to STAY visible (video step active) so the
+  // page doesn't look frozen during the wait.
+  awaitingManualRender?: boolean
   statusLabel?: string
   completedSteps?: number
   totalSteps?: number
@@ -498,6 +503,12 @@ const workflowChain = computed<{ id: string; label: string; flowLabel: string; s
   // Final-video render — every prior step is finished, only "视频合成" is live.
   if (props.renderInFlight) return buildChainWithActive(5)
 
+  // Manual-mode wait: all upstream phases done, only video render is
+  // pending the user's click. Show "视频合成" as active so the chain
+  // doesn't appear to vanish during the wait. Distinct from renderInFlight
+  // (which is the "render is actually running" state).
+  if (props.awaitingManualRender) return buildChainWithActive(5)
+
   // Candidate image generation — Story + Storyboard are prerequisites and
   // therefore already done; the image step is the live one.
   if (props.refreshingImages) return buildChainWithActive(2)
@@ -533,9 +544,16 @@ const workflowChain = computed<{ id: string; label: string; flowLabel: string; s
 })
 
 // True whenever any workflow phase is in flight — drives badge wording,
-// dot pulse, and the A2 template branch in the right panel.
+// dot pulse, and the A2 template branch in the right panel. Includes the
+// manual-render wait so the "generating" affordance keeps showing while
+// the user hasn't clicked the render CTA yet.
 const workInProgress = computed(
-  () => Boolean(props.isProcessing || props.renderInFlight || props.refreshingImages),
+  () => Boolean(
+    props.isProcessing ||
+    props.renderInFlight ||
+    props.refreshingImages ||
+    props.awaitingManualRender,
+  ),
 )
 const doneCount = computed(
   () => workflowChain.value.filter((s) => s.state === 'done').length,
