@@ -2857,6 +2857,7 @@ async function runWorkflow() {
                 :error-message="errorMessage"
                 :workflow-status-message="workflowRunStatusMessage"
                 :workflow-status-progress="workflowStatusProgress"
+                :render-mode="workflowForm.renderMode"
                 @render="renderFinalVideoIfReady(currentWorkflowResponse || {})"
                 :show-render-button="workflowForm.renderMode === 'auto'"
               />
