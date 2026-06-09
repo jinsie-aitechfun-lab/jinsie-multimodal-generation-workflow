@@ -469,21 +469,26 @@ const placeholderDesc = computed(() => {
 .ph-render-cta {
   margin: 16px auto 0;
   padding: 10px 28px;
-  border: none;
+  border: 1px solid var(--primary-action-border, rgba(224, 180, 82, 0.32));
   border-radius: 10px;
-  background: linear-gradient(135deg, var(--arc-400, #f59e0b), var(--prism-400, #ea580c));
-  color: #1f1206;
+  background: var(--primary-action-bg, linear-gradient(135deg, rgba(10, 8, 4, 0.96), rgba(164, 116, 34, 0.50)));
+  color: var(--primary-action-text, rgba(255, 238, 190, 0.96));
   font-size: 0.9375rem;
   font-weight: 600;
   letter-spacing: 0.04em;
   cursor: pointer;
-  box-shadow: 0 6px 18px rgba(245,158,11,0.32);
-  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+  box-shadow: var(--primary-action-shadow, 0 12px 28px rgba(0, 0, 0, 0.30));
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
-.ph-render-cta:hover { transform: translateY(-1px); filter: brightness(1.05); box-shadow: 0 10px 24px rgba(245,158,11,0.42); }
+.ph-render-cta:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.06);
+  border-color: var(--primary-action-border-hover, rgba(232, 192, 96, 0.48));
+  box-shadow: var(--primary-action-shadow-hover, 0 14px 32px rgba(0, 0, 0, 0.36));
+}
 .ph-render-cta:active { transform: translateY(0); }
 
 /* Minimal status chip shown when global bar is covering the progress */
