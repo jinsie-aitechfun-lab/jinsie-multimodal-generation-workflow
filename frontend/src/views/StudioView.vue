@@ -2863,23 +2863,28 @@ async function runWorkflow() {
           workflowIsProcessing ||
           refreshingImageReview ||
           awaitingManualRender ||
-          finalVideoRenderInFlight
+          finalVideoRenderInFlight ||
+          Boolean(sceneRefreshingId)
         "
         :percent="
-          awaitingManualRender
-            ? 85
+          sceneRefreshingId
+            ? 75
             : finalVideoRenderInFlight
               ? 92
-              : (workflowStatusProgress ?? (refreshingImageReview ? reviewRefreshProgress.percent : 0))
+              : awaitingManualRender
+                ? 85
+                : (workflowStatusProgress ?? (refreshingImageReview ? reviewRefreshProgress.percent : 0))
         "
         :label="
-          awaitingManualRender
-            ? '候选图已就绪，等待你点击「生成视频」'
+          sceneRefreshingId
+            ? `正在为 ${sceneRefreshingId} 重新生成候选图`
             : finalVideoRenderInFlight
               ? '正在合成视频（音频、字幕、画面拼接中）'
-              : (workflowIsProcessing ? workflowRunStatusMessage : reviewRefreshProgress.text)
+              : awaitingManualRender
+                ? '候选图已就绪，等待你点击「生成视频」'
+                : (workflowIsProcessing ? workflowRunStatusMessage : reviewRefreshProgress.text)
         "
-        :cancellable="phaseCancellable && !awaitingManualRender"
+        :cancellable="phaseCancellable && !awaitingManualRender && !sceneRefreshingId"
         :cancel-requested="cancelRequestedAny"
         @cancel="cancelActivePhase"
       />
