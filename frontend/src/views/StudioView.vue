@@ -1053,6 +1053,18 @@ const awaitingManualRender = computed(() => {
   )
 })
 
+// "Single-scene retry" = the user clicked "重新生成" on ONE done scene
+// AFTER the initial workflow finished. We must distinguish this from
+// the bulk image refresh that the initial workflow runs — the bulk
+// loop also sets `sceneRefreshingId` as it walks each scene, but the
+// correct UI copy for that is "正在生成候选图 (X/Y)", not "正在为 X
+// 重新生成". The discriminator is `refreshingImageReview`: it's only
+// true during the bulk refresh, never during user-triggered single
+// retries.
+const singleSceneRetryActive = computed(() => {
+  return Boolean(sceneRefreshingId.value) && !refreshingImageReview.value
+})
+
 function formatElapsedTime(totalSec: number): string {
   const normalizedSec = Math.max(0, Math.floor(totalSec))
   const minutes = Math.floor(normalizedSec / 60)
@@ -2822,7 +2834,7 @@ async function runWorkflow() {
           Boolean(sceneRefreshingId)
         "
         :percent="
-          sceneRefreshingId
+          singleSceneRetryActive
             ? 75
             : finalVideoRenderInFlight
               ? 92
@@ -2831,7 +2843,7 @@ async function runWorkflow() {
                 : (workflowStatusProgress ?? (refreshingImageReview ? reviewRefreshProgress.percent : 0))
         "
         :label="
-          sceneRefreshingId
+          singleSceneRetryActive
             ? `正在为 ${sceneRefreshingId} 重新生成候选图`
             : finalVideoRenderInFlight
               ? '正在合成视频（音频、字幕、画面拼接中）'
@@ -2839,7 +2851,7 @@ async function runWorkflow() {
                 ? '候选图已就绪，等待你点击「生成视频」'
                 : (workflowIsProcessing ? workflowRunStatusMessage : reviewRefreshProgress.text)
         "
-        :cancellable="phaseCancellable && !awaitingManualRender && !sceneRefreshingId"
+        :cancellable="phaseCancellable && !awaitingManualRender && !singleSceneRetryActive"
         :cancel-requested="cancelRequestedAny"
         @cancel="cancelActivePhase"
       />
