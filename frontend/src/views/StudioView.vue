@@ -2012,16 +2012,55 @@ async function refreshImageReviewScene(sceneId: string, signal?: AbortSignal, qu
     },
   }
 
-  // Bump this scene's cache-bust version BEFORE applyWorkflowResponse so
-  // the moment new items flow through to InteractiveImageReview, every
-  // <img :src> for this scene gets re-evaluated with the new version
-  // suffix — browsers fetch the fresh file instead of serving the cached
-  // pre-regen image. Using Date.now() (timestamp) instead of an
-  // incrementing counter guarantees the version is always different from
-  // any previously-used value, even across hot-reload / state restore.
-  sceneImageVersions.value = {
-    ...sceneImageVersions.value,
-    [sceneId]: Date.now(),
+  // Inject a cache-bust timestamp directly into the per-scene asset
+  // paths inside the merged response, BEFORE applyWorkflowResponse
+  // hands the data downstream. Backend overwrites the same on-disk file
+  // (e.g. scene_03__candidate_a.png) on regenerate, and browsers happily
+  // serve the cached old image because the URL never changed.
+  // Re-writing relative_path / public_url with a fresh `?_=<ts>` suffix
+  // at the source guarantees every consumer (current image, candidates,
+  // 查看原图 link, etc.) sees a different URL and must re-fetch.
+  const cacheBustTs = Date.now()
+  const appendBust = (urlOrPath: string | undefined): string => {
+    const value = String(urlOrPath || '').trim()
+    if (!value) return value
+    const separator = value.includes('?') ? '&' : '?'
+    return `${value}${separator}_=${cacheBustTs}`
+  }
+  const rewriteAssetRef = (ref: Record<string, unknown> | undefined | null) => {
+    if (!ref || typeof ref !== 'object') return
+    const rp = (ref as Record<string, unknown>).relative_path
+    const pu = (ref as Record<string, unknown>).public_url
+    if (typeof rp === 'string' && rp) (ref as Record<string, unknown>).relative_path = appendBust(rp)
+    if (typeof pu === 'string' && pu) (ref as Record<string, unknown>).public_url = appendBust(pu)
+  }
+  const reviewBlock = (mergedResponse.outputs as Record<string, unknown> | undefined)?.image_review as Record<string, unknown> | undefined
+  const selectedAssetsList = reviewBlock?.selected_assets
+  if (Array.isArray(selectedAssetsList)) {
+    for (const sa of selectedAssetsList) {
+      if (!sa || typeof sa !== 'object') continue
+      const item = sa as Record<string, unknown>
+      if (String(item.scene_id || '') !== sceneId) continue
+      rewriteAssetRef(item.selected_asset_ref as Record<string, unknown> | undefined)
+      const candidates = item.candidate_asset_refs
+      if (Array.isArray(candidates)) {
+        for (const c of candidates) rewriteAssetRef(c as Record<string, unknown> | undefined)
+      }
+    }
+  }
+  const assetsBlock = (mergedResponse.outputs as Record<string, unknown> | undefined)?.image_assets as Record<string, unknown> | undefined
+  const assetItems = assetsBlock?.assets
+  if (Array.isArray(assetItems)) {
+    for (const a of assetItems) {
+      if (!a || typeof a !== 'object') continue
+      const item = a as Record<string, unknown>
+      if (String(item.scene_id || '') !== sceneId) continue
+      rewriteAssetRef(item.selected_asset_ref as Record<string, unknown> | undefined)
+      const candidates = item.candidate_asset_refs
+      if (Array.isArray(candidates)) {
+        for (const c of candidates) rewriteAssetRef(c as Record<string, unknown> | undefined)
+      }
+    }
   }
 
   applyWorkflowResponse(mergedResponse)

@@ -169,12 +169,16 @@ const finalStatus = computed(() => asStr(finalVideo.value?.status).toLowerCase()
 const workflowInFlight = computed(() => props.loading && !outputs.value)
 
 // Any active phase that should swap the static clapperboard for the
-// AI-workflow loading animation: initial workflow, image refresh, render.
+// AI-workflow loading animation: initial workflow, image refresh,
+// render, OR per-scene retry (sceneRefreshingId set). Without the
+// per-scene case the placeholder icon stays static during "重新生成"
+// even though we're showing "正在重新生成候选图" text — looks broken.
 const isAnyLoading = computed(() => {
   return Boolean(
     props.loading ||
     props.renderInFlight ||
     props.refreshingImages ||
+    props.sceneRefreshingId ||
     finalStatus.value === 'rendering' ||
     workflowInFlight.value,
   )
