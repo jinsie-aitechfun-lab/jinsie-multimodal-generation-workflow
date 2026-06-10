@@ -1072,6 +1072,20 @@ class RunnerAudioRenderSupport:
 
         video_duration = _ffprobe_duration_sec(base_video_path)
         _rescale_srt_to_duration(subtitle_path, video_duration)
+
+        # The `-t` cap below was using `total_duration_sec`, which is the
+        # SUM of each individual MP3's ffprobe duration. The actual
+        # merged_audio.mp3 (built by `ffmpeg -f concat -c copy`) can be a
+        # few tens of ms LONGER than that sum because of MP3 frame
+        # boundary alignment — the last syllable of the final segment
+        # then gets clipped by `-t`. Probe the merged file's real length
+        # and add a small safety buffer so the cap never sits inside an
+        # active audio frame.
+        if has_audio and merged_audio_path:
+            actual_audio_duration = _ffprobe_duration_sec(merged_audio_path)
+            if actual_audio_duration > 0:
+                total_duration_sec = max(total_duration_sec, actual_audio_duration) + 0.2
+
         if has_audio and merged_audio_path:
             escaped_subtitle_path = (
                 str(subtitle_path)
