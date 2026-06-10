@@ -2012,65 +2012,15 @@ async function refreshImageReviewScene(sceneId: string, signal?: AbortSignal, qu
     },
   }
 
-  // Inject a cache-bust timestamp directly into the per-scene asset
-  // paths inside the merged response, BEFORE applyWorkflowResponse
-  // hands the data downstream. Backend overwrites the same on-disk file
-  // (e.g. scene_03__candidate_a.png) on regenerate, and browsers happily
-  // serve the cached old image because the URL never changed.
-  // Re-writing relative_path / public_url with a fresh `?_=<ts>` suffix
-  // at the source guarantees every consumer (current image, candidates,
-  // 查看原图 link, etc.) sees a different URL and must re-fetch.
-  const cacheBustTs = Date.now()
-  const appendBust = (urlOrPath: string | undefined): string => {
-    const value = String(urlOrPath || '').trim()
-    if (!value) return value
-    const separator = value.includes('?') ? '&' : '?'
-    return `${value}${separator}_=${cacheBustTs}`
-  }
-  const rewriteAssetRef = (ref: Record<string, unknown> | undefined | null) => {
-    if (!ref || typeof ref !== 'object') return
-    const rp = (ref as Record<string, unknown>).relative_path
-    const pu = (ref as Record<string, unknown>).public_url
-    if (typeof rp === 'string' && rp) (ref as Record<string, unknown>).relative_path = appendBust(rp)
-    if (typeof pu === 'string' && pu) (ref as Record<string, unknown>).public_url = appendBust(pu)
-  }
-  const reviewBlock = (mergedResponse.outputs as Record<string, unknown> | undefined)?.image_review as Record<string, unknown> | undefined
-  const selectedAssetsList = reviewBlock?.selected_assets
-  if (Array.isArray(selectedAssetsList)) {
-    for (const sa of selectedAssetsList) {
-      if (!sa || typeof sa !== 'object') continue
-      const item = sa as Record<string, unknown>
-      if (String(item.scene_id || '') !== sceneId) continue
-      rewriteAssetRef(item.selected_asset_ref as Record<string, unknown> | undefined)
-      const candidates = item.candidate_asset_refs
-      if (Array.isArray(candidates)) {
-        for (const c of candidates) rewriteAssetRef(c as Record<string, unknown> | undefined)
-      }
-    }
-  }
-  const assetsBlock = (mergedResponse.outputs as Record<string, unknown> | undefined)?.image_assets as Record<string, unknown> | undefined
-  const assetItems = assetsBlock?.assets
-  if (Array.isArray(assetItems)) {
-    for (const a of assetItems) {
-      if (!a || typeof a !== 'object') continue
-      const item = a as Record<string, unknown>
-      if (String(item.scene_id || '') !== sceneId) continue
-      rewriteAssetRef(item.selected_asset_ref as Record<string, unknown> | undefined)
-      const candidates = item.candidate_asset_refs
-      if (Array.isArray(candidates)) {
-        for (const c of candidates) rewriteAssetRef(c as Record<string, unknown> | undefined)
-      }
-    }
-  }
-
-  // Bump the per-scene version counter so the <img :key> bound to this
-  // scene's version forces a full element remount when render fires.
-  // Without this Vue can reuse the same <img> DOM node and (combined
-  // with browser src-cache heuristics) skip fetching the new URL even
-  // though the underlying string has changed.
+  // Cache-bust ONLY at the URL building stage (toAssetHref reads this
+  // map and appends ?v=ts). We must NOT mutate the underlying asset
+  // paths here — those flow into /v1/final-video/render's payload and
+  // are used by the backend to locate the actual files on disk. A
+  // `?_=ts` suffix on relative_path would make the backend search for
+  // a non-existent file and silently break the final video.
   sceneImageVersions.value = {
     ...sceneImageVersions.value,
-    [sceneId]: cacheBustTs,
+    [sceneId]: Date.now(),
   }
 
   applyWorkflowResponse(mergedResponse)
