@@ -195,13 +195,17 @@ function isImageAsset(path?: string): boolean {
     return false
   }
 
-  const value = path.toLowerCase()
+  // Strip query string and hash before checking the file extension —
+  // cache-bust suffixes (e.g. "?_=1718999999") make the raw URL end in
+  // the timestamp, not in ".png", which previously caused isImageAsset
+  // to fail and fall back to the CSS placeholder graphic.
+  const pathPart = path.split(/[?#]/)[0].toLowerCase()
   return (
-    value.endsWith('.png') ||
-    value.endsWith('.jpg') ||
-    value.endsWith('.jpeg') ||
-    value.endsWith('.webp') ||
-    value.endsWith('.gif')
+    pathPart.endsWith('.png') ||
+    pathPart.endsWith('.jpg') ||
+    pathPart.endsWith('.jpeg') ||
+    pathPart.endsWith('.webp') ||
+    pathPart.endsWith('.gif')
   )
 }
 
