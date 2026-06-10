@@ -422,13 +422,21 @@ class RunnerAudioRenderSupport:
                     if actual_duration_sec is not None and duration_estimate_sec > 0 and speed_adjustment_allowed:
                         retry_speed: Optional[float] = None
                         if actual_duration_sec < duration_estimate_sec * 0.70:
-                            # Too short: slow down to fill the scene slot
+                            # Too short: slow down to fill the scene slot.
+                            # Slow-down is safe — TTS providers handle
+                            # speed<1 by stretching audio (more padding
+                            # or syllable extension), no content loss.
                             ratio = actual_duration_sec / duration_estimate_sec
                             retry_speed = max(0.75, min(0.95, ratio))
-                        elif actual_duration_sec > duration_estimate_sec * 1.30:
-                            # Too long: speed up to fit the scene slot
-                            ratio = actual_duration_sec / duration_estimate_sec
-                            retry_speed = min(1.25, max(1.05, ratio))
+                        # NO speed-up retry here. Empirically TTS providers
+                        # (SiliconFlow / OpenAI-compatible) drop trailing
+                        # syllables when handed speed>1 — the last word /
+                        # particle of long sentences vanishes ("个别句子
+                        # 尾音消失"). The global speedup pass at the end
+                        # of this method (uniform across ALL segments)
+                        # still handles total-duration overshoot, so
+                        # losing per-segment speed-up is no functional
+                        # regression — only a correctness fix.
 
                         if retry_speed is not None:
                             try:
