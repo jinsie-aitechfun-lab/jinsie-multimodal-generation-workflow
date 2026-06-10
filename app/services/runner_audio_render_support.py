@@ -1,8 +1,26 @@
 from __future__ import annotations
 
+import math
 import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+# Final video is rendered at 25 fps via `-vsync cfr -r 25`. Each per-scene
+# image duration written into scene_concat.txt is therefore rounded by
+# ffmpeg to the nearest 1/25s = 0.04s frame boundary. When the rounding
+# is DOWN, that scene's image plays for slightly less time than the
+# matching audio segment — accumulated across N scenes this makes
+# base_video shorter than merged_audio, and `-shortest` then truncates
+# the tail of one or more audio segments. By ceiling-rounding each image
+# duration to the next frame boundary, every scene's image is >= its
+# audio segment, so the audio always plays to its natural end.
+_VIDEO_FRAME_STEP_SEC = 1.0 / 25.0
+
+
+def _ceil_to_frame_boundary(duration_sec: float) -> float:
+    if duration_sec <= 0:
+        return 0.0
+    return math.ceil(duration_sec / _VIDEO_FRAME_STEP_SEC) * _VIDEO_FRAME_STEP_SEC
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -830,6 +848,12 @@ class RunnerAudioRenderSupport:
                     duration_sec = float(ctx.input.duration_sec) / max(
                         len(image_assets_list), 1
                     )
+
+            # Ceiling-round to the next 25 fps frame boundary so the image
+            # is shown for at least as long as the matching audio segment.
+            # See _ceil_to_frame_boundary docstring above the helper for
+            # the full rationale (tail-clipping symptom).
+            duration_sec = _ceil_to_frame_boundary(duration_sec)
 
             escaped_image_path = str(image_path).replace("'", "'\\''")
             concat_lines.append(f"file '{escaped_image_path}'")
