@@ -596,6 +596,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                 <img
                   v-if="isImageAsset(assetRefPath(entry.item.selected_asset_ref))"
                   class="preview-visual-image"
+                  :key="`${entry.sceneId}-${sceneImageVersions?.[entry.sceneId] ?? 0}-selected`"
                   :src="toAssetHref(assetRefPath(entry.item.selected_asset_ref), entry.sceneId)"
                   :alt="entry.sceneTitle || 'selected-image'"
                 />
@@ -701,6 +702,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                     <img
                       v-if="isImageAsset(assetRefPath(candidate))"
                       class="preview-visual-image"
+                      :key="`${entry.sceneId}-${sceneImageVersions?.[entry.sceneId] ?? 0}-${candidate.file_name || index}`"
                       :src="toAssetHref(assetRefPath(candidate), entry.sceneId)"
                       :alt="candidate.file_name || 'candidate-image'"
                     />

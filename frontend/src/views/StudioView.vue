@@ -2016,10 +2016,12 @@ async function refreshImageReviewScene(sceneId: string, signal?: AbortSignal, qu
   // the moment new items flow through to InteractiveImageReview, every
   // <img :src> for this scene gets re-evaluated with the new version
   // suffix — browsers fetch the fresh file instead of serving the cached
-  // pre-regen image.
+  // pre-regen image. Using Date.now() (timestamp) instead of an
+  // incrementing counter guarantees the version is always different from
+  // any previously-used value, even across hot-reload / state restore.
   sceneImageVersions.value = {
     ...sceneImageVersions.value,
-    [sceneId]: (sceneImageVersions.value[sceneId] ?? 0) + 1,
+    [sceneId]: Date.now(),
   }
 
   applyWorkflowResponse(mergedResponse)
@@ -2909,6 +2911,7 @@ async function runWorkflow() {
                 :workflow-status-message="workflowRunStatusMessage"
                 :workflow-status-progress="workflowStatusProgress"
                 :render-mode="workflowForm.renderMode"
+                :scene-refreshing-id="sceneRefreshingId"
                 @render="renderFinalVideoIfReady(currentWorkflowResponse || {})"
                 :show-render-button="workflowForm.renderMode === 'auto'"
               />
