@@ -2790,16 +2790,25 @@ async function runWorkflow() {
   <StudioLayout v-model="activeTab" :tabs="studioTabs" :dev-mode="devMode" @toggle-dev="toggleDevMode">
     <template #progress>
       <StudioProgress
-        :visible="workflowIsProcessing || refreshingImageReview || awaitingManualRender"
+        :visible="
+          workflowIsProcessing ||
+          refreshingImageReview ||
+          awaitingManualRender ||
+          finalVideoRenderInFlight
+        "
         :percent="
           awaitingManualRender
             ? 85
-            : (workflowStatusProgress ?? (refreshingImageReview ? reviewRefreshProgress.percent : 0))
+            : finalVideoRenderInFlight
+              ? 92
+              : (workflowStatusProgress ?? (refreshingImageReview ? reviewRefreshProgress.percent : 0))
         "
         :label="
           awaitingManualRender
             ? '候选图已就绪，等待你点击「生成视频」'
-            : (workflowIsProcessing ? workflowRunStatusMessage : reviewRefreshProgress.text)
+            : finalVideoRenderInFlight
+              ? '正在合成视频（音频、字幕、画面拼接中）'
+              : (workflowIsProcessing ? workflowRunStatusMessage : reviewRefreshProgress.text)
         "
         :cancellable="phaseCancellable && !awaitingManualRender"
         :cancel-requested="cancelRequestedAny"
@@ -2808,9 +2817,12 @@ async function runWorkflow() {
     </template>
     <div class="studio-tab-content">
     <section v-if="activeTab === 'run'" class="studio-home-grid">
-      <StudioCreatePanel :loading="loading || refreshingImageReview || finalVideoRenderInFlight" :cancel-requested="cancelRequestedAny">
+      <StudioCreatePanel
+        :loading="loading || refreshingImageReview || finalVideoRenderInFlight || awaitingManualRender"
+        :cancel-requested="cancelRequestedAny"
+      >
         <WorkflowRunPanel
-          :loading="loading || refreshingImageReview || finalVideoRenderInFlight"
+          :loading="loading || refreshingImageReview || finalVideoRenderInFlight || awaitingManualRender"
           :can-submit="canSubmit"
           :error-message="errorMessage"
           :form-state="workflowForm"

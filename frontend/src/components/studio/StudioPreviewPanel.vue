@@ -503,11 +503,25 @@ const workflowChain = computed<{ id: string; label: string; flowLabel: string; s
   // Final-video render — every prior step is finished, only "视频合成" is live.
   if (props.renderInFlight) return buildChainWithActive(5)
 
-  // Manual-mode wait: all upstream phases done, only video render is
-  // pending the user's click. Show "视频合成" as active so the chain
-  // doesn't appear to vanish during the wait. Distinct from renderInFlight
-  // (which is the "render is actually running" state).
-  if (props.awaitingManualRender) return buildChainWithActive(5)
+  // Manual-mode wait: candidate images are ready, video step is waiting
+  // for the user's click. Even though backend's phase-1 already produced
+  // placeholder audio/subtitles, the user hasn't seen that progress (the
+  // chain was capped at image step throughout phase 1). To match the
+  // user's mental model — "I've only seen images get generated, the
+  // video step is what's next" — show image step as DONE, video step as
+  // ACTIVE, and the intermediate audio/subtitle steps as PENDING. They
+  // will visually advance into "done" together when the user clicks
+  // render and `renderInFlight` takes over.
+  if (props.awaitingManualRender) {
+    return STEP_DEFS.map((step, idx) => ({
+      ...step,
+      state: (
+        idx <= 2 ? 'done'              // story / storyboard / image done
+        : idx === 5 ? 'active'         // video step waiting on user
+        : 'pending'                    // audio / subtitle held until render
+      ) as FlowState,
+    }))
+  }
 
   // Candidate image generation — Story + Storyboard are prerequisites and
   // therefore already done; the image step is the live one.
