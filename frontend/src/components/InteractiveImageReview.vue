@@ -169,11 +169,18 @@ function toAssetHref(path?: string, sceneId?: string): string {
   // version after each successful refresh; absent / zero versions
   // are treated as "no bust needed" so unchanged scenes don't refetch.
   const version = sceneId ? props.sceneImageVersions?.[sceneId] : undefined
+  let finalUrl: string
   if (version && version > 0) {
     const separator = normalizedPath.includes('?') ? '&' : '?'
-    return `${normalizedBase}${normalizedPath}${separator}v=${version}`
+    finalUrl = `${normalizedBase}${normalizedPath}${separator}v=${version}`
+  } else {
+    finalUrl = `${normalizedBase}${normalizedPath}`
   }
-  return `${normalizedBase}${normalizedPath}`
+  // TEMPORARY DIAGNOSTIC — verifies the final URL the <img> binds to
+  if (sceneId && trimmed.includes('?_=')) {
+    console.log('[toAssetHref][regen]', sceneId, '→', finalUrl)
+  }
+  return finalUrl
 }
 
 function assetRefPath(assetRef?: ImageAssetRef): string {

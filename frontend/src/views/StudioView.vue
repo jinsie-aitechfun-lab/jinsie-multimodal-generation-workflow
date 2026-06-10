@@ -2063,6 +2063,16 @@ async function refreshImageReviewScene(sceneId: string, signal?: AbortSignal, qu
     }
   }
 
+  // Bump the per-scene version counter so the <img :key> bound to this
+  // scene's version forces a full element remount when render fires.
+  // Without this Vue can reuse the same <img> DOM node and (combined
+  // with browser src-cache heuristics) skip fetching the new URL even
+  // though the underlying string has changed.
+  sceneImageVersions.value = {
+    ...sceneImageVersions.value,
+    [sceneId]: cacheBustTs,
+  }
+
   // TEMPORARY DIAGNOSTIC — verifies the cache-bust rewrite landed in the
   // merged response that downstream consumers actually see. Remove once
   // the regen-after-image-render bug is confirmed fixed end-to-end.
@@ -2074,6 +2084,7 @@ async function refreshImageReviewScene(sceneId: string, signal?: AbortSignal, qu
       console.log('[regen][cache-bust] scene=', sceneId, 'ts=', cacheBustTs)
       console.log('[regen][cache-bust] new selected_asset_ref path=', (match as any)?.selected_asset_ref?.relative_path)
       console.log('[regen][cache-bust] new selected_asset_ref url=', (match as any)?.selected_asset_ref?.public_url)
+      console.log('[regen][cache-bust] sceneImageVersions=', JSON.parse(JSON.stringify(sceneImageVersions.value)))
     }
   } catch (e) {
     console.warn('[regen][cache-bust] diagnostic failed', e)
