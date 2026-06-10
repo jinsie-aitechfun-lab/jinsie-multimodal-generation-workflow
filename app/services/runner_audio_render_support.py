@@ -16,11 +16,63 @@ from typing import Any, Dict, List, Optional
 # audio segment, so the audio always plays to its natural end.
 _VIDEO_FRAME_STEP_SEC = 1.0 / 25.0
 
+# Trailing silence appended to every TTS segment before concat. Two
+# benefits in one:
+#   1) Perceptual — back-to-back TTS segments with zero gap sound like
+#      the last syllable of segment N got cut when segment N+1 starts.
+#      A 150 ms breath gives natural sentence pacing.
+#   2) Tail-clip insurance — if the TTS provider (or the 1.25× speed
+#      retry path) returns audio with a slightly truncated tail, the
+#      missing audio falls into the silence buffer instead of the next
+#      segment's leading audio.
+_SEGMENT_TAIL_SILENCE_SEC = 0.15
+
 
 def _ceil_to_frame_boundary(duration_sec: float) -> float:
     if duration_sec <= 0:
         return 0.0
     return math.ceil(duration_sec / _VIDEO_FRAME_STEP_SEC) * _VIDEO_FRAME_STEP_SEC
+
+
+def _append_silence_to_mp3(mp3_path: Path, silence_sec: float) -> bool:
+    """Append `silence_sec` seconds of silence to `mp3_path` in place.
+
+    Returns True if the file was successfully padded. Returns False on
+    any ffmpeg failure — caller should treat that as "padding skipped,
+    keep the original file" rather than fatal.
+    """
+    if silence_sec <= 0 or not mp3_path.exists():
+        return False
+    temp = mp3_path.with_suffix(".pad.mp3")
+    try:
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-loglevel",
+                "error",
+                "-i",
+                str(mp3_path),
+                "-af",
+                f"apad=pad_dur={silence_sec:.3f}",
+                "-c:a",
+                "libmp3lame",
+                "-b:a",
+                "64k",
+                str(temp),
+            ],
+            check=True,
+            capture_output=True,
+        )
+        temp.replace(mp3_path)
+        return True
+    except Exception:
+        if temp.exists():
+            try:
+                temp.unlink()
+            except Exception:
+                pass
+        return False
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -425,11 +477,25 @@ class RunnerAudioRenderSupport:
                                     "retry_error": True,
                                 }
 
+                    # Append a tiny tail silence to whatever the final
+                    # TTS file ended up being (original or speed-retry).
+                    # This adds a natural breath between sentences AND
+                    # masks any tail truncation from the TTS provider /
+                    # speed retry. See _SEGMENT_TAIL_SILENCE_SEC docstring.
+                    if _append_silence_to_mp3(output_path, _SEGMENT_TAIL_SILENCE_SEC):
+                        padded_duration = self._runner._probe_audio_duration_seconds(
+                            output_path
+                        )
+                        if padded_duration is not None and padded_duration > 0:
+                            duration_sec = padded_duration
+                            duration_source = f"{duration_source}+tail_pad"
+
                     asset_metadata = {
                         "tts_model": tts_result.get("model"),
                         "tts_voice": tts_result.get("voice"),
                         "output_bytes": tts_result.get("output_bytes"),
                         "duration_source": duration_source,
+                        "tail_silence_sec": _SEGMENT_TAIL_SILENCE_SEC,
                         **duration_retry_meta,
                     }
                     real_generation_count += 1
@@ -574,6 +640,11 @@ class RunnerAudioRenderSupport:
                         output_path=seg_output_path,
                         speed=speedup_factor,
                     )
+                    # Global speedup retry overwrites the file, which
+                    # blows away the per-segment tail silence we added
+                    # earlier. Re-append silence so the breathing buffer
+                    # still exists after the speedup pass.
+                    _append_silence_to_mp3(seg_output_path, _SEGMENT_TAIL_SILENCE_SEC)
                     new_duration = self._runner._probe_audio_duration_seconds(
                         seg_output_path
                     )
