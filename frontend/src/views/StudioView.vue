@@ -2765,6 +2765,11 @@ async function runWorkflow() {
   finalVideoUrl.value = ''
   finalVideoRenderInFlight.value = false
   finalVideoRendering.value = false
+  // Clear any stale per-scene retry state from the previous workflow run.
+  // Without this, the top progress bar and FinalVideoPanel keep showing
+  // "正在为 scene_XX 重新生成候选图" on top of the new initial workflow.
+  sceneRefreshingId.value = ''
+  sceneImageVersions.value = {}
 
   try {
     const response = await fetch(`${apiBaseUrl}/v1/workflow/run`, {
