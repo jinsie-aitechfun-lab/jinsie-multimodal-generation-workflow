@@ -91,6 +91,13 @@ const props = defineProps<{
   // and they're the natural audience for regenerating a single bad
   // scene without re-running the entire workflow.
   renderMode?: 'auto' | 'manual'
+  // Map of scene_id → version-counter for image cache-busting. When a
+  // scene is regenerated the new image file overwrites the OLD one
+  // at the same file path (e.g. scene_03__candidate_a.png), and
+  // browsers happily serve the cached image since the URL hasn't
+  // changed. Appending `?v=${sceneImageVersions[sceneId]}` to every
+  // image URL forces a fresh fetch after each per-scene refresh.
+  sceneImageVersions?: Record<string, number>
 }>()
 
 // A scene's candidates are locked when:
@@ -139,7 +146,7 @@ const emit = defineEmits<{
   (e: 'cancel-workflow'): void
 }>()
 
-function toAssetHref(path?: string): string {
+function toAssetHref(path?: string, sceneId?: string): string {
   if (!path) {
     return ''
   }
@@ -156,6 +163,16 @@ function toAssetHref(path?: string): string {
   const normalizedBase = props.apiBaseUrl.replace(/\/+$/, '')
   const normalizedPath = trimmed.startsWith('/') ? trimmed : `/${trimmed}`
 
+  // Cache-bust per scene: backend overwrites the same file path on
+  // regenerate, so without a version param the browser will keep
+  // showing the cached old image. The parent bumps the per-scene
+  // version after each successful refresh; absent / zero versions
+  // are treated as "no bust needed" so unchanged scenes don't refetch.
+  const version = sceneId ? props.sceneImageVersions?.[sceneId] : undefined
+  if (version && version > 0) {
+    const separator = normalizedPath.includes('?') ? '&' : '?'
+    return `${normalizedBase}${normalizedPath}${separator}v=${version}`
+  }
   return `${normalizedBase}${normalizedPath}`
 }
 
@@ -579,7 +596,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                 <img
                   v-if="isImageAsset(assetRefPath(entry.item.selected_asset_ref))"
                   class="preview-visual-image"
-                  :src="toAssetHref(assetRefPath(entry.item.selected_asset_ref))"
+                  :src="toAssetHref(assetRefPath(entry.item.selected_asset_ref), entry.sceneId)"
                   :alt="entry.sceneTitle || 'selected-image'"
                 />
                 <div v-else class="placeholder-card">
@@ -611,7 +628,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                 <a
                   v-if="isImageAsset(assetRefPath(entry.item.selected_asset_ref))"
                   class="selected-open-link"
-                  :href="toAssetHref(assetRefPath(entry.item.selected_asset_ref))"
+                  :href="toAssetHref(assetRefPath(entry.item.selected_asset_ref), entry.sceneId)"
                   target="_blank"
                   rel="noreferrer"
                 >
@@ -684,7 +701,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                     <img
                       v-if="isImageAsset(assetRefPath(candidate))"
                       class="preview-visual-image"
-                      :src="toAssetHref(assetRefPath(candidate))"
+                      :src="toAssetHref(assetRefPath(candidate), entry.sceneId)"
                       :alt="candidate.file_name || 'candidate-image'"
                     />
 

@@ -527,6 +527,14 @@ const refreshingImageReview = ref(false)
 const sceneRefreshQueue = ref<string[]>([])
 const sceneRefreshingId = ref('')
 const reviewPlaceholders = ref<ReviewPlaceholderItem[]>([])
+
+// Per-scene image cache-busting version counter. Bumped each time a
+// scene's candidates are successfully regenerated via the per-scene
+// "重新生成" button. Without this the browser keeps serving the cached
+// image file (backend overwrites the same file path on regen) and the
+// user sees the OLD image. The map is passed into InteractiveImageReview
+// and appended as `?v=${version}` to that scene's image URLs.
+const sceneImageVersions = ref<Record<string, number>>({})
 const imageReviewRefreshCancelled = ref(false)
 // Reactive mirror of STORAGE_KEY_REFRESH_CANCELLED — true iff THIS workflow's
 // image refresh was paused by user cancel. Used to distinguish "已暂停" (user
@@ -2004,6 +2012,16 @@ async function refreshImageReviewScene(sceneId: string, signal?: AbortSignal, qu
     },
   }
 
+  // Bump this scene's cache-bust version BEFORE applyWorkflowResponse so
+  // the moment new items flow through to InteractiveImageReview, every
+  // <img :src> for this scene gets re-evaluated with the new version
+  // suffix — browsers fetch the fresh file instead of serving the cached
+  // pre-regen image.
+  sceneImageVersions.value = {
+    ...sceneImageVersions.value,
+    [sceneId]: (sceneImageVersions.value[sceneId] ?? 0) + 1,
+  }
+
   applyWorkflowResponse(mergedResponse)
   markPlaceholderState(sceneId, 'done')
 }
@@ -2944,6 +2962,7 @@ async function runWorkflow() {
                   :cancellable="Boolean(activeWorkflowId)"
                   :video-generated="Boolean(finalVideoUrl)"
                   :render-mode="workflowForm.renderMode"
+                  :scene-image-versions="sceneImageVersions"
                   @select-asset="({ sceneId, assetRef }) => selectImageAsset(sceneId, assetRef)"
                   @retry-scene="retryImageReviewScene"
                   @enhance-scene="enhanceImageReviewScene"
