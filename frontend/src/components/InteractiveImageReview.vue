@@ -349,7 +349,14 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
     }
 
     const matchedItem = itemMap.get(sceneId)
-    if (matchedItem) {
+    // If the placeholder is actively refreshing (e.g. user clicked the
+    // per-scene "重新生成" button on a done scene), the placeholder's
+    // refreshing animation takes priority over the stale done item.
+    // Without this, the matched item path wins and the user sees the
+    // OLD image unchanged while the background API call runs — there's
+    // no visual indication anything's happening, and once the new image
+    // arrives it appears to "just change" without any progress feedback.
+    if (matchedItem && placeholder.state !== 'refreshing' && placeholder.state !== 'waiting') {
       entries.push({
         kind: 'item',
         sceneId,
@@ -366,6 +373,14 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
         state: placeholder.state,
         errorMessage: placeholder.error_message,
       })
+      // Still remove from itemMap so the loop below doesn't re-add the
+      // stale done card after the placeholder; once refresh completes,
+      // markPlaceholderState(sceneId, 'done') flips the state and the
+      // matched-item branch above will pick up the FRESH item on the
+      // next render.
+      if (matchedItem) {
+        itemMap.delete(sceneId)
+      }
     }
   }
 
@@ -1473,7 +1488,6 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   font-weight: 600;
   cursor: pointer;
   margin-top: 6px;
-  margin-left: 8px;
   font-family: inherit;
   transition: background 0.15s, border-color 0.15s;
 }
