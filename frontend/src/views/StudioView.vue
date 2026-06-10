@@ -2943,6 +2943,7 @@ async function runWorkflow() {
                   :cancel-requested="cancelRequested"
                   :cancellable="Boolean(activeWorkflowId)"
                   :video-generated="Boolean(finalVideoUrl)"
+                  :render-mode="workflowForm.renderMode"
                   @select-asset="({ sceneId, assetRef }) => selectImageAsset(sceneId, assetRef)"
                   @retry-scene="retryImageReviewScene"
                   @enhance-scene="enhanceImageReviewScene"

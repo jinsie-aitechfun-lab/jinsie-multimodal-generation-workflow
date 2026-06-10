@@ -83,6 +83,14 @@ const props = defineProps<{
   // from must not change underneath it (the displayed selection would no
   // longer match the actual video frames).
   videoGenerated?: boolean
+  // Render mode drives whether the per-scene "重新生成" button is
+  // exposed. In 'auto' mode the system kicks off final video rendering
+  // as soon as all candidates are ready, so a per-scene regenerate
+  // button has no time to be useful and would just confuse users. In
+  // 'manual' mode the user is reviewing before clicking "生成视频",
+  // and they're the natural audience for regenerating a single bad
+  // scene without re-running the entire workflow.
+  renderMode?: 'auto' | 'manual'
 }>()
 
 // A scene's candidates are locked when:
@@ -603,6 +611,22 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                   @click="onEnhanceScene(entry.sceneId)"
                 >
                   ✦ 增强画质
+                </button>
+                <!-- Manual-mode regenerate. Only useful while the user is
+                     still reviewing — once a final video exists the
+                     candidates are locked (the displayed selection must
+                     match what was baked in). In auto mode the system
+                     renders as soon as candidates are ready, so the
+                     button has no time window to be useful. -->
+                <button
+                  v-if="renderMode === 'manual' && !videoGenerated"
+                  type="button"
+                  class="regen-scene-button"
+                  :disabled="loading || selectingSceneId === entry.sceneId"
+                  :title="'对当前场景画面不满意时，重新生成两张候选图'"
+                  @click="onRetryScene(entry.sceneId)"
+                >
+                  ↻ 重新生成
                 </button>
               </div>
             </div>
@@ -1428,6 +1452,36 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 }
 
 .enhance-scene-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* Per-scene regenerate button — manual-mode only. Visually paired with
+   .enhance-scene-button (same row), uses theme accent (--arc-400)
+   instead of the prism orange so the two siblings are
+   distinguishable at a glance: "增强画质" = quality-tier upgrade,
+   "重新生成" = roll the dice again at the same tier. */
+.regen-scene-button {
+  width: fit-content;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(245,158,11,0.32);
+  background: rgba(245,158,11,0.10);
+  color: var(--arc-300);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 6px;
+  margin-left: 8px;
+  font-family: inherit;
+  transition: background 0.15s, border-color 0.15s;
+}
+.regen-scene-button:hover:not(:disabled) {
+  background: rgba(245,158,11,0.18);
+  border-color: rgba(245,158,11,0.52);
+}
+.regen-scene-button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }
