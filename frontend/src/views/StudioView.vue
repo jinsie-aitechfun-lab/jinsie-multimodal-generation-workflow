@@ -2073,23 +2073,6 @@ async function refreshImageReviewScene(sceneId: string, signal?: AbortSignal, qu
     [sceneId]: cacheBustTs,
   }
 
-  // TEMPORARY DIAGNOSTIC — verifies the cache-bust rewrite landed in the
-  // merged response that downstream consumers actually see. Remove once
-  // the regen-after-image-render bug is confirmed fixed end-to-end.
-  try {
-    const debugAssets = (mergedResponse.outputs as Record<string, unknown> | undefined)?.image_review as Record<string, unknown> | undefined
-    const debugList = debugAssets?.selected_assets
-    if (Array.isArray(debugList)) {
-      const match = debugList.find((x: any) => x?.scene_id === sceneId)
-      console.log('[regen][cache-bust] scene=', sceneId, 'ts=', cacheBustTs)
-      console.log('[regen][cache-bust] new selected_asset_ref path=', (match as any)?.selected_asset_ref?.relative_path)
-      console.log('[regen][cache-bust] new selected_asset_ref url=', (match as any)?.selected_asset_ref?.public_url)
-      console.log('[regen][cache-bust] sceneImageVersions=', JSON.parse(JSON.stringify(sceneImageVersions.value)))
-    }
-  } catch (e) {
-    console.warn('[regen][cache-bust] diagnostic failed', e)
-  }
-
   applyWorkflowResponse(mergedResponse)
   markPlaceholderState(sceneId, 'done')
 }

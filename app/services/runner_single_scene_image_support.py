@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -267,6 +268,13 @@ class RunnerSingleSceneImageSupport:
                 file_name = f"{scene_id}__{candidate_suffix}.png"
                 output_path = run_dir / file_name
 
+                # seed_jitter unique per request: time.time_ns() guarantees
+                # two consecutive regen requests draw from different seeds,
+                # so the diffusion model produces visibly different output.
+                # Without this, (run_id, scene_index) is the same on every
+                # retry → same seed → byte-identical image → user sees no
+                # change after clicking "重新生成".
+                seed_jitter = time.time_ns() % 10_000_000_000 + candidate_index * 7919
                 task = ImageGenerationTask(
                     run_id=ctx.run_id,
                     item_id=scene_id,
@@ -282,6 +290,7 @@ class RunnerSingleSceneImageSupport:
                         "scene_index": scene_index + candidate_index,
                         "negative_prompt": active_negative,
                         "quality_tier": str(getattr(ctx.input, "quality_tier", "quality") or "quality"),
+                        "seed_jitter": seed_jitter,
                     },
                 )
 

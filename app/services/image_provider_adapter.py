@@ -89,6 +89,7 @@ class ApiImageGeneratorAdapter:
             negative_prompt=str(task.prompt_metadata.get("negative_prompt") or ""),
             img2img_reference_path=task.prompt_metadata.get("img2img_reference_path"),
             quality_tier=str(task.prompt_metadata.get("quality_tier") or "quality"),
+            seed_jitter=int(task.prompt_metadata.get("seed_jitter") or 0),
         )
 
     def _generate_api_image_bytes(
@@ -101,6 +102,14 @@ class ApiImageGeneratorAdapter:
         negative_prompt: str = "",
         quality_tier: str = "quality",
         img2img_reference_path: Optional[Any] = None,
+        # When the user clicks "重新生成" on a scene that already has
+        #candidates, the same (run_id, scene_index) pair would otherwise
+        # derive the SAME seed → the diffusion model would produce
+        #byte-identical output → the regenerated file overwrites itself
+        #with the same bytes and the user sees no visual change.
+        # seed_jitter (typically time.time_ns()) is added to the base seed
+        # so each regen draws from a fresh point in the latent space.
+        seed_jitter: int = 0,
     ) -> bytes:
         if self._runner._force_image_rate_limit():
             raise RuntimeError("HTTP 429: IPM limit reached (forced for local testing)")
@@ -166,7 +175,9 @@ class ApiImageGeneratorAdapter:
         }
 
         if run_id:
-            payload["seed"] = (_derive_run_seed(run_id) + scene_index * 1000) % 10_000_000_000
+            payload["seed"] = (
+                _derive_run_seed(run_id) + scene_index * 1000 + seed_jitter
+            ) % 10_000_000_000
 
         if not is_flux and negative_prompt:
             payload["negative_prompt"] = negative_prompt
