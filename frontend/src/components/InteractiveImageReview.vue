@@ -665,6 +665,15 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                 >
                   ↻ 重新生成
                 </button>
+
+                <!-- Storyboard prompt — already in entry.item.prompt,
+                     just surfacing it inline so users understand what
+                     the candidate was generated from. Wrapped + scrollable
+                     so very long prompts don't blow up the card. -->
+                <div v-if="entry.item.prompt" class="prompt-display-block">
+                  <div class="prompt-display-label">分镜提示词</div>
+                  <p class="prompt-display-text">{{ entry.item.prompt }}</p>
+                </div>
               </div>
             </div>
           </div>
@@ -1521,6 +1530,38 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 .regen-scene-button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
+}
+
+/* Scene prompt inline display. Sits below the action buttons in the
+   selected-image info panel — gives the user visibility into what
+   exactly the candidate was generated from. Capped height + scroll
+   so a multi-paragraph prompt doesn't push the card off the page. */
+.prompt-display-block {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.05);
+  border: 1px solid rgba(245, 158, 11, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.prompt-display-label {
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.prompt-display-text {
+  margin: 0;
+  color: var(--text-secondary, #c8c8c8);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  word-break: break-word;
+  white-space: pre-wrap;
 }
 
 .candidate-header {
