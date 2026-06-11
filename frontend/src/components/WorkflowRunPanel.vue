@@ -1549,7 +1549,14 @@ select.input {
 
 /* ===== Quick Start / Advanced ===== */
 .quickStart {
-  margin: 6px auto 0;
+  /* `margin: 6px auto 0` was making the block center horizontally,
+     which previously appeared full-width only because the inner grid
+     forced a 360px min-width. After loosening the grid to
+     `minmax(0, 1fr)` to fix the third-button overflow, that crutch
+     vanished and the block collapsed to a centered narrow column.
+     Explicit `width: 100%` makes it fill its parent regardless. */
+  width: 100%;
+  margin-top: 6px;
 }
 
 .quickStartTitle {
@@ -1562,15 +1569,21 @@ select.input {
   text-transform: uppercase;
 }
 
+/* `minmax(120px, 1fr)` forced columns to be AT LEAST 120 px wide.
+   When the panel's container shrinks (narrow side-pane, certain
+   theme padding), 3 × 120 px exceeds the available width and the
+   third column ("角色配音") overflows past the container edge.
+   `minmax(0, 1fr)` lets columns shrink with the container. */
 .quickStartRow {
   display: grid;
-  grid-template-columns: repeat(3, minmax(120px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin: 0 0 10px;
 }
 
 .chipBtn {
   width: 100%;
+  min-width: 0;
   border: 1px solid var(--border-glass);
   border-radius: 999px;
   padding: 6px 12px;
@@ -1579,6 +1592,8 @@ select.input {
   background: var(--surface-overlay-soft);
   color: var(--text-secondary);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   text-align: center;
   font-family: inherit;
   transition: border-color 0.15s, background 0.15s, color 0.15s;

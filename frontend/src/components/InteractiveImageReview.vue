@@ -123,6 +123,17 @@ function isSelectionLocked(item: ImageReviewSelectedAsset): boolean {
 }
 
 const storyExpanded = ref(false)
+
+// scene_id whose narration is currently expanded in a modal. The modal
+// shows the full narration text without growing the underlying card
+// (the card itself stays a fixed height — only ~3 lines of clamped
+// narration sit inline). `null` = no modal open.
+const narrationModalSceneId = ref<string | null>(null)
+const narrationModalText = computed(() => {
+  const sceneId = narrationModalSceneId.value
+  if (!sceneId) return ''
+  return props.sceneNarrationMap?.[sceneId] || ''
+})
 const normalizedStoryText = computed(() => String(props.storyText || '').trim())
 const storyNeedsToggle = computed(() => normalizedStoryText.value.length > 260)
 const visibleStoryText = computed(() => {
@@ -636,58 +647,61 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                   <span class="preview-state-tag preview-state-tag-done">已生成</span>
                 </div>
 
-                <a
-                  v-if="isImageAsset(assetRefPath(entry.item.selected_asset_ref))"
-                  class="selected-open-link"
-                  :href="toAssetHref(assetRefPath(entry.item.selected_asset_ref), entry.sceneId)"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  查看原图
-                </a>
+                <!-- Inline narration — sits in the right column next
+                     to the image. Capped at 2 lines via CSS line-clamp
+                     so the card height stays stable. Most narrations
+                     fit in 1-2 lines naturally; only truly long ones
+                     (> 100 chars, rare) show "详情" inline to open the
+                     full text in a modal. The eyebrow label gives the
+                     paragraph context so the floating sentence reads as
+                     "this scene's narration", not loose body text. -->
+                <p
+                  v-if="sceneNarrationMap?.[entry.sceneId]"
+                  class="narration-inline-text"
+                ><span class="narration-eyebrow">画面内容 ·</span>{{ sceneNarrationMap[entry.sceneId] }}<button
+                    v-if="(sceneNarrationMap[entry.sceneId] || '').length > 100"
+                    type="button"
+                    class="narration-detail-link"
+                    @click="narrationModalSceneId = entry.sceneId"
+                  >详情</button></p>
 
-                <button
-                  type="button"
-                  class="enhance-scene-button"
-                  :disabled="loading || selectingSceneId === entry.sceneId"
-                  :title="'用 Cinematic 档重新生成更高质量候选'"
-                  @click="onEnhanceScene(entry.sceneId)"
-                >
-                  ✦ 增强画质
-                </button>
-                <!-- Manual-mode regenerate. Only useful while the user is
-                     still reviewing — once a final video exists the
-                     candidates are locked (the displayed selection must
-                     match what was baked in). In auto mode the system
-                     renders as soon as candidates are ready, so the
-                     button has no time window to be useful. -->
-                <button
-                  v-if="renderMode === 'manual' && !videoGenerated"
-                  type="button"
-                  class="regen-scene-button"
-                  :disabled="loading || selectingSceneId === entry.sceneId"
-                  :title="'对当前场景画面不满意时，重新生成两张候选图'"
-                  @click="onRetryScene(entry.sceneId)"
-                >
-                  ↻ 重新生成
-                </button>
+                <div class="action-row">
+                  <a
+                    v-if="isImageAsset(assetRefPath(entry.item.selected_asset_ref))"
+                    class="selected-open-link"
+                    :href="toAssetHref(assetRefPath(entry.item.selected_asset_ref), entry.sceneId)"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    ↗ 查看原图
+                  </a>
 
-              </div>
-              <!-- Scene narration spans the FULL card width below the
-                   image + info-panel row. Originally placed inside the
-                   info panel (column 2), it ended up sitting in the
-                   bottom-right with a lot of empty space — the card
-                   looked unbalanced. Spanning both grid columns gives
-                   the narration its own visual band and ties the image
-                   to its description as a single unit. -->
-              <div
-                v-if="sceneNarrationMap?.[entry.sceneId]"
-                class="narration-display-block"
-              >
-                <div class="narration-display-label">画面内容</div>
-                <p class="narration-display-text">
-                  {{ sceneNarrationMap[entry.sceneId] }}
-                </p>
+                  <button
+                    type="button"
+                    class="enhance-scene-button"
+                    :disabled="loading || selectingSceneId === entry.sceneId"
+                    :title="'用 Cinematic 档重新生成更高质量候选'"
+                    @click="onEnhanceScene(entry.sceneId)"
+                  >
+                    ✦ 增强画质
+                  </button>
+                  <!-- Manual-mode regenerate. Only useful while the user is
+                       still reviewing — once a final video exists the
+                       candidates are locked (the displayed selection must
+                       match what was baked in). In auto mode the system
+                       renders as soon as candidates are ready, so the
+                       button has no time window to be useful. -->
+                  <button
+                    v-if="renderMode === 'manual' && !videoGenerated"
+                    type="button"
+                    class="regen-scene-button"
+                    :disabled="loading || selectingSceneId === entry.sceneId"
+                    :title="'对当前场景画面不满意时，重新生成两张候选图'"
+                    @click="onRetryScene(entry.sceneId)"
+                  >
+                    ↻ 重新生成
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -1112,6 +1126,37 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
         </details>
       </article>
     </div>
+
+    <!-- Narration "详情" modal — opens when the user clicks the
+         inline "详情" button on any scene card. Keeps the underlying
+         card height stable: long narrations live in this modal, not
+         in the card itself. Click backdrop or the close button to
+         dismiss; ESC also dismisses via the keyup handler on the
+         backdrop overlay (focus is moved there on open). -->
+    <div
+      v-if="narrationModalSceneId"
+      class="narration-modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      tabindex="-1"
+      @click.self="narrationModalSceneId = null"
+      @keyup.esc="narrationModalSceneId = null"
+    >
+      <div class="narration-modal-card">
+        <div class="narration-modal-head">
+          <span class="narration-modal-title">画面内容</span>
+          <button
+            type="button"
+            class="narration-modal-close"
+            aria-label="关闭"
+            @click="narrationModalSceneId = null"
+          >
+            ×
+          </button>
+        </div>
+        <p class="narration-modal-body">{{ narrationModalText }}</p>
+      </div>
+    </div>
   </section>
 </template>
 
@@ -1429,6 +1474,14 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   color: var(--text-muted);
 }
 
+/* Pearl (light) theme: the dark-theme `rgba(255,255,255,0.07)` bg is
+   white-at-7% which is invisible against pearl's white surface. Swap
+   to a soft champagne wash matching the page accent system. */
+:root[data-theme="pearl"] .preview-state-tag-waiting {
+  background: rgba(200, 154, 85, 0.08);
+  color: var(--text-muted);
+}
+
 .preview-state-tag-refreshing {
   background: rgba(245,158,11,0.15);
   color: var(--arc-300);
@@ -1439,17 +1492,43 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   color: #f87171;
 }
 
-.selected-open-link {
-  width: fit-content;
-  font-size: 0.75rem;
+/* Three actions on the same row share an explicit pill shape.
+   Using `height` (not `min-height`) + `inline-flex` + `align-items:
+   center` on all three guarantees they render at the EXACT same
+   pixel height regardless of <a> vs <button> intrinsic differences.
+   Individual `margin-top` is dropped — the parent .action-row
+   handles spacing via `gap`. */
+.selected-open-link,
+.enhance-scene-button,
+.regen-scene-button {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8125rem;
   font-weight: 600;
-  color: var(--arc-300);
+  font-family: inherit;
+  line-height: 1;
+  box-sizing: border-box;
+  margin-top: 0;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
   text-decoration: none;
 }
 
+.selected-open-link {
+  border: 1px solid rgba(245, 158, 11, 0.32);
+  background: rgba(245, 158, 11, 0.06);
+  color: var(--arc-300);
+}
 .selected-open-link:hover {
-  text-decoration: underline;
+  background: rgba(245, 158, 11, 0.14);
+  border-color: rgba(245, 158, 11, 0.52);
   color: var(--arc-200);
+  text-decoration: none;
 }
 
 .placeholder-status-copy {
@@ -1491,93 +1570,170 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   opacity: 0.55;
 }
 
-.enhance-scene-button {
-  width: fit-content;
-  min-height: 28px;
-  padding: 0 12px;
-  border-radius: 8px;
-  border: 1px solid rgba(249,115,22,0.32);
-  background: rgba(249,115,22,0.10);
-  color: var(--prism-400);
-  font-size: 0.8125rem;
-  font-weight: 600;
-  cursor: pointer;
-  margin-top: 6px;
-  font-family: inherit;
-  transition: background 0.15s, border-color 0.15s;
-}
-
-.enhance-scene-button:hover:not(:disabled) {
-  background: rgba(249,115,22,0.18);
-  border-color: rgba(249,115,22,0.52);
-}
-
-.enhance-scene-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
-/* Per-scene regenerate button — manual-mode only. Visually paired with
-   .enhance-scene-button (same row), uses theme accent (--arc-400)
-   instead of the prism orange so the two siblings are
-   distinguishable at a glance: "增强画质" = quality-tier upgrade,
-   "重新生成" = roll the dice again at the same tier. */
+/* All three action buttons (查看原图 / 增强画质 / 重新生成) share the
+   same arc-accent palette. The icon prefix (↗ / ✦ / ↻) carries the
+   semantic difference; color difference would just create visual
+   imbalance — especially with 增强画质 sitting in the middle. */
+.enhance-scene-button,
 .regen-scene-button {
-  width: fit-content;
-  min-height: 28px;
-  padding: 0 12px;
-  border-radius: 8px;
   border: 1px solid rgba(245,158,11,0.32);
   background: rgba(245,158,11,0.10);
   color: var(--arc-300);
-  font-size: 0.8125rem;
-  font-weight: 600;
-  cursor: pointer;
-  margin-top: 6px;
-  font-family: inherit;
-  transition: background 0.15s, border-color 0.15s;
 }
+.enhance-scene-button:hover:not(:disabled),
 .regen-scene-button:hover:not(:disabled) {
   background: rgba(245,158,11,0.18);
   border-color: rgba(245,158,11,0.52);
 }
+.enhance-scene-button:disabled,
+.regen-scene-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+/* Pearl theme overrides — the dark-theme defaults use hardcoded orange
+   rgba backgrounds paired with theme-bound text colors. In pearl the
+   bg renders as pink on white and the prism text becomes ice blue,
+   creating a "warning pill" mismatch. Unify all three buttons to the
+   champagne-gold accent (arc-300) so they read as a single
+   horizontal action group — the icons (↗ / ✦ / ↻) already convey the
+   semantic difference between view / enhance / regenerate without
+   needing a different color for the middle button. */
+:root[data-theme="pearl"] .selected-open-link,
+:root[data-theme="pearl"] .enhance-scene-button,
+:root[data-theme="pearl"] .regen-scene-button {
+  border-color: rgba(200, 154, 85, 0.35);
+  background: rgba(200, 154, 85, 0.10);
+  color: var(--arc-300);
+}
+:root[data-theme="pearl"] .selected-open-link:hover,
+:root[data-theme="pearl"] .enhance-scene-button:hover:not(:disabled),
+:root[data-theme="pearl"] .regen-scene-button:hover:not(:disabled) {
+  background: rgba(200, 154, 85, 0.18);
+  border-color: rgba(200, 154, 85, 0.55);
+}
+
 .regen-scene-button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }
 
-/* Scene narration band — spans both grid columns of .preview-card
-   (image + info-panel), so it forms a full-width strip below the
-   image and buttons. This is what the TTS reads aloud for this
-   moment of the story. */
-.narration-display-block {
-  grid-column: 1 / -1;
-  margin-top: 4px;
-  padding: 10px 14px;
-  border-radius: 8px;
-  background: rgba(245, 158, 11, 0.05);
-  border: 1px solid rgba(245, 158, 11, 0.12);
-  display: flex;
-  flex-direction: row;
-  align-items: baseline;
-  gap: 10px;
-}
-.narration-display-label {
-  flex-shrink: 0;
+/* Narration paragraph with inline label prefix. Putting the "画面内容"
+   label as a <span> INSIDE the <p> (not as a separate flex item) means
+   wrapped lines start at the paragraph's left edge — no awkward
+   indent on the second line. The eyebrow inherits the text baseline
+   naturally because it's part of the inline flow. */
+.narration-eyebrow {
+  margin-right: 8px;
   color: var(--text-muted);
   font-size: 0.6875rem;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
+  vertical-align: baseline;
 }
-.narration-display-text {
-  margin: 0;
+.narration-inline-text {
+  margin: 4px 0 8px;
   color: var(--text-secondary, #c8c8c8);
   font-size: 0.875rem;
-  line-height: 1.6;
+  line-height: 1.65;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
   word-break: break-word;
+}
+.narration-detail-link {
+  display: inline;
+  margin-left: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--arc-300, #fbbf24);
+  font-family: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  vertical-align: baseline;
+}
+.narration-detail-link:hover {
+  text-decoration: underline;
+}
+
+/* Buttons row — visually groups 查看原图 + ✦ 增强画质 + ↻ 重新生成
+   into one horizontal action band, separated from the narration above. */
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+/* Modal that holds the full narration. Independent of card height. */
+.narration-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.narration-modal-card {
+  width: min(560px, 100%);
+  max-height: 70vh;
+  background: var(--surface-elevated, #1a1410);
+  border: 1px solid rgba(245, 158, 11, 0.22);
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.narration-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid rgba(245, 158, 11, 0.12);
+}
+.narration-modal-title {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.narration-modal-close {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-secondary, #c8c8c8);
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.narration-modal-close:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.narration-modal-body {
+  margin: 0;
+  padding: 18px;
+  color: var(--text-primary, #f0e6dc);
+  font-size: 0.9375rem;
+  line-height: 1.7;
   white-space: pre-wrap;
-  flex: 1 1 auto;
+  word-break: break-word;
+  overflow-y: auto;
 }
 
 .candidate-header {
