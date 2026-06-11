@@ -588,17 +588,6 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
             <strong class="scene-title-text">
               {{ sceneDisplayTitle(entry) }}
             </strong>
-            <!-- Inline narration summary under the scene title. Caps at
-                 ~one line via CSS truncation so the head row stays
-                 compact; full text is still accessible by hover (title
-                 attribute) and via 开发者信息. -->
-            <span
-              v-if="sceneNarrationMap?.[entry.sceneId]"
-              class="scene-narration-summary"
-              :title="sceneNarrationMap[entry.sceneId]"
-            >
-              {{ sceneNarrationMap[entry.sceneId] }}
-            </span>
           </div>
 
           <span class="summary-status">
@@ -683,6 +672,22 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                   ↻ 重新生成
                 </button>
 
+              </div>
+              <!-- Scene narration spans the FULL card width below the
+                   image + info-panel row. Originally placed inside the
+                   info panel (column 2), it ended up sitting in the
+                   bottom-right with a lot of empty space — the card
+                   looked unbalanced. Spanning both grid columns gives
+                   the narration its own visual band and ties the image
+                   to its description as a single unit. -->
+              <div
+                v-if="sceneNarrationMap?.[entry.sceneId]"
+                class="narration-display-block"
+              >
+                <div class="narration-display-label">画面内容</div>
+                <p class="narration-display-text">
+                  {{ sceneNarrationMap[entry.sceneId] }}
+                </p>
               </div>
             </div>
           </div>
@@ -1541,20 +1546,38 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   opacity: 0.55;
 }
 
-/* Scene narration as a single-line subtitle under the scene title.
-   Truncates with ellipsis to keep the head row compact; the full
-   narration is available via `title` attribute on hover. */
-.scene-narration-summary {
-  display: block;
+/* Scene narration band — spans both grid columns of .preview-card
+   (image + info-panel), so it forms a full-width strip below the
+   image and buttons. This is what the TTS reads aloud for this
+   moment of the story. */
+.narration-display-block {
+  grid-column: 1 / -1;
   margin-top: 4px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.05);
+  border: 1px solid rgba(245, 158, 11, 0.12);
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 10px;
+}
+.narration-display-label {
+  flex-shrink: 0;
   color: var(--text-muted);
-  font-size: 0.8125rem;
-  line-height: 1.4;
-  font-weight: 400;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.narration-display-text {
+  margin: 0;
+  color: var(--text-secondary, #c8c8c8);
+  font-size: 0.875rem;
+  line-height: 1.6;
+  word-break: break-word;
+  white-space: pre-wrap;
+  flex: 1 1 auto;
 }
 
 .candidate-header {
