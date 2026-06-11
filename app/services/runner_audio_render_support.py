@@ -16,7 +16,6 @@ from typing import Any, Dict, List, Optional
 # audio segment, so the audio always plays to its natural end.
 _VIDEO_FRAME_STEP_SEC = 1.0 / 25.0
 
-
 def _ceil_to_frame_boundary(duration_sec: float) -> float:
     if duration_sec <= 0:
         return 0.0
@@ -370,13 +369,21 @@ class RunnerAudioRenderSupport:
                     if actual_duration_sec is not None and duration_estimate_sec > 0 and speed_adjustment_allowed:
                         retry_speed: Optional[float] = None
                         if actual_duration_sec < duration_estimate_sec * 0.70:
-                            # Too short: slow down to fill the scene slot
+                            # Too short: slow down to fill the scene slot.
+                            # Slow-down is safe — TTS providers handle
+                            # speed<1 by stretching audio (more padding
+                            # or syllable extension), no content loss.
                             ratio = actual_duration_sec / duration_estimate_sec
                             retry_speed = max(0.75, min(0.95, ratio))
-                        elif actual_duration_sec > duration_estimate_sec * 1.30:
-                            # Too long: speed up to fit the scene slot
-                            ratio = actual_duration_sec / duration_estimate_sec
-                            retry_speed = min(1.25, max(1.05, ratio))
+                        # NO speed-up retry here. Empirically TTS providers
+                        # (SiliconFlow / OpenAI-compatible) drop trailing
+                        # syllables when handed speed>1 — the last word /
+                        # particle of long sentences vanishes ("个别句子
+                        # 尾音消失"). The global speedup pass at the end
+                        # of this method (uniform across ALL segments)
+                        # still handles total-duration overshoot, so
+                        # losing per-segment speed-up is no functional
+                        # regression — only a correctness fix.
 
                         if retry_speed is not None:
                             try:
@@ -961,22 +968,43 @@ class RunnerAudioRenderSupport:
                 encoding="utf-8",
             )
 
-            subprocess.run(
+            # Sample-accurate concat via the `concat` FILTER (not the
+            # concat demuxer). The demuxer approach (`-f concat`) plus
+            # re-encode mis-handles LAME's per-file priming/padding
+            # metadata, which can cut real audio samples at segment
+            # tails ("尾音被吃"). The filter approach feeds each MP3 as
+            # a separate input, decodes each fully to PCM, explicitly
+            # concatenates the sample arrays, then re-encodes ONCE — no
+            # sample loss at boundaries AND no MP3 bit-reservoir issues
+            # at the resulting concat points.
+            #
+            # 128 kbps preserves perceived TTS quality (TTS providers
+            # typically deliver 64–128 kbps).
+            ffmpeg_concat_cmd: List[str] = [
+                "ffmpeg",
+                "-y",
+                "-loglevel",
+                "error",
+            ]
+            for seg_path in audio_file_paths:
+                ffmpeg_concat_cmd.extend(["-i", seg_path])
+            n_segments = len(audio_file_paths)
+            filter_inputs = "".join(f"[{i}:a]" for i in range(n_segments))
+            filter_expr = f"{filter_inputs}concat=n={n_segments}:v=0:a=1[out]"
+            ffmpeg_concat_cmd.extend(
                 [
-                    "ffmpeg",
-                    "-y",
-                    "-f",
-                    "concat",
-                    "-safe",
-                    "0",
-                    "-i",
-                    str(merged_audio_list_path),
-                    "-c",
-                    "copy",
+                    "-filter_complex",
+                    filter_expr,
+                    "-map",
+                    "[out]",
+                    "-c:a",
+                    "libmp3lame",
+                    "-b:a",
+                    "128k",
                     str(merged_audio_path),
-                ],
-                check=True,
+                ]
             )
+            subprocess.run(ffmpeg_concat_cmd, check=True)
 
         # ========= 写字幕 =========
         subtitle_path = video_run_dir / "subtitles.srt"
@@ -1072,6 +1100,20 @@ class RunnerAudioRenderSupport:
 
         video_duration = _ffprobe_duration_sec(base_video_path)
         _rescale_srt_to_duration(subtitle_path, video_duration)
+
+        # The `-t` cap below was using `total_duration_sec`, which is the
+        # SUM of each individual MP3's ffprobe duration. The actual
+        # merged_audio.mp3 (built by `ffmpeg -f concat -c copy`) can be a
+        # few tens of ms LONGER than that sum because of MP3 frame
+        # boundary alignment — the last syllable of the final segment
+        # then gets clipped by `-t`. Probe the merged file's real length
+        # and add a small safety buffer so the cap never sits inside an
+        # active audio frame.
+        if has_audio and merged_audio_path:
+            actual_audio_duration = _ffprobe_duration_sec(merged_audio_path)
+            if actual_audio_duration > 0:
+                total_duration_sec = max(total_duration_sec, actual_audio_duration) + 0.2
+
         if has_audio and merged_audio_path:
             escaped_subtitle_path = (
                 str(subtitle_path)

@@ -83,6 +83,21 @@ const props = defineProps<{
   // from must not change underneath it (the displayed selection would no
   // longer match the actual video frames).
   videoGenerated?: boolean
+  // Render mode drives whether the per-scene "重新生成" button is
+  // exposed. In 'auto' mode the system kicks off final video rendering
+  // as soon as all candidates are ready, so a per-scene regenerate
+  // button has no time to be useful and would just confuse users. In
+  // 'manual' mode the user is reviewing before clicking "生成视频",
+  // and they're the natural audience for regenerating a single bad
+  // scene without re-running the entire workflow.
+  renderMode?: 'auto' | 'manual'
+  // Map of scene_id → version-counter for image cache-busting. When a
+  // scene is regenerated the new image file overwrites the OLD one
+  // at the same file path (e.g. scene_03__candidate_a.png), and
+  // browsers happily serve the cached image since the URL hasn't
+  // changed. Appending `?v=${sceneImageVersions[sceneId]}` to every
+  // image URL forces a fresh fetch after each per-scene refresh.
+  sceneImageVersions?: Record<string, number>
 }>()
 
 // A scene's candidates are locked when:
@@ -131,7 +146,7 @@ const emit = defineEmits<{
   (e: 'cancel-workflow'): void
 }>()
 
-function toAssetHref(path?: string): string {
+function toAssetHref(path?: string, sceneId?: string): string {
   if (!path) {
     return ''
   }
@@ -148,6 +163,16 @@ function toAssetHref(path?: string): string {
   const normalizedBase = props.apiBaseUrl.replace(/\/+$/, '')
   const normalizedPath = trimmed.startsWith('/') ? trimmed : `/${trimmed}`
 
+  // Cache-bust per scene: backend overwrites the same file path on
+  // regenerate, so without a version param the browser will keep
+  // showing the cached old image. The parent bumps the per-scene
+  // version after each successful refresh; absent / zero versions
+  // are treated as "no bust needed" so unchanged scenes don't refetch.
+  const version = sceneId ? props.sceneImageVersions?.[sceneId] : undefined
+  if (version && version > 0) {
+    const separator = normalizedPath.includes('?') ? '&' : '?'
+    return `${normalizedBase}${normalizedPath}${separator}v=${version}`
+  }
   return `${normalizedBase}${normalizedPath}`
 }
 
@@ -170,13 +195,17 @@ function isImageAsset(path?: string): boolean {
     return false
   }
 
-  const value = path.toLowerCase()
+  // Strip query string and hash before checking the file extension —
+  // cache-bust suffixes (e.g. "?_=1718999999") make the raw URL end in
+  // the timestamp, not in ".png", which previously caused isImageAsset
+  // to fail and fall back to the CSS placeholder graphic.
+  const pathPart = path.split(/[?#]/)[0].toLowerCase()
   return (
-    value.endsWith('.png') ||
-    value.endsWith('.jpg') ||
-    value.endsWith('.jpeg') ||
-    value.endsWith('.webp') ||
-    value.endsWith('.gif')
+    pathPart.endsWith('.png') ||
+    pathPart.endsWith('.jpg') ||
+    pathPart.endsWith('.jpeg') ||
+    pathPart.endsWith('.webp') ||
+    pathPart.endsWith('.gif')
   )
 }
 
@@ -341,7 +370,14 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
     }
 
     const matchedItem = itemMap.get(sceneId)
-    if (matchedItem) {
+    // If the placeholder is actively refreshing (e.g. user clicked the
+    // per-scene "重新生成" button on a done scene), the placeholder's
+    // refreshing animation takes priority over the stale done item.
+    // Without this, the matched item path wins and the user sees the
+    // OLD image unchanged while the background API call runs — there's
+    // no visual indication anything's happening, and once the new image
+    // arrives it appears to "just change" without any progress feedback.
+    if (matchedItem && placeholder.state !== 'refreshing' && placeholder.state !== 'waiting') {
       entries.push({
         kind: 'item',
         sceneId,
@@ -358,6 +394,14 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
         state: placeholder.state,
         errorMessage: placeholder.error_message,
       })
+      // Still remove from itemMap so the loop below doesn't re-add the
+      // stale done card after the placeholder; once refresh completes,
+      // markPlaceholderState(sceneId, 'done') flips the state and the
+      // matched-item branch above will pick up the FRESH item on the
+      // next render.
+      if (matchedItem) {
+        itemMap.delete(sceneId)
+      }
     }
   }
 
@@ -556,7 +600,8 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                 <img
                   v-if="isImageAsset(assetRefPath(entry.item.selected_asset_ref))"
                   class="preview-visual-image"
-                  :src="toAssetHref(assetRefPath(entry.item.selected_asset_ref))"
+                  :key="`${entry.sceneId}-${sceneImageVersions?.[entry.sceneId] ?? 0}-selected`"
+                  :src="toAssetHref(assetRefPath(entry.item.selected_asset_ref), entry.sceneId)"
                   :alt="entry.sceneTitle || 'selected-image'"
                 />
                 <div v-else class="placeholder-card">
@@ -588,7 +633,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                 <a
                   v-if="isImageAsset(assetRefPath(entry.item.selected_asset_ref))"
                   class="selected-open-link"
-                  :href="toAssetHref(assetRefPath(entry.item.selected_asset_ref))"
+                  :href="toAssetHref(assetRefPath(entry.item.selected_asset_ref), entry.sceneId)"
                   target="_blank"
                   rel="noreferrer"
                 >
@@ -603,6 +648,22 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                   @click="onEnhanceScene(entry.sceneId)"
                 >
                   ✦ 增强画质
+                </button>
+                <!-- Manual-mode regenerate. Only useful while the user is
+                     still reviewing — once a final video exists the
+                     candidates are locked (the displayed selection must
+                     match what was baked in). In auto mode the system
+                     renders as soon as candidates are ready, so the
+                     button has no time window to be useful. -->
+                <button
+                  v-if="renderMode === 'manual' && !videoGenerated"
+                  type="button"
+                  class="regen-scene-button"
+                  :disabled="loading || selectingSceneId === entry.sceneId"
+                  :title="'对当前场景画面不满意时，重新生成两张候选图'"
+                  @click="onRetryScene(entry.sceneId)"
+                >
+                  ↻ 重新生成
                 </button>
               </div>
             </div>
@@ -645,7 +706,8 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                     <img
                       v-if="isImageAsset(assetRefPath(candidate))"
                       class="preview-visual-image"
-                      :src="toAssetHref(assetRefPath(candidate))"
+                      :key="`${entry.sceneId}-${sceneImageVersions?.[entry.sceneId] ?? 0}-${candidate.file_name || index}`"
+                      :src="toAssetHref(assetRefPath(candidate), entry.sceneId)"
                       :alt="candidate.file_name || 'candidate-image'"
                     />
 
@@ -1428,6 +1490,35 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
 }
 
 .enhance-scene-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* Per-scene regenerate button — manual-mode only. Visually paired with
+   .enhance-scene-button (same row), uses theme accent (--arc-400)
+   instead of the prism orange so the two siblings are
+   distinguishable at a glance: "增强画质" = quality-tier upgrade,
+   "重新生成" = roll the dice again at the same tier. */
+.regen-scene-button {
+  width: fit-content;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(245,158,11,0.32);
+  background: rgba(245,158,11,0.10);
+  color: var(--arc-300);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 6px;
+  font-family: inherit;
+  transition: background 0.15s, border-color 0.15s;
+}
+.regen-scene-button:hover:not(:disabled) {
+  background: rgba(245,158,11,0.18);
+  border-color: rgba(245,158,11,0.52);
+}
+.regen-scene-button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }

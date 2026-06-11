@@ -111,6 +111,11 @@ const props = defineProps<{
   // through (or swapping a candidate first); in 'auto' mode the system
   // auto-triggers the render watcher and the button stays hidden.
   renderMode?: 'auto' | 'manual'
+  // Scene_id currently being regenerated via the per-scene "重新生成"
+  // button. Different from `refreshingImages` (which is the bulk refresh
+  // covering all scenes). When set, the placeholder copy swaps to
+  // "正在重新生成 …" so the user sees activity while waiting.
+  sceneRefreshingId?: string
 }>()
 
 const emit = defineEmits<{
@@ -164,12 +169,16 @@ const finalStatus = computed(() => asStr(finalVideo.value?.status).toLowerCase()
 const workflowInFlight = computed(() => props.loading && !outputs.value)
 
 // Any active phase that should swap the static clapperboard for the
-// AI-workflow loading animation: initial workflow, image refresh, render.
+// AI-workflow loading animation: initial workflow, image refresh,
+// render, OR per-scene retry (sceneRefreshingId set). Without the
+// per-scene case the placeholder icon stays static during "重新生成"
+// even though we're showing "正在重新生成候选图" text — looks broken.
 const isAnyLoading = computed(() => {
   return Boolean(
     props.loading ||
     props.renderInFlight ||
     props.refreshingImages ||
+    props.sceneRefreshingId ||
     finalStatus.value === 'rendering' ||
     workflowInFlight.value,
   )
@@ -233,6 +242,12 @@ const placeholderTitle = computed(() => {
   if (workflowInFlight.value) return '正在生成分镜'
   if (props.renderInFlight || finalStatus.value === 'rendering') return '正在生成视频'
   if (!sceneCount.value) return '等待分镜'
+  // Single-scene retry (manual-mode "重新生成" button on a done scene)
+  // — show activity even though the OVERALL render isn't in flight.
+  // Gated on !refreshingImages so the initial bulk refresh (which
+  // ALSO sets sceneRefreshingId as it walks scenes) falls through to
+  // its own "正在生成候选图" copy below.
+  if (props.sceneRefreshingId && !props.refreshingImages) return '正在重新生成候选图'
   if (!assetsReady.value) {
     if (props.refreshingImages) return '正在生成候选图'
     if (imageAssetCount.value > 0) return '候选图已暂停'
@@ -259,6 +274,14 @@ const placeholderDesc = computed(() => {
   }
   if (!sceneCount.value) {
     return '还没有可用的分镜。请先在「创作故事」页签输入故事主题，并点击「开始创作」生成内容。'
+  }
+  // Match the title above — single-scene retry has its own description.
+  // Gated on !refreshingImages so the initial bulk refresh's own copy
+  // takes priority (it sets sceneRefreshingId per-scene as it walks
+  // through, but the user wants to see "1/6 候选图生成中", not
+  // "正在为 scene_01 重新生成").
+  if (props.sceneRefreshingId && !props.refreshingImages) {
+    return `正在为 ${props.sceneRefreshingId} 重新生成候选图，请稍候。`
   }
   if (!assetsReady.value) {
     if (props.refreshingImages) {

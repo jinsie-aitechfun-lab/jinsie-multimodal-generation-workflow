@@ -527,6 +527,14 @@ const refreshingImageReview = ref(false)
 const sceneRefreshQueue = ref<string[]>([])
 const sceneRefreshingId = ref('')
 const reviewPlaceholders = ref<ReviewPlaceholderItem[]>([])
+
+// Per-scene image cache-busting version counter. Bumped each time a
+// scene's candidates are successfully regenerated via the per-scene
+// "重新生成" button. Without this the browser keeps serving the cached
+// image file (backend overwrites the same file path on regen) and the
+// user sees the OLD image. The map is passed into InteractiveImageReview
+// and appended as `?v=${version}` to that scene's image URLs.
+const sceneImageVersions = ref<Record<string, number>>({})
 const imageReviewRefreshCancelled = ref(false)
 // Reactive mirror of STORAGE_KEY_REFRESH_CANCELLED — true iff THIS workflow's
 // image refresh was paused by user cancel. Used to distinguish "已暂停" (user
@@ -1043,6 +1051,18 @@ const awaitingManualRender = computed(() => {
       !refreshingImageReview.value &&
       currentWorkflowResponse.value,
   )
+})
+
+// "Single-scene retry" = the user clicked "重新生成" on ONE done scene
+// AFTER the initial workflow finished. We must distinguish this from
+// the bulk image refresh that the initial workflow runs — the bulk
+// loop also sets `sceneRefreshingId` as it walks each scene, but the
+// correct UI copy for that is "正在生成候选图 (X/Y)", not "正在为 X
+// 重新生成". The discriminator is `refreshingImageReview`: it's only
+// true during the bulk refresh, never during user-triggered single
+// retries.
+const singleSceneRetryActive = computed(() => {
+  return Boolean(sceneRefreshingId.value) && !refreshingImageReview.value
 })
 
 function formatElapsedTime(totalSec: number): string {
@@ -2004,6 +2024,17 @@ async function refreshImageReviewScene(sceneId: string, signal?: AbortSignal, qu
     },
   }
 
+  // Cache-bust ONLY at the URL building stage (toAssetHref reads this
+  // map and appends ?v=ts). We must NOT mutate the underlying asset
+  // paths here — those flow into /v1/final-video/render's payload and
+  // are used by the backend to locate the actual files on disk. A
+  // `?_=ts` suffix on relative_path would make the backend search for
+  // a non-existent file and silently break the final video.
+  sceneImageVersions.value = {
+    ...sceneImageVersions.value,
+    [sceneId]: Date.now(),
+  }
+
   applyWorkflowResponse(mergedResponse)
   markPlaceholderState(sceneId, 'done')
 }
@@ -2746,6 +2777,11 @@ async function runWorkflow() {
   finalVideoUrl.value = ''
   finalVideoRenderInFlight.value = false
   finalVideoRendering.value = false
+  // Clear any stale per-scene retry state from the previous workflow run.
+  // Without this, the top progress bar and FinalVideoPanel keep showing
+  // "正在为 scene_XX 重新生成候选图" on top of the new initial workflow.
+  sceneRefreshingId.value = ''
+  sceneImageVersions.value = {}
 
   try {
     const response = await fetch(`${apiBaseUrl}/v1/workflow/run`, {
@@ -2794,23 +2830,28 @@ async function runWorkflow() {
           workflowIsProcessing ||
           refreshingImageReview ||
           awaitingManualRender ||
-          finalVideoRenderInFlight
+          finalVideoRenderInFlight ||
+          Boolean(sceneRefreshingId)
         "
         :percent="
-          awaitingManualRender
-            ? 85
+          singleSceneRetryActive
+            ? 75
             : finalVideoRenderInFlight
               ? 92
-              : (workflowStatusProgress ?? (refreshingImageReview ? reviewRefreshProgress.percent : 0))
+              : awaitingManualRender
+                ? 85
+                : (workflowStatusProgress ?? (refreshingImageReview ? reviewRefreshProgress.percent : 0))
         "
         :label="
-          awaitingManualRender
-            ? '候选图已就绪，等待你点击「生成视频」'
+          singleSceneRetryActive
+            ? `正在为 ${sceneRefreshingId} 重新生成候选图`
             : finalVideoRenderInFlight
               ? '正在合成视频（音频、字幕、画面拼接中）'
-              : (workflowIsProcessing ? workflowRunStatusMessage : reviewRefreshProgress.text)
+              : awaitingManualRender
+                ? '候选图已就绪，等待你点击「生成视频」'
+                : (workflowIsProcessing ? workflowRunStatusMessage : reviewRefreshProgress.text)
         "
-        :cancellable="phaseCancellable && !awaitingManualRender"
+        :cancellable="phaseCancellable && !awaitingManualRender && !singleSceneRetryActive"
         :cancel-requested="cancelRequestedAny"
         @cancel="cancelActivePhase"
       />
@@ -2891,6 +2932,7 @@ async function runWorkflow() {
                 :workflow-status-message="workflowRunStatusMessage"
                 :workflow-status-progress="workflowStatusProgress"
                 :render-mode="workflowForm.renderMode"
+                :scene-refreshing-id="sceneRefreshingId"
                 @render="renderFinalVideoIfReady(currentWorkflowResponse || {})"
                 :show-render-button="workflowForm.renderMode === 'auto'"
               />
@@ -2943,6 +2985,8 @@ async function runWorkflow() {
                   :cancel-requested="cancelRequested"
                   :cancellable="Boolean(activeWorkflowId)"
                   :video-generated="Boolean(finalVideoUrl)"
+                  :render-mode="workflowForm.renderMode"
+                  :scene-image-versions="sceneImageVersions"
                   @select-asset="({ sceneId, assetRef }) => selectImageAsset(sceneId, assetRef)"
                   @retry-scene="retryImageReviewScene"
                   @enhance-scene="enhanceImageReviewScene"
