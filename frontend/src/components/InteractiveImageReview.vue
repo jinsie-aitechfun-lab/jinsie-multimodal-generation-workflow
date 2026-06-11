@@ -1557,19 +1557,11 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   max-width: 100%;
 }
 
-/* Section divider between the 当前图 card and the 候选图 grid.
-   Without this the user's eye reads three images in a row (selected
-   + A + B) as if they were three side-by-side candidates. A
-   horizontal hairline + an inline-block "候选图" label gives a
-   clear "section starts here" cue while staying compact. */
 .candidate-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px dashed rgba(245, 158, 11, 0.18);
 }
 
 .candidate-count {
