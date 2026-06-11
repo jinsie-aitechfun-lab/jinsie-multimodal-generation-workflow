@@ -672,21 +672,22 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                   ↻ 重新生成
                 </button>
 
-                <!-- Scene narration (the TTS script for this scene) —
-                     reads in plain language what's happening in this
-                     candidate's moment of the story. Helps the user
-                     judge whether the rendered candidate matches the
-                     intended scene without expanding "开发者信息" or
-                     parsing the structural image-gen prompt. -->
-                <div
-                  v-if="sceneNarrationMap?.[entry.sceneId]"
-                  class="narration-display-block"
-                >
-                  <div class="narration-display-label">画面内容</div>
-                  <p class="narration-display-text">
-                    {{ sceneNarrationMap[entry.sceneId] }}
-                  </p>
-                </div>
+              </div>
+              <!-- Scene narration spans the FULL card width below the
+                   image + info-panel row. Originally placed inside the
+                   info panel (column 2), it ended up sitting in the
+                   bottom-right with a lot of empty space — the card
+                   looked unbalanced. Spanning both grid columns gives
+                   the narration its own visual band and ties the image
+                   to its description as a single unit. -->
+              <div
+                v-if="sceneNarrationMap?.[entry.sceneId]"
+                class="narration-display-block"
+              >
+                <div class="narration-display-label">画面内容</div>
+                <p class="narration-display-text">
+                  {{ sceneNarrationMap[entry.sceneId] }}
+                </p>
               </div>
             </div>
           </div>
@@ -1545,21 +1546,24 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   opacity: 0.55;
 }
 
-/* Scene narration inline display. Sits below the action buttons in
-   the selected-image info panel — gives the user a plain-language
-   summary of what this candidate's scene is about. Narration is
-   typically one to two sentences, so the block stays compact. */
+/* Scene narration band — spans both grid columns of .preview-card
+   (image + info-panel), so it forms a full-width strip below the
+   image and buttons. This is what the TTS reads aloud for this
+   moment of the story. */
 .narration-display-block {
-  margin-top: 10px;
-  padding: 10px 12px;
+  grid-column: 1 / -1;
+  margin-top: 4px;
+  padding: 10px 14px;
   border-radius: 8px;
   background: rgba(245, 158, 11, 0.05);
   border: 1px solid rgba(245, 158, 11, 0.12);
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 10px;
 }
 .narration-display-label {
+  flex-shrink: 0;
   color: var(--text-muted);
   font-size: 0.6875rem;
   font-weight: 700;
@@ -1573,6 +1577,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   line-height: 1.6;
   word-break: break-word;
   white-space: pre-wrap;
+  flex: 1 1 auto;
 }
 
 .candidate-header {
