@@ -968,40 +968,43 @@ class RunnerAudioRenderSupport:
                 encoding="utf-8",
             )
 
-            # SINGLE-PASS re-encode (NOT `-c copy`). Each TTS segment is
-            # an independent LAME-encoded MP3 with its own bit reservoir
-            # (LAME stores some encoded bytes in subsequent frames). When
-            # `-c copy` byte-concats two such MP3s, segment N+1's first
-            # frames inherit reservoir references that point at bytes
-            # which only existed inside segment N's stream — those frames
-            # decode to garbage. The garbage is audible as a brief click
-            # / stutter right at every segment boundary (i.e. at the
-            # tail of each sentence). Decoding all inputs and emitting a
-            # single clean MP3 dissolves the cross-segment references.
+            # Sample-accurate concat via the `concat` FILTER (not the
+            # concat demuxer). The demuxer approach (`-f concat`) plus
+            # re-encode mis-handles LAME's per-file priming/padding
+            # metadata, which can cut real audio samples at segment
+            # tails ("尾音被吃"). The filter approach feeds each MP3 as
+            # a separate input, decodes each fully to PCM, explicitly
+            # concatenates the sample arrays, then re-encodes ONCE — no
+            # sample loss at boundaries AND no MP3 bit-reservoir issues
+            # at the resulting concat points.
             #
             # 128 kbps preserves perceived TTS quality (TTS providers
-            # typically deliver 64–128 kbps; we encode AT LEAST as high
-            # so we don't lose quality on the rewrite).
-            subprocess.run(
+            # typically deliver 64–128 kbps).
+            ffmpeg_concat_cmd: List[str] = [
+                "ffmpeg",
+                "-y",
+                "-loglevel",
+                "error",
+            ]
+            for seg_path in audio_file_paths:
+                ffmpeg_concat_cmd.extend(["-i", seg_path])
+            n_segments = len(audio_file_paths)
+            filter_inputs = "".join(f"[{i}:a]" for i in range(n_segments))
+            filter_expr = f"{filter_inputs}concat=n={n_segments}:v=0:a=1[out]"
+            ffmpeg_concat_cmd.extend(
                 [
-                    "ffmpeg",
-                    "-y",
-                    "-loglevel",
-                    "error",
-                    "-f",
-                    "concat",
-                    "-safe",
-                    "0",
-                    "-i",
-                    str(merged_audio_list_path),
+                    "-filter_complex",
+                    filter_expr,
+                    "-map",
+                    "[out]",
                     "-c:a",
                     "libmp3lame",
                     "-b:a",
                     "128k",
                     str(merged_audio_path),
-                ],
-                check=True,
+                ]
             )
+            subprocess.run(ffmpeg_concat_cmd, check=True)
 
         # ========= 写字幕 =========
         subtitle_path = video_run_dir / "subtitles.srt"
