@@ -968,18 +968,36 @@ class RunnerAudioRenderSupport:
                 encoding="utf-8",
             )
 
+            # SINGLE-PASS re-encode (NOT `-c copy`). Each TTS segment is
+            # an independent LAME-encoded MP3 with its own bit reservoir
+            # (LAME stores some encoded bytes in subsequent frames). When
+            # `-c copy` byte-concats two such MP3s, segment N+1's first
+            # frames inherit reservoir references that point at bytes
+            # which only existed inside segment N's stream — those frames
+            # decode to garbage. The garbage is audible as a brief click
+            # / stutter right at every segment boundary (i.e. at the
+            # tail of each sentence). Decoding all inputs and emitting a
+            # single clean MP3 dissolves the cross-segment references.
+            #
+            # 128 kbps preserves perceived TTS quality (TTS providers
+            # typically deliver 64–128 kbps; we encode AT LEAST as high
+            # so we don't lose quality on the rewrite).
             subprocess.run(
                 [
                     "ffmpeg",
                     "-y",
+                    "-loglevel",
+                    "error",
                     "-f",
                     "concat",
                     "-safe",
                     "0",
                     "-i",
                     str(merged_audio_list_path),
-                    "-c",
-                    "copy",
+                    "-c:a",
+                    "libmp3lame",
+                    "-b:a",
+                    "128k",
                     str(merged_audio_path),
                 ],
                 check=True,
