@@ -98,6 +98,12 @@ const props = defineProps<{
   // changed. Appending `?v=${sceneImageVersions[sceneId]}` to every
   // image URL forces a fresh fetch after each per-scene refresh.
   sceneImageVersions?: Record<string, number>
+  // Map of scene_id → narration text (the TTS script for this scene).
+  // Surfaced inline on each candidate's card so the user knows what
+  // each scene is ABOUT in plain language. This is the user-readable
+  // story moment — NOT the structural image-gen prompt, which is
+  // hundreds of lines of cast-lock boilerplate and not useful to show.
+  sceneNarrationMap?: Record<string, string>
 }>()
 
 // A scene's candidates are locked when:
@@ -666,13 +672,20 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                   ↻ 重新生成
                 </button>
 
-                <!-- Storyboard prompt — already in entry.item.prompt,
-                     just surfacing it inline so users understand what
-                     the candidate was generated from. Wrapped + scrollable
-                     so very long prompts don't blow up the card. -->
-                <div v-if="entry.item.prompt" class="prompt-display-block">
-                  <div class="prompt-display-label">分镜提示词</div>
-                  <p class="prompt-display-text">{{ entry.item.prompt }}</p>
+                <!-- Scene narration (the TTS script for this scene) —
+                     reads in plain language what's happening in this
+                     candidate's moment of the story. Helps the user
+                     judge whether the rendered candidate matches the
+                     intended scene without expanding "开发者信息" or
+                     parsing the structural image-gen prompt. -->
+                <div
+                  v-if="sceneNarrationMap?.[entry.sceneId]"
+                  class="narration-display-block"
+                >
+                  <div class="narration-display-label">画面内容</div>
+                  <p class="narration-display-text">
+                    {{ sceneNarrationMap[entry.sceneId] }}
+                  </p>
                 </div>
               </div>
             </div>
@@ -1532,11 +1545,11 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   opacity: 0.55;
 }
 
-/* Scene prompt inline display. Sits below the action buttons in the
-   selected-image info panel — gives the user visibility into what
-   exactly the candidate was generated from. Capped height + scroll
-   so a multi-paragraph prompt doesn't push the card off the page. */
-.prompt-display-block {
+/* Scene narration inline display. Sits below the action buttons in
+   the selected-image info panel — gives the user a plain-language
+   summary of what this candidate's scene is about. Narration is
+   typically one to two sentences, so the block stays compact. */
+.narration-display-block {
   margin-top: 10px;
   padding: 10px 12px;
   border-radius: 8px;
@@ -1545,21 +1558,19 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: 200px;
-  overflow-y: auto;
 }
-.prompt-display-label {
+.narration-display-label {
   color: var(--text-muted);
   font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-.prompt-display-text {
+.narration-display-text {
   margin: 0;
   color: var(--text-secondary, #c8c8c8);
-  font-size: 0.8125rem;
-  line-height: 1.5;
+  font-size: 0.875rem;
+  line-height: 1.6;
   word-break: break-word;
   white-space: pre-wrap;
 }

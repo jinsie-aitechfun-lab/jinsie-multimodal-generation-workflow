@@ -946,6 +946,30 @@ const imageReviewItems = computed(() => {
   return Array.isArray(selectedAssets) ? selectedAssets : []
 })
 
+// Map of scene_id → narration text (the human-readable script TTS reads
+// for this scene). Surfaced in InteractiveImageReview as a per-card
+// description so the user knows what each candidate's scene is ABOUT —
+// far more useful than the structural image-generation prompt, which
+// is hundreds of lines of cast-lock / consistency-rule prompt
+// engineering boilerplate.
+const sceneNarrationMap = computed<Record<string, string>>(() => {
+  const result: Record<string, string> = {}
+  const storyboard = currentWorkflowResponse.value?.outputs?.storyboard as
+    | Record<string, unknown>
+    | undefined
+  const scenes = storyboard?.scenes
+  if (!Array.isArray(scenes)) return result
+  for (const scene of scenes) {
+    if (!scene || typeof scene !== 'object') continue
+    const sceneObj = scene as Record<string, unknown>
+    const sceneId = String(sceneObj.scene_id || '').trim()
+    if (!sceneId) continue
+    const narration = String(sceneObj.narration || '').trim()
+    if (narration) result[sceneId] = narration
+  }
+  return result
+})
+
 
 const hasReviewContent = computed(() => {
   return Boolean(
@@ -2987,6 +3011,7 @@ async function runWorkflow() {
                   :video-generated="Boolean(finalVideoUrl)"
                   :render-mode="workflowForm.renderMode"
                   :scene-image-versions="sceneImageVersions"
+                  :scene-narration-map="sceneNarrationMap"
                   @select-asset="({ sceneId, assetRef }) => selectImageAsset(sceneId, assetRef)"
                   @retry-scene="retryImageReviewScene"
                   @enhance-scene="enhanceImageReviewScene"
