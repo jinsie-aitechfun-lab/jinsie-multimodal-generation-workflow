@@ -502,33 +502,67 @@ def repair_retry_story_text(
 
     cleaned = "".join(lines).strip()
 
-    # If it is still too long, keep complete sentences up to the target max.
+    # Length-based truncation policy.
+    #
+    # Previous policy: any story exceeding target_max was sentence-trimmed
+    # from the BEGINNING — append sentences until the next one would
+    # overshoot, then drop everything after. That destroyed the story's
+    # ending (climax + resolution), producing the "戛然而止" failure
+    # users reported on 5–15% of generations.
+    #
+    # New policy:
+    #   1) Below `hard_threshold` (= duration × 5 chars/sec × 1.5): do NOT
+    #      truncate. The TTS global speedup pass (capped at 1.5×) is
+    #      enough to bring the audio back to target duration without
+    #      cutting any narrative content. The story's complete arc is
+    #      preserved.
+    #   2) Above `hard_threshold`: even maxed-out TTS speedup can't
+    #      compress the audio to target — we have to drop some content.
+    #      Drop the MIDDLE (~15% of sentences) rather than the ENDING,
+    #      so the surviving arc still reads as setup → (compressed
+    #      development) → climax → resolution.
     target_max = int(story_plan.get("target_max_chars") or 0)
     target_min = int(story_plan.get("target_min_chars") or 0)
     target_chars = int(story_plan.get("target_chars") or 0)
+    duration_sec = int(story_plan.get("duration_sec") or 0)
 
-    if target_max > 0 and runner._story_text_char_count(cleaned) > target_max:
-        sentences = re.split(r"(?<=[。！？!?])", cleaned)
-        selected = []
-        for sentence in sentences:
-            item = sentence.strip()
-            if not item:
-                continue
-            candidate = "".join(selected) + item
-            if runner._story_text_char_count(candidate) > target_max:
-                break
-            selected.append(item)
+    # 5.0 chars/sec is the calibrated Chinese TTS rate (see runner_story_text
+    # comments). 1.5× matches the global speedup cap so we only truncate
+    # when speedup alone won't recover the target duration.
+    hard_threshold_chars = int(duration_sec * 5.0 * 1.5) if duration_sec > 0 else 0
+    current_char_count = runner._story_text_char_count(cleaned)
 
-        repaired = "".join(selected).strip()
+    if hard_threshold_chars > 0 and current_char_count > hard_threshold_chars:
+        sentences = [
+            item.strip()
+            for item in re.split(r"(?<=[。！？!?])", cleaned)
+            if item.strip()
+        ]
 
-        # If sentence trimming made it too short, keep a tighter character slice
-        # and close it with a warm ending.
-        if runner._story_text_char_count(repaired) < max(0, target_min - 10):
-            repaired = cleaned[: max(target_min, target_chars)].rstrip("，、；：")
-            if not repaired.endswith(("。", "！", "？")):
-                repaired += "。"
+        # Keep-head-keep-tail only meaningfully helps when there are
+        # enough sentences to drop a middle slice without collapsing the
+        # narrative. With < 5 sentences we accept the overshoot — the
+        # user can regenerate if needed.
+        if len(sentences) >= 5:
+            head_count = max(1, int(len(sentences) * 0.50))
+            tail_count = max(1, int(len(sentences) * 0.35))
 
-        cleaned = repaired
+            # If head + tail covers (or exceeds) the full list there's
+            # no middle to drop. Skip and accept the overshoot.
+            if head_count + tail_count < len(sentences):
+                kept_sentences = sentences[:head_count] + sentences[-tail_count:]
+                repaired = "".join(kept_sentences).strip()
+
+                # Defensive: ensure the surviving last sentence has
+                # terminating punctuation. The re.split lookbehind
+                # preserves punctuation in each sentence, but a
+                # corrupted last sentence could still lack it.
+                if repaired and repaired[-1] not in "。！？!?":
+                    repaired += "。"
+
+                cleaned = repaired
+    # Silence "unused" complaints for variables retained for future tuning.
+    _ = (target_max, target_min, target_chars)
 
     ending_markers = [
         "明白",
