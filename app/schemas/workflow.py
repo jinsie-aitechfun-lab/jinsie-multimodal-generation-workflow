@@ -119,13 +119,18 @@ class WorkflowInput(BaseModel):
     voice_style: str = Field(default="warm_female")
     voiceover_enabled: bool = Field(default=False)
     voice_mode: str = Field(default="single")
-    speaker_profiles: Dict[str, str] = Field(
-        default_factory=lambda: {
-            "narrator": "warm_female",
-            "mother": "warm_female",
-            "child": "gentle_child",
-        }
-    )
+    # Empty default — the previous default `{"narrator": "warm_female", ...}`
+    # silently overrode `voice_style` for single-narrator mode (which does
+    # NOT send speaker_profiles from the frontend). Pydantic filled in
+    # the default, runtime code then did
+    #   profiles.get("narrator", ctx.input.voice_style)
+    # and "narrator" was ALWAYS present (from the default), so the
+    # user-picked voice_style fallback never ran. Net effect: selecting
+    # 温暖男声 in the UI silently rendered as warm_female.
+    #
+    # In multi/character voice modes the frontend explicitly sends
+    # speaker_profiles, so this empty default has no effect there.
+    speaker_profiles: Dict[str, str] = Field(default_factory=dict)
     character_speaker_profiles: Dict[str, str] = Field(
         default_factory=dict,
         description=(

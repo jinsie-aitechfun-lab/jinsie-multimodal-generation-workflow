@@ -1114,27 +1114,38 @@ class RunnerAudioRenderSupport:
             if actual_audio_duration > 0:
                 total_duration_sec = max(total_duration_sec, actual_audio_duration) + 0.2
 
-        if has_audio and merged_audio_path:
-            escaped_subtitle_path = (
-                str(subtitle_path)
-                .replace("\\", "\\\\")
-                .replace(":", "\\:")
-                .replace("'", "\\'")
-            )
+        # Subtitle file may be missing (silent or skipped subtitles). The
+        # `-vf subtitles=...` filter fails hard when the .srt path
+        # doesn't exist on disk → ffmpeg exits 254 → render endpoint
+        # returns 500. The no-audio branch below already guards on this;
+        # the audio branch must do the same.
+        subtitle_available = (
+            subtitle_path.exists() and subtitle_path.stat().st_size > 0
+        )
 
-            subtitle_filter = f"subtitles='{escaped_subtitle_path}'"
-            subprocess.run(
+        if has_audio and merged_audio_path:
+            ffmpeg_cmd = [
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(base_video_path),
+                "-i",
+                str(merged_audio_path),
+                "-t",
+                f"{total_duration_sec:.3f}",
+            ]
+            if subtitle_available:
+                escaped_subtitle_path = (
+                    str(subtitle_path)
+                    .replace("\\", "\\\\")
+                    .replace(":", "\\:")
+                    .replace("'", "\\'")
+                )
+                ffmpeg_cmd.extend(["-vf", f"subtitles='{escaped_subtitle_path}'"])
+            else:
+                print("[final-video] subtitle file missing or empty, skip subtitles (audio branch)")
+            ffmpeg_cmd.extend(
                 [
-                    "ffmpeg",
-                    "-y",
-                    "-i",
-                    str(base_video_path),
-                    "-i",
-                    str(merged_audio_path),
-                    "-t",
-                    f"{total_duration_sec:.3f}",
-                    "-vf",
-                    subtitle_filter,
                     "-c:v",
                     "libx264",
                     "-pix_fmt",
@@ -1143,9 +1154,9 @@ class RunnerAudioRenderSupport:
                     "aac",
                     "-shortest",
                     str(final_video_path),
-                ],
-                check=True,
+                ]
             )
+            subprocess.run(ffmpeg_cmd, check=True)
         else:
             # 如果字幕文件不存在或为空，就不要加字幕滤镜
             if subtitle_path.exists() and subtitle_path.stat().st_size > 0:
