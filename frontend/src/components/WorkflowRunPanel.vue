@@ -858,7 +858,13 @@ function getTopicManualMismatchWarning(): string {
           <span class="characterHintText">角色配音将根据角色列表分配声线</span>
         </div>
 
-        <label class="field">
+        <!-- "配音风格" only takes effect in single-narrator mode. In
+             multi and character modes the actual voice assignment is
+             driven by per-speaker dropdowns / character preset values,
+             and this field's value is never read by the backend audio
+             render path — leaving it visible misleads users into
+             thinking it controls 妈妈/宝宝/角色 voices when it doesn't. -->
+        <label v-if="formState.voiceMode === 'single'" class="field">
           <span>配音风格</span>
           <ThemedSelect
             :model-value="formState.voiceStyle"
