@@ -647,18 +647,15 @@ class WorkflowRunner:
         style_key = voice_style.strip().upper()
         style_specific = os.getenv(f"TTS_VOICE_STYLE_{style_key}", "").strip()
         if style_specific:
-            print(f"[TTS-voice-resolve] speaker={speaker!r} voice_style={voice_style!r} → style hit: {style_specific}")
             return style_specific
 
         speaker_key = speaker.strip().upper()
         speaker_specific = os.getenv(f"TTS_VOICE_{speaker_key}", "").strip()
         if speaker_specific:
-            print(f"[TTS-voice-resolve] speaker={speaker!r} voice_style={voice_style!r} → speaker hit: {speaker_specific}")
             return speaker_specific
 
         default_voice = os.getenv("TTS_VOICE", "").strip()
         if default_voice:
-            print(f"[TTS-voice-resolve] speaker={speaker!r} voice_style={voice_style!r} → default hit: {default_voice}")
             return default_voice
 
         raise RuntimeError("TTS_VOICE is missing")
