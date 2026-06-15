@@ -628,18 +628,37 @@ class WorkflowRunner:
         return self._env_float("TTS_TIMEOUT_SECONDS", 120.0)
 
     def _tts_voice_for(self, speaker: str, voice_style: str) -> str:
-        speaker_key = speaker.strip().upper()
-        speaker_specific = os.getenv(f"TTS_VOICE_{speaker_key}", "").strip()
-        if speaker_specific:
-            return speaker_specific
-
+        # Priority order:
+        #   1) TTS_VOICE_STYLE_<style>  — the voice the USER explicitly
+        #      picked in the UI. This must win over speaker-defaults so
+        #      that switching "旁白配音" between 温暖男声 / 温柔女声
+        #      actually changes the rendered TTS voice.
+        #   2) TTS_VOICE_<speaker>      — speaker-default fallback, only
+        #      used when no style is provided (or the style key isn't
+        #      configured in .env).
+        #   3) TTS_VOICE                 — global default.
+        #
+        # Previous order put speaker-default FIRST, which meant
+        # TTS_VOICE_NARRATOR (typically a single fixed voice in .env)
+        # silently overrode every voice_style the user picked in single
+        # mode — they always got the narrator default regardless of UI
+        # selection. The bug was: select 温暖男声 → still hear claire
+        # (female narrator default).
         style_key = voice_style.strip().upper()
         style_specific = os.getenv(f"TTS_VOICE_STYLE_{style_key}", "").strip()
         if style_specific:
+            print(f"[TTS-voice-resolve] speaker={speaker!r} voice_style={voice_style!r} → style hit: {style_specific}")
             return style_specific
+
+        speaker_key = speaker.strip().upper()
+        speaker_specific = os.getenv(f"TTS_VOICE_{speaker_key}", "").strip()
+        if speaker_specific:
+            print(f"[TTS-voice-resolve] speaker={speaker!r} voice_style={voice_style!r} → speaker hit: {speaker_specific}")
+            return speaker_specific
 
         default_voice = os.getenv("TTS_VOICE", "").strip()
         if default_voice:
+            print(f"[TTS-voice-resolve] speaker={speaker!r} voice_style={voice_style!r} → default hit: {default_voice}")
             return default_voice
 
         raise RuntimeError("TTS_VOICE is missing")
