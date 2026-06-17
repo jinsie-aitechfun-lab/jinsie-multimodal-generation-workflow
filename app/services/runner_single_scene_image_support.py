@@ -351,8 +351,6 @@ class RunnerSingleSceneImageSupport:
             )
         ]
         attempt = 1
-        max_retries = quality_max_retries()
-
         # === Quality retry loop ===
         # When the selector reports should_retry (best candidate's vision score
         # plus hard-failure caps put it below MIN_PASS_SCORE), regenerate the
@@ -360,6 +358,15 @@ class RunnerSingleSceneImageSupport:
         # visual_review (missing characters / forbidden traits / anatomy
         # leakage). Only accept a retry if it scored strictly higher; stop on
         # diminishing returns to avoid burning API budget for no gain.
+        #
+        # `preserve_seed=True` (增强画质) explicitly skips this loop:
+        # the whole point of enhance is "same composition, higher quality
+        # render". The retry loop would re-roll prompts and break the
+        # promise that the new candidate looks like the original — even
+        # with the seed pinned, prompt amendments make the model draw a
+        # different scene. Setting max_retries to 0 here keeps the
+        # cinematic-tier render of the original seed/prompt pair as-is.
+        max_retries = 0 if preserve_seed else quality_max_retries()
         while selection.get("should_retry") and attempt <= max_retries:
             candidate_scores = selection.get("candidate_scores") or []
             failing_visual_review = (
