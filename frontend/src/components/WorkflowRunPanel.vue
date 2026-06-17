@@ -182,6 +182,15 @@ const CHILD_VOICE_OPTS: EnumOption[] = [
   { value: 'bright_child', label: '活泼童声' },
   { value: 'soft_child',   label: '温柔童声' },
 ]
+/* Character mode lets the user assign voices to 主角 / 配角 / 旁白
+   independently. Both characters (typically two animals/people) can be
+   any voice type; the dropdown therefore exposes the three values that
+   have explicit TTS_VOICE_STYLE_* mappings in .env. */
+const CHARACTER_VOICE_OPTS: EnumOption[] = [
+  { value: 'warm_female',  label: '温柔女声' },
+  { value: 'warm_male',    label: '温暖男声' },
+  { value: 'gentle_child', label: '儿童声线' },
+]
 
 function withFallback(opts: EnumOption[], current: string): EnumOption[] {
   if (!current || opts.some((o) => o.value === current)) return opts
@@ -883,10 +892,41 @@ function getTopicManualMismatchWarning(): string {
           </label>
         </template>
 
-        <div v-if="formState.voiceMode === 'character'" class="field-wide characterHint">
-          <span class="characterHintIcon">🎭</span>
-          <span class="characterHintText">角色配音将根据角色列表分配声线</span>
-        </div>
+        <!-- Character mode: per-role voice dropdowns. The form fields
+             are reused from multi mode (childVoiceStyle / motherVoiceStyle
+             / narratorVoiceStyle) — see runWorkflow() in StudioView.vue
+             which maps them to character_speaker_profiles.main_character /
+             secondary_character / narrator respectively. The labels here
+             reflect the character semantics, not the underlying field
+             names, so the dropdowns read naturally in the UI. -->
+        <template v-if="formState.voiceMode === 'character'">
+          <label class="field">
+            <span>主角声音</span>
+            <ThemedSelect
+              :model-value="formState.childVoiceStyle"
+              :options="withFallback(CHARACTER_VOICE_OPTS, formState.childVoiceStyle)"
+              @update:model-value="(v: string) => updateFormState('childVoiceStyle', v)"
+            />
+          </label>
+
+          <label class="field">
+            <span>配角声音</span>
+            <ThemedSelect
+              :model-value="formState.motherVoiceStyle"
+              :options="withFallback(CHARACTER_VOICE_OPTS, formState.motherVoiceStyle)"
+              @update:model-value="(v: string) => updateFormState('motherVoiceStyle', v)"
+            />
+          </label>
+
+          <label class="field">
+            <span>旁白声音</span>
+            <ThemedSelect
+              :model-value="formState.narratorVoiceStyle"
+              :options="withFallback(CHARACTER_VOICE_OPTS, formState.narratorVoiceStyle)"
+              @update:model-value="(v: string) => updateFormState('narratorVoiceStyle', v)"
+            />
+          </label>
+        </template>
 
         <!-- "配音风格" dropdown is intentionally hidden everywhere:
              - multi / character modes: voice routes through per-speaker
