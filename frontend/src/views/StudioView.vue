@@ -2727,6 +2727,20 @@ async function runWorkflow() {
     quality_tier: form.qualityTier || 'quality',
   }
 
+  // Single-narrator mode: send `speaker_profiles.narrator` derived from
+  // the "旁白配音" dropdown so the user's pick controls the narrator
+  // voice. Previously only `voice_style` (the now-hidden "配音风格"
+  // dropdown) reached the backend in single mode, making the "旁白配音"
+  // dropdown a no-op — users picked 温暖男声 there and heard 温柔女声
+  // because the backend's `speaker_profiles.narrator` was filling in
+  // from `voice_style` (or its schema default before #133). Now
+  // 旁白配音 is the single source of truth for single-mode narration.
+  if (form.voiceMode === 'single') {
+    inputPayload.speaker_profiles = {
+      narrator: form.narratorVoiceStyle,
+    }
+  }
+
   if (form.voiceMode === 'multi') {
     inputPayload.speaker_profiles = {
       narrator: form.narratorVoiceStyle,
