@@ -83,9 +83,10 @@ function formatElapsedLabel(seconds: number): string {
 }
 
 // Local-only collapse state — does NOT affect payload, just UI grouping.
-const voiceCollapsed  = ref(true)   // 配音与字幕 — default collapsed for clean first paint
-const renderCollapsed = ref(true)   // 渲染与输出 — advanced settings, default collapsed
-const stepsCollapsed  = ref(true)   // Workflow Steps — engineering view, default collapsed
+const voiceCollapsed     = ref(true)   // 配音与字幕 — default collapsed for clean first paint
+const renderCollapsed    = ref(true)   // 渲染与输出 — advanced settings, default collapsed
+const stepsCollapsed     = ref(true)   // Workflow Steps — engineering view, default collapsed
+const characterCollapsed = ref(true)   // 角色设置 — only shown in character mode, default collapsed
 
 /* ─────────────────────────────────────────────────────────────
    Display-only enum option lists.
@@ -967,8 +968,35 @@ function getTopicManualMismatchWarning(): string {
       </div>
     </section>
 
-    <section v-if="formState.voiceMode === 'character'" class="config-panel">
-      <h2 class="section-title">角色设置</h2>
+    <!-- ═══════════ 角色设置 (collapsible, default closed) ═══════════
+         Only rendered in character voice mode. Wrapped in the same
+         collapsible pattern as 渲染与输出 / 配音与字幕 / 工作流步骤 so
+         the panel doesn't dominate the page just because the user
+         happened to leave voiceMode='character' in localStorage from
+         a previous session. -->
+    <section
+      v-if="formState.voiceMode === 'character'"
+      class="config-panel collapse-section"
+    >
+      <button
+        type="button"
+        class="collapse-head"
+        :aria-expanded="!characterCollapsed"
+        @click="characterCollapsed = !characterCollapsed"
+      >
+        <span class="collapse-title-block">
+          <span class="collapse-title">角色设置</span>
+          <span class="collapse-desc">主角 / 配角名称与外观特征</span>
+        </span>
+        <svg
+          :class="['collapse-chevron', { 'is-open': !characterCollapsed }]"
+          width="12" height="8" viewBox="0 0 12 8" fill="none"
+        >
+          <path d="M1 1 L6 6 L11 1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+
+      <div v-show="!characterCollapsed" class="collapse-body">
 
       <label class="checkbox-field">
         <input
@@ -1109,6 +1137,7 @@ function getTopicManualMismatchWarning(): string {
           />
         </label>
       </div>
+      </div>  <!-- /collapse-body -->
     </section>
 
     <!-- ═══════════ Workflow Steps (collapsible, default closed) ═══════════ -->
