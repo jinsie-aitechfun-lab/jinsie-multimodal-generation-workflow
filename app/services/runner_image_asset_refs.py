@@ -39,7 +39,7 @@ class RunnerImageAssetRefsSupport:
         item: Dict[str, Any],
         provider: str,
     ) -> Dict[str, Any]:
-        return {
+        ref = {
             "scene_id": item.get("scene_id"),
             "file_name": item.get("file_name"),
             "relative_path": item.get("relative_path"),
@@ -47,6 +47,13 @@ class RunnerImageAssetRefsSupport:
             "mime_type": item.get("mime_type"),
             "provider": provider,
         }
+        # Forward quality_tier so the frontend can flag candidates that
+        # were rendered at Cinematic (the badge on 增强画质 outputs).
+        # Falls through silently when the source dict doesn't carry one
+        # — older candidates won't show a badge, just default tier.
+        if "quality_tier" in item:
+            ref["quality_tier"] = item["quality_tier"]
+        return ref
 
     def build_mock_candidate_asset_refs(
         self,

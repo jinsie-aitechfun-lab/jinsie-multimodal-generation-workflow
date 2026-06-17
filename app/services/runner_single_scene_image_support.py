@@ -325,6 +325,13 @@ class RunnerSingleSceneImageSupport:
                         "mime_type": "image/png",
                         "provider": "api_image_generator",
                         "negative_prompt": active_negative,
+                        # Persist the quality tier so the frontend can show
+                        # a "✦" badge on candidates rendered at Cinematic.
+                        # This is what tells the user "this candidate was
+                        # produced by 增强画质" vs a default-tier roll.
+                        "quality_tier": str(
+                            getattr(ctx.input, "quality_tier", "quality") or "quality"
+                        ),
                     }
                 )
             return candidates
