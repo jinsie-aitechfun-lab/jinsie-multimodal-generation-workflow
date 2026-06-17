@@ -1952,7 +1952,7 @@ async function renderFinalVideoIfReady(baseResponse: WorkflowRunResponse) {
   }
 }
 
-async function refreshImageReviewScene(sceneId: string, signal?: AbortSignal, qualityTierOverride?: string) {
+async function refreshImageReviewScene(sceneId: string, signal?: AbortSignal, qualityTierOverride?: string, preserveSeed: boolean = false) {
   if (!currentWorkflowResponse.value || !currentWorkflowPayload.value) {
     return
   }
@@ -1992,6 +1992,7 @@ async function refreshImageReviewScene(sceneId: string, signal?: AbortSignal, qu
       typeof currentWorkflowPayload.value.input?.video_provider === 'string'
         ? currentWorkflowPayload.value.input.video_provider
         : workflowForm.value.videoProvider,
+    preserve_seed: preserveSeed,
   }
 
   let response: Response
@@ -2100,7 +2101,7 @@ async function enhanceImageReviewScene(sceneId: string) {
   imageReviewRefreshAbortController = new AbortController()
 
   try {
-    await refreshImageReviewScene(sceneId, imageReviewRefreshAbortController.signal, 'cinematic')
+    await refreshImageReviewScene(sceneId, imageReviewRefreshAbortController.signal, 'cinematic', true)
     if (workflowForm.value.renderMode === 'auto' && currentWorkflowResponse.value) {
       void renderFinalVideoIfReady(currentWorkflowResponse.value)
     }

@@ -410,6 +410,7 @@ class RunnerImageReviewSupport:
         character_manifest: Dict[str, Any] | None = None,
         image_prompts: Dict[str, Any] | None = None,
         video_provider: str = "mock",
+        preserve_seed: bool = False,
     ) -> Dict[str, Any]:
         runner = self._runner
 
@@ -480,6 +481,7 @@ class RunnerImageReviewSupport:
             outputs=outputs,
             scene=target_scene,
             scene_index=scene_index_by_id.get(normalized_scene_id, 1),
+            preserve_seed=preserve_seed,
         )
         outputs["image_assets"] = single_scene_assets
 
