@@ -2897,11 +2897,11 @@ async function runWorkflow() {
     <div class="studio-tab-content">
     <section v-if="activeTab === 'run'" class="studio-home-grid">
       <StudioCreatePanel
-        :loading="loading || refreshingImageReview || finalVideoRenderInFlight || awaitingManualRender"
+        :loading="loading || refreshingImageReview || finalVideoRenderInFlight || awaitingManualRender || Boolean(sceneRefreshingId)"
         :cancel-requested="cancelRequestedAny"
       >
         <WorkflowRunPanel
-          :loading="loading || refreshingImageReview || finalVideoRenderInFlight || awaitingManualRender"
+          :loading="loading || refreshingImageReview || finalVideoRenderInFlight || awaitingManualRender || Boolean(sceneRefreshingId)"
           :can-submit="canSubmit"
           :error-message="errorMessage"
           :form-state="workflowForm"
@@ -2962,7 +2962,7 @@ async function runWorkflow() {
                 :final-video-text="finalVideoText"
                 :workflow-response="currentWorkflowResponse"
                 :render-in-flight="finalVideoRenderInFlight"
-                :loading="workflowIsProcessing || refreshingImageReview || finalVideoRenderInFlight"
+                :loading="workflowIsProcessing || refreshingImageReview || finalVideoRenderInFlight || Boolean(sceneRefreshingId)"
                 :refreshing-images="refreshingImageReview"
                 :cancel-requested="cancelRequested"
                 :paused-by-user="imageRefreshPausedByUser"
@@ -3015,7 +3015,7 @@ async function runWorkflow() {
                   :story-text="storyText"
                   :placeholders="reviewPlaceholders"
                   :api-base-url="apiBaseUrl"
-                  :loading="loading || refreshingImageReview"
+                  :loading="loading || refreshingImageReview || Boolean(sceneRefreshingId)"
                   :selecting-scene-id="selectingSceneId || sceneRefreshingId"
                   :progress-text="cancelRequested ? cancellingLabel : reviewRefreshProgress.text"
                   :progress-percent="reviewRefreshProgress.percent"
