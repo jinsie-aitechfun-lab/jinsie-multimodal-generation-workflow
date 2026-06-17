@@ -256,6 +256,24 @@ function updateVoiceMode(value: string) {
   })
 }
 
+// Toggle the "启用字幕" checkbox in 配音与字幕 panel — also mirror the
+// change into the 字幕生成 step entry in 工作流步骤 panel so the two
+// stay in lock-step (paired with updateSelectedStep's reverse mirror).
+function onToggleSubtitleEnabled(checked: boolean) {
+  emit('update:formState', {
+    ...props.formState,
+    subtitleEnabled: checked,
+  })
+
+  const current = [...props.selectedSteps]
+  const has = current.includes('subtitles')
+  if (checked && !has) {
+    emit('update:selectedSteps', [...current, 'subtitles'])
+  } else if (!checked && has) {
+    emit('update:selectedSteps', current.filter((s) => s !== 'subtitles'))
+  }
+}
+
 function updateSelectedStep(step: StepName, checked: boolean) {
   const current = [...props.selectedSteps]
 
@@ -263,13 +281,25 @@ function updateSelectedStep(step: StepName, checked: boolean) {
     if (!current.includes(step)) {
       emit('update:selectedSteps', [...current, step])
     }
-    return
+  } else {
+    emit('update:selectedSteps', current.filter((item) => item !== step))
   }
 
-  emit(
-    'update:selectedSteps',
-    current.filter((item) => item !== step)
-  )
+  // Bidirectional sync: the "字幕生成" step in the 工作流步骤 panel and
+  // the "启用字幕" checkbox in the 配音与字幕 panel both express the
+  // same intent (do we want subtitles in the final video?) but live
+  // in different panels, which has historically confused users into
+  // ticking only one of them and wondering why subtitles don't show.
+  // When the user toggles the 字幕生成 step we mirror the change into
+  // formState.subtitleEnabled so both checkboxes reflect a single
+  // underlying decision. The reverse direction (启用字幕 → step
+  // selection) is already handled at submission time in runWorkflow.
+  if (step === 'subtitles') {
+    emit('update:formState', {
+      ...props.formState,
+      subtitleEnabled: checked,
+    })
+  }
 }
 
 function applyPresetSingle() {
@@ -889,12 +919,7 @@ function getTopicManualMismatchWarning(): string {
           <input
             :checked="formState.subtitleEnabled"
             type="checkbox"
-            @change="
-              updateFormState(
-                'subtitleEnabled',
-                ($event.target as HTMLInputElement).checked
-              )
-            "
+            @change="onToggleSubtitleEnabled(($event.target as HTMLInputElement).checked)"
           />
           <span>启用字幕</span>
         </label>
