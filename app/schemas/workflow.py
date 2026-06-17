@@ -271,6 +271,13 @@ class ImageReviewRefreshSceneRequest(BaseModel):
     character_manifest: Dict[str, Any] = Field(default_factory=dict)
     image_prompts: Dict[str, Any] = Field(default_factory=dict)
     video_provider: str = Field(default="mock")
+    # When True, the diffusion seed used by this refresh matches the
+    # seed that produced the candidate currently on disk — same
+    # composition, no time-based jitter. Combined with a higher
+    # quality_tier this becomes "enhance the same image". When False
+    # (default), a fresh time-based seed_jitter is mixed in so the
+    # output is a visibly different roll.
+    preserve_seed: bool = Field(default=False)
 
 
 class ImageReviewRefreshSceneResponse(BaseModel):

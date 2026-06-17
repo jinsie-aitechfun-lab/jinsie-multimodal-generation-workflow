@@ -1422,12 +1422,14 @@ class WorkflowRunner:
         outputs: Dict[str, Any],
         scene: Dict[str, Any],
         scene_index: int,
+        preserve_seed: bool = False,
     ) -> Dict[str, Any]:
         return self._single_scene_image_support.run_single_scene_image_asset(
             ctx=ctx,
             outputs=outputs,
             scene=scene,
             scene_index=scene_index,
+            preserve_seed=preserve_seed,
         )
 
     def _apply_manual_image_selection(

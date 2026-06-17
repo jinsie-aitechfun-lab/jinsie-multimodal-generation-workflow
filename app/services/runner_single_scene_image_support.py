@@ -213,6 +213,7 @@ class RunnerSingleSceneImageSupport:
         outputs: Dict[str, Any],
         scene: Dict[str, Any],
         scene_index: int,
+        preserve_seed: bool = False,
     ) -> Dict[str, Any]:
         runner = self._runner
         prompt_by_scene_id, _ = runner._image_prompt_item_maps(outputs)
@@ -274,7 +275,18 @@ class RunnerSingleSceneImageSupport:
                 # Without this, (run_id, scene_index) is the same on every
                 # retry → same seed → byte-identical image → user sees no
                 # change after clicking "重新生成".
-                seed_jitter = time.time_ns() % 10_000_000_000 + candidate_index * 7919
+                #
+                # `preserve_seed=True` (used by 增强画质) deliberately
+                # SKIPS the time-based jitter so the diffusion seed
+                # matches what produced the candidate on disk → same
+                # composition, only the higher quality_tier (Cinematic)
+                # changes the rendered detail. That's the difference
+                # between "enhance the same image" and "re-roll":
+                # 增强画质 keeps the picture, 重新生成 rolls fresh.
+                if preserve_seed:
+                    seed_jitter = candidate_index * 7919
+                else:
+                    seed_jitter = time.time_ns() % 10_000_000_000 + candidate_index * 7919
                 task = ImageGenerationTask(
                     run_id=ctx.run_id,
                     item_id=scene_id,
@@ -422,6 +434,7 @@ class RunnerSingleSceneImageSupport:
         outputs: Dict[str, Any],
         scene: Dict[str, Any],
         scene_index: int,
+        preserve_seed: bool = False,
     ) -> Dict[str, Any]:
         provider = self._runner._image_provider_name()
 
@@ -447,6 +460,7 @@ class RunnerSingleSceneImageSupport:
                     outputs=outputs,
                     scene=scene,
                     scene_index=scene_index,
+                    preserve_seed=preserve_seed,
                 )
                 return {
                     "enabled": True,

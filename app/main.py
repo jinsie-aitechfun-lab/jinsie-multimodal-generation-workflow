@@ -458,6 +458,7 @@ def refresh_image_review_scene(req: ImageReviewRefreshSceneRequest):
             character_manifest=req.character_manifest,
             image_prompts=req.image_prompts,
             video_provider=req.video_provider,
+            preserve_seed=req.preserve_seed,
         )
         print("[image-review] refresh-scene completed", req.run_id, req.scene_id)
 
