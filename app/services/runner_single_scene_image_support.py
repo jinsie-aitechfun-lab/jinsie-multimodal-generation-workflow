@@ -284,7 +284,10 @@ class RunnerSingleSceneImageSupport:
                 # between "enhance the same image" and "re-roll":
                 # 增强画质 keeps the picture, 重新生成 rolls fresh.
                 if preserve_seed:
-                    seed_jitter = candidate_index * 7919
+                    # Match the bulk-generation seed exactly: bulk path passes
+                    # no seed_jitter at all (defaults to 0 for both A and B —
+                    # A/B already diverge via scene_index+candidate_index).
+                    seed_jitter = 0
                 else:
                     seed_jitter = time.time_ns() % 10_000_000_000 + candidate_index * 7919
                 task = ImageGenerationTask(
