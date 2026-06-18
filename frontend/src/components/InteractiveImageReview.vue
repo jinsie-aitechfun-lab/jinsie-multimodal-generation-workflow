@@ -156,7 +156,6 @@ const emit = defineEmits<{
   ): void
   (e: 'refresh-review'): void
   (e: 'retry-scene', sceneId: string): void
-  (e: 'enhance-scene', sceneId: string): void
   (e: 'cancel-refresh'): void
   // Top-level workflow cancel (uses App.vue cancelWorkflow). Distinct from
   // 'cancel-refresh' which only stops the current image-refresh batch.
@@ -252,10 +251,6 @@ function onRefreshReview() {
 
 function onRetryScene(sceneId: string) {
   emit('retry-scene', sceneId)
-}
-
-function onEnhanceScene(sceneId: string) {
-  emit('enhance-scene', sceneId)
 }
 
 function onCancelRefresh() {
@@ -614,14 +609,6 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
           <div class="preview-row">
             <div class="preview-card preview-card-selected">
               <div class="preview-visual-frame">
-                <!-- Same Cinematic badge as the candidate cards below.
-                     Surfaces on 当前图 when the selected candidate was
-                     produced by 增强画质. -->
-                <span
-                  v-if="(entry.item.selected_asset_ref as any)?.quality_tier === 'cinematic'"
-                  class="cinematic-badge"
-                  :title="'此图由「增强画质」生成（Cinematic 档）'"
-                >✦</span>
                 <img
                   v-if="isImageAsset(assetRefPath(entry.item.selected_asset_ref))"
                   class="preview-visual-image"
@@ -683,15 +670,6 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                     ↗ 查看原图
                   </a>
 
-                  <button
-                    type="button"
-                    class="enhance-scene-button"
-                    :disabled="loading || selectingSceneId === entry.sceneId"
-                    :title="'用 Cinematic 档重新生成更高质量候选'"
-                    @click="onEnhanceScene(entry.sceneId)"
-                  >
-                    ✦ 增强画质
-                  </button>
                   <!-- Manual-mode regenerate. Only useful while the user is
                        still reviewing — once a final video exists the
                        candidates are locked (the displayed selection must
@@ -747,18 +725,6 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
               >
                 <div class="preview-card preview-card-candidate">
                   <div class="preview-visual-frame preview-visual-frame-candidate">
-                    <!-- Cinematic badge — surfaces candidates produced
-                         by 增强画质 (which holds the diffusion seed and
-                         re-renders at the Cinematic quality tier).
-                         Without this, the user can't tell apart
-                         "enhanced" vs default candidates since both
-                         look like a valid composition. -->
-                    <span
-                      v-if="(candidate as any).quality_tier === 'cinematic'"
-                      class="cinematic-badge"
-                      :title="'此候选图由「增强画质」生成（Cinematic 档）'"
-                    >✦</span>
-
                     <img
                       v-if="isImageAsset(assetRefPath(candidate))"
                       class="preview-visual-image"
@@ -1439,33 +1405,6 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   aspect-ratio: 16 / 9;
 }
 
-/* Cinematic ✦ badge — surfaces on the top-right of an image (selected
-   or candidate) when that candidate was rendered at Cinematic tier
-   (i.e. the user clicked 增强画质). Small floating chip so it doesn't
-   compete with the image content. */
-.cinematic-badge {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  z-index: 2;
-  min-width: 22px;
-  height: 22px;
-  padding: 0 6px;
-  border-radius: 11px;
-  background: linear-gradient(135deg, rgba(245, 158, 11, 0.92), rgba(217, 119, 6, 0.92));
-  color: #1f1206;
-  font-size: 0.75rem;
-  font-weight: 700;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.32);
-  pointer-events: auto;
-  cursor: help;
-  letter-spacing: 0;
-}
-
 .preview-visual-image {
   display: block;
   width: 100%;
@@ -1544,7 +1483,6 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
    Individual `margin-top` is dropped — the parent .action-row
    handles spacing via `gap`. */
 .selected-open-link,
-.enhance-scene-button,
 .regen-scene-button {
   height: 32px;
   padding: 0 12px;
@@ -1615,43 +1553,26 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   opacity: 0.55;
 }
 
-/* All three action buttons (查看原图 / 增强画质 / 重新生成) share the
-   same arc-accent palette. The icon prefix (↗ / ✦ / ↻) carries the
-   semantic difference; color difference would just create visual
-   imbalance — especially with 增强画质 sitting in the middle. */
-.enhance-scene-button,
 .regen-scene-button {
   border: 1px solid rgba(245,158,11,0.32);
   background: rgba(245,158,11,0.10);
   color: var(--arc-300);
 }
-.enhance-scene-button:hover:not(:disabled),
 .regen-scene-button:hover:not(:disabled) {
   background: rgba(245,158,11,0.18);
   border-color: rgba(245,158,11,0.52);
 }
-.enhance-scene-button:disabled,
 .regen-scene-button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }
-/* Pearl theme overrides — the dark-theme defaults use hardcoded orange
-   rgba backgrounds paired with theme-bound text colors. In pearl the
-   bg renders as pink on white and the prism text becomes ice blue,
-   creating a "warning pill" mismatch. Unify all three buttons to the
-   champagne-gold accent (arc-300) so they read as a single
-   horizontal action group — the icons (↗ / ✦ / ↻) already convey the
-   semantic difference between view / enhance / regenerate without
-   needing a different color for the middle button. */
 :root[data-theme="pearl"] .selected-open-link,
-:root[data-theme="pearl"] .enhance-scene-button,
 :root[data-theme="pearl"] .regen-scene-button {
   border-color: rgba(200, 154, 85, 0.35);
   background: rgba(200, 154, 85, 0.10);
   color: var(--arc-300);
 }
 :root[data-theme="pearl"] .selected-open-link:hover,
-:root[data-theme="pearl"] .enhance-scene-button:hover:not(:disabled),
 :root[data-theme="pearl"] .regen-scene-button:hover:not(:disabled) {
   background: rgba(200, 154, 85, 0.18);
   border-color: rgba(200, 154, 85, 0.55);
@@ -1705,8 +1626,8 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   text-decoration: underline;
 }
 
-/* Buttons row — visually groups 查看原图 + ✦ 增强画质 + ↻ 重新生成
-   into one horizontal action band, separated from the narration above. */
+/* Buttons row — groups 查看原图 + ↻ 重新生成 into one horizontal
+   action band, separated from the narration above. */
 .action-row {
   display: flex;
   flex-wrap: wrap;
