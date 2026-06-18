@@ -8,7 +8,8 @@ import DiagnosticsPanel from '../components/studio/DiagnosticsPanel.vue'
 import InteractiveImageReview from '../components/InteractiveImageReview.vue'
 import WorkflowResultsPanel from '../components/WorkflowResultsPanel.vue'
 import WorkflowRunPanel from '../components/WorkflowRunPanel.vue'
-import SampleAssetsPanel from '../components/SampleAssetsPanel.vue'
+import InspirationLibraryPanel from '../components/InspirationLibraryPanel.vue'
+import type { InspirationItem } from '../data/inspirationLibrary'
 import FinalVideoPanel from '../components/FinalVideoPanel.vue'
 
 type StepName = string
@@ -552,7 +553,7 @@ const studioTabs = computed(() => {
   const tabs: Array<{ id: string; label: string; icon: string; badge?: string }> = [
     { id: 'run', label: '创作故事', icon: '✦' },
     { id: 'review', label: '画面审核', icon: '◈' },
-    { id: 'assets', label: '素材库', icon: '◇' },
+    { id: 'assets', label: '灵感参考', icon: '◇' },
   ]
   if (devMode.value) {
     tabs.push({ id: 'debug', label: '开发诊断', icon: '⚙' })
@@ -658,6 +659,25 @@ const EXAMPLE_TOPICS = ['小兔子和乌龟赛跑', '小狐狸学画画', '小�
 
 function setExampleTopic(topic: string) {
   workflowForm.value = { ...workflowForm.value, topic }
+}
+
+// Called when the user clicks "用此 X 创作" inside InspirationLibraryPanel.
+// Shallow-merges the item's prefill payload into the workflow form and
+// switches to the 创作故事 tab so the user lands on the form ready to
+// review / run. Smooth-scroll the form into view for the same reason —
+// without it the tab swap is silent and the user has to scan the page
+// to confirm anything happened.
+function onApplyInspiration(item: InspirationItem) {
+  workflowForm.value = { ...workflowForm.value, ...item.prefill }
+  activeTab.value = 'run'
+  // Defer the scroll until Vue has rendered the run tab, otherwise the
+  // form anchor doesn't exist yet.
+  requestAnimationFrame(() => {
+    const anchor = document.querySelector('.run-form, .workflow-run-form')
+    if (anchor && 'scrollIntoView' in anchor) {
+      (anchor as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  })
 }
 
 onMounted(() => {
@@ -3033,20 +3053,7 @@ async function runWorkflow() {
         </div>
       </section>
       <section v-if="activeTab === 'assets'">
-        <SampleAssetsPanel
-          :samples-loading="samplesLoading"
-          :samples-error-message="samplesErrorMessage"
-          :samples-summary="samplesSummary"
-          :provider-stats-text="providerStatsText"
-          :kling-samples="klingSamples"
-          :selected-sample-id="selectedSampleId"
-          :selected-sample-detail="selectedSampleDetail"
-          :selected-sample-notes-text="selectedSampleNotesText"
-          :selected-sample-notes-loading="selectedSampleNotesLoading"
-          :api-base-url="apiBaseUrl"
-          @refresh="loadSampleAssets"
-          @select-sample="selectSample"
-        />
+        <InspirationLibraryPanel @apply="onApplyInspiration" />
         <section
           v-if="mockAudioIndexUrl || mockAudioSceneGroups.length > 0 || mockAudioDirectoryText"
           class="result-panel"
