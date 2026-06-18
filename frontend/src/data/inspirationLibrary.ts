@@ -42,29 +42,29 @@ export interface InspirationItem {
 
 const CHARACTERS: InspirationItem[] = [
   {
-    id: 'char-doudou-tadpole',
+    id: 'char-bobo-seal',
     kind: 'character',
-    title: '豆豆 · 小蝌蚪',
-    subtitle: '好奇心强的水边探险家',
+    title: '波波 · 小海豹',
+    subtitle: '好奇心强的海边探险家',
     description:
-      '一只总爱问"为什么"的小蝌蚪，喜欢沿着溪流寻找新奇事物。适合"好奇探险"类故事主角。',
+      '一只圆圆胖胖的小海豹，住在海边的礁石间，最爱沿着浪线发现新事物。适合"好奇探险""勇气成长"类故事主角。',
     tags: ['动物主角', '探险', '水生'],
-    icon: '🐸',
+    icon: '🦭',
     preview: [
-      { label: '主角', value: '豆豆 · 小蝌蚪' },
-      { label: '外观', value: '深色身体、红头巾、圆眼' },
+      { label: '主角', value: '波波 · 小海豹' },
+      { label: '外观', value: '银灰光滑皮、圆圆大眼' },
       { label: '故事方向', value: '好奇心驱动的小探险' },
     ],
     prefill: {
       topic:
-        '讲一个温暖治愈的儿童故事。主角是豆豆，一只圆圆大眼睛、深色身体、戴着小红头巾的可爱小蝌蚪，住在一条清澈的小溪里。它好奇心强，最爱追着声音去寻找新事物。',
+        '讲一个温暖治愈的儿童故事。主角是波波，一只圆圆胖胖、银灰色光滑皮肤、圆圆大眼睛的可爱小海豹，住在海边的礁石间。它好奇心强，最爱沿着浪线去发现新事物。',
       characterStyle: 'animal',
       structuredCharactersEnabled: true,
-      primaryCharacterDisplayName: '豆豆',
-      primaryCharacterSpecies: '小蝌蚪',
+      primaryCharacterDisplayName: '波波',
+      primaryCharacterSpecies: '小海豹',
       primaryCharacterVisualTraits:
-        '深色圆润身体，圆圆的大眼睛，戴一条小红头巾，尾巴细长',
-      primaryCharacterForbiddenTraits: '不要画成青蛙、不要长出腿、不要灰色',
+        '银灰色光滑皮肤，圆圆胖胖的身形，圆圆的大眼睛，短小可爱的鳍',
+      primaryCharacterForbiddenTraits: '不要尖牙、不要瘦削、不要黑色',
     },
   },
   {
