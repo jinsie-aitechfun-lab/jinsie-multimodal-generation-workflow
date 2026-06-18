@@ -939,13 +939,6 @@ const canSubmit = computed(() => {
   )
 })
 
-const providerStatsText = computed(() => {
-  if (!samplesSummary.value?.provider_stats) {
-    return ''
-  }
-  return stringifyPretty(samplesSummary.value.provider_stats)
-})
-
 const imageReviewSelectedAssets = computed<ImageReviewSelectedAsset[]>(() => {
   const value = currentWorkflowResponse.value?.outputs?.image_review
   if (!value || typeof value !== 'object') {
@@ -1794,19 +1787,6 @@ async function loadSampleAssets() {
       error instanceof Error ? error.message : 'Failed to load sample assets'
   } finally {
     samplesLoading.value = false
-  }
-}
-
-async function selectSample(sampleId: string) {
-  selectedSampleId.value = sampleId
-  samplesErrorMessage.value = ''
-
-  try {
-    await fetchSampleDetail(sampleId)
-    await fetchSampleNotesText(selectedSampleDetail.value?.assets?.notes)
-  } catch (error) {
-    samplesErrorMessage.value =
-      error instanceof Error ? error.message : 'Failed to load sample detail'
   }
 }
 
