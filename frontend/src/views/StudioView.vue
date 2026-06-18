@@ -2092,30 +2092,6 @@ async function retryImageReviewScene(sceneId: string) {
   }
 }
 
-async function enhanceImageReviewScene(sceneId: string) {
-  if (!sceneId || refreshingImageReview.value || sceneRefreshingId.value) {
-    return
-  }
-
-  errorMessage.value = ''
-  imageReviewRefreshAbortController = new AbortController()
-
-  try {
-    await refreshImageReviewScene(sceneId, imageReviewRefreshAbortController.signal, 'cinematic', true)
-    if (workflowForm.value.renderMode === 'auto' && currentWorkflowResponse.value) {
-      void renderFinalVideoIfReady(currentWorkflowResponse.value)
-    }
-  } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') {
-      return
-    }
-    const message = error instanceof Error ? error.message : '场景增强失败'
-    errorMessage.value = message
-  } finally {
-    sceneRefreshingId.value = ''
-    imageReviewRefreshAbortController = null
-  }
-}
 
 // Unified "stop the current in-flight work" affordance. The Studio runs
 // two distinct cancellable phases:
@@ -3029,7 +3005,6 @@ async function runWorkflow() {
                   :scene-narration-map="sceneNarrationMap"
                   @select-asset="({ sceneId, assetRef }) => selectImageAsset(sceneId, assetRef)"
                   @retry-scene="retryImageReviewScene"
-                  @enhance-scene="enhanceImageReviewScene"
                   @cancel-refresh="cancelImageReviewRefresh"
                   @cancel-workflow="cancelWorkflow"
                 />

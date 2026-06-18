@@ -284,7 +284,10 @@ class RunnerSingleSceneImageSupport:
                 # between "enhance the same image" and "re-roll":
                 # 增强画质 keeps the picture, 重新生成 rolls fresh.
                 if preserve_seed:
-                    seed_jitter = candidate_index * 7919
+                    # Match the bulk-generation seed exactly: bulk path passes
+                    # no seed_jitter at all (defaults to 0 for both A and B —
+                    # A/B already diverge via scene_index+candidate_index).
+                    seed_jitter = 0
                 else:
                     seed_jitter = time.time_ns() % 10_000_000_000 + candidate_index * 7919
                 task = ImageGenerationTask(
@@ -325,6 +328,13 @@ class RunnerSingleSceneImageSupport:
                         "mime_type": "image/png",
                         "provider": "api_image_generator",
                         "negative_prompt": active_negative,
+                        # Persist the quality tier so the frontend can show
+                        # a "✦" badge on candidates rendered at Cinematic.
+                        # This is what tells the user "this candidate was
+                        # produced by 增强画质" vs a default-tier roll.
+                        "quality_tier": str(
+                            getattr(ctx.input, "quality_tier", "quality") or "quality"
+                        ),
                     }
                 )
             return candidates
@@ -344,8 +354,6 @@ class RunnerSingleSceneImageSupport:
             )
         ]
         attempt = 1
-        max_retries = quality_max_retries()
-
         # === Quality retry loop ===
         # When the selector reports should_retry (best candidate's vision score
         # plus hard-failure caps put it below MIN_PASS_SCORE), regenerate the
@@ -353,6 +361,15 @@ class RunnerSingleSceneImageSupport:
         # visual_review (missing characters / forbidden traits / anatomy
         # leakage). Only accept a retry if it scored strictly higher; stop on
         # diminishing returns to avoid burning API budget for no gain.
+        #
+        # `preserve_seed=True` (增强画质) explicitly skips this loop:
+        # the whole point of enhance is "same composition, higher quality
+        # render". The retry loop would re-roll prompts and break the
+        # promise that the new candidate looks like the original — even
+        # with the seed pinned, prompt amendments make the model draw a
+        # different scene. Setting max_retries to 0 here keeps the
+        # cinematic-tier render of the original seed/prompt pair as-is.
+        max_retries = 0 if preserve_seed else quality_max_retries()
         while selection.get("should_retry") and attempt <= max_retries:
             candidate_scores = selection.get("candidate_scores") or []
             failing_visual_review = (

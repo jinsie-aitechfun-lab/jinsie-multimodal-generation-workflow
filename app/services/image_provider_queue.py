@@ -583,6 +583,9 @@ class ImageProviderQueue:
                         "provider_supports_reference_image": False,
                         "mode": "metadata_only",
                     },
+                    "quality_tier": str(
+                        getattr(ctx.input, "quality_tier", "quality") or "quality"
+                    ),
                 }
             )
 
@@ -679,6 +682,9 @@ class ImageProviderQueue:
                         "provider_supports_reference_image": False,
                         "mode": "metadata_only",
                     },
+                    "quality_tier": str(
+                        getattr(ctx.input, "quality_tier", "quality") or "quality"
+                    ),
                 }
             )
 

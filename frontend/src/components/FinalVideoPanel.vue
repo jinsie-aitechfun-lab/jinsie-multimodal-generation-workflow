@@ -73,7 +73,8 @@
             assetsReady &&
             !renderInFlight &&
             !finalVideoUrl &&
-            audioItemCount > 0
+            audioItemCount > 0 &&
+            !sceneRefreshingId
           "
           type="button"
           class="ph-render-cta"
