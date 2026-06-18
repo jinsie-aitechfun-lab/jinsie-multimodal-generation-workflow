@@ -1882,7 +1882,12 @@ function starStyle(i: number) {
 }
 .foot-content {
   position: relative;
-  max-width: 780px;
+  /* Widened from 780 → 1040 so the CTA bar aligns with the case grid
+     (1080) and workflow rail above. Removes the previous "sudden narrow
+     band" jump that broke the page's vertical rhythm — now all three
+     below-hero sections terminate at roughly the same invisible vertical
+     edges. */
+  max-width: 1040px;
   margin: 0 auto;
   display: flex;
   flex-direction: row;
