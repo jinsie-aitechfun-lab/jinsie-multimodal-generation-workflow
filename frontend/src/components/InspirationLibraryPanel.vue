@@ -19,23 +19,19 @@ const emit = defineEmits<{
 const activeFilter = ref<FilterValue>('all')
 const activeItem = ref<InspirationItem | null>(null)
 
-const filteredItems = computed<InspirationItem[]>(() => {
-  if (activeFilter.value === 'all') return INSPIRATION_ITEMS
-  return INSPIRATION_ITEMS.filter((item) => item.kind === activeFilter.value)
-})
+interface SectionGroup {
+  kind: InspirationKind
+  items: InspirationItem[]
+}
 
-// When showing the "全部" view, group by kind so the page reads as
-// three distinct curated rails instead of a flat mixed grid. Premium
-// product feel: clear section eyebrows + per-section description.
-const groupedItems = computed<Array<{ kind: InspirationKind; items: InspirationItem[] }>>(() => {
-  if (activeFilter.value !== 'all') {
-    return [{ kind: activeFilter.value as InspirationKind, items: filteredItems.value }]
-  }
+const groupedItems = computed<SectionGroup[]>(() => {
   const kinds: InspirationKind[] = ['character', 'style', 'template']
-  return kinds.map((kind) => ({
-    kind,
-    items: INSPIRATION_ITEMS.filter((item) => item.kind === kind),
-  }))
+  return kinds
+    .filter((kind) => activeFilter.value === 'all' || activeFilter.value === kind)
+    .map((kind) => ({
+      kind,
+      items: INSPIRATION_ITEMS.filter((item) => item.kind === kind),
+    }))
 })
 
 function openDetail(item: InspirationItem) {
@@ -54,6 +50,16 @@ function applyAndClose(item: InspirationItem) {
 function kindLabel(kind: InspirationKind): string {
   return KIND_META[kind].label
 }
+
+function ctaLabel(kind: InspirationKind): string {
+  if (kind === 'character') return '用此角色创作'
+  if (kind === 'style')     return '用此风格创作'
+  return '用此模板创作'
+}
+
+function padIndex(n: number): string {
+  return String(n + 1).padStart(2, '0')
+}
 </script>
 
 <template>
@@ -65,8 +71,8 @@ function kindLabel(kind: InspirationKind): string {
       </div>
       <h2 class="inspiration-title">挑一个起点，3 秒进入创作</h2>
       <p class="inspiration-desc">
-        预设的角色形象、画面风格与故事模板。点击"用此创作"会跳回创作页并自动填好对应设定，
-        你只需要轻微调整就能开始生成。
+        每张卡片是一组预设的创作配置——点击"用此创作"，跳回创作页并自动填入对应角色、画风或故事模板，
+        把"从零填表"的 5 分钟压缩到一次点击。
       </p>
     </header>
 
@@ -89,17 +95,27 @@ function kindLabel(kind: InspirationKind): string {
         :key="group.kind"
         class="inspiration-section"
       >
-        <div v-if="activeFilter === 'all'" class="section-eyebrow-row">
-          <span class="section-eyebrow">{{ KIND_META[group.kind].eyebrow }}</span>
-          <span class="section-eyebrow-line"></span>
-          <span class="section-eyebrow-meta">
-            {{ KIND_META[group.kind].label }} · {{ KIND_META[group.kind].description }}
-          </span>
+        <div v-if="activeFilter === 'all'" class="section-header">
+          <div class="section-icon-badge" aria-hidden="true">
+            <span class="section-icon-glyph">{{ KIND_META[group.kind].icon }}</span>
+          </div>
+          <div class="section-header-text">
+            <div class="section-header-top">
+              <div class="section-title-block">
+                <span class="section-eyebrow-mini">
+                  {{ KIND_META[group.kind].eyebrow }}
+                </span>
+                <h3 class="section-title">{{ KIND_META[group.kind].label }}</h3>
+              </div>
+              <span class="section-count">{{ group.items.length }} 个</span>
+            </div>
+            <p class="section-desc">{{ KIND_META[group.kind].description }}</p>
+          </div>
         </div>
 
         <ul class="inspiration-grid">
           <li
-            v-for="item in group.items"
+            v-for="(item, index) in group.items"
             :key="item.id"
             class="inspiration-card"
             tabindex="0"
@@ -107,16 +123,36 @@ function kindLabel(kind: InspirationKind): string {
             @keydown.enter="openDetail(item)"
             @keydown.space.prevent="openDetail(item)"
           >
-            <div class="card-cover" :style="{ background: item.gradient }">
+            <div class="card-head">
+              <span class="card-eyebrow">
+                {{ KIND_META[item.kind].eyebrow }} · {{ padIndex(index) }}
+              </span>
               <span class="card-icon" aria-hidden="true">{{ item.icon }}</span>
-              <span class="card-kind-badge">{{ kindLabel(item.kind) }}</span>
             </div>
+
             <div class="card-body">
               <h3 class="card-title">{{ item.title }}</h3>
               <p class="card-subtitle">{{ item.subtitle }}</p>
+            </div>
+
+            <dl class="card-preview">
+              <div
+                v-for="row in item.preview"
+                :key="row.label"
+                class="preview-row"
+              >
+                <dt class="preview-label">{{ row.label }}</dt>
+                <dd class="preview-value">{{ row.value }}</dd>
+              </div>
+            </dl>
+
+            <div class="card-foot">
               <ul class="card-tags">
                 <li v-for="tag in item.tags" :key="tag" class="card-tag">{{ tag }}</li>
               </ul>
+              <span class="card-cta-pill" aria-hidden="true">
+                查看详情 <span class="card-cta-arrow">→</span>
+              </span>
             </div>
           </li>
         </ul>
@@ -140,36 +176,54 @@ function kindLabel(kind: InspirationKind): string {
             @click="closeDetail"
           >×</button>
 
-          <header class="detail-head" :style="{ background: activeItem.gradient }">
-            <span class="detail-cover-icon" aria-hidden="true">{{ activeItem.icon }}</span>
-            <div class="detail-head-text">
-              <span class="detail-kind-badge">{{ kindLabel(activeItem.kind) }}</span>
+          <header class="detail-head">
+            <span class="detail-eyebrow">
+              {{ KIND_META[activeItem.kind].eyebrow }} · {{ kindLabel(activeItem.kind) }}
+            </span>
+            <div class="detail-head-row">
               <h3 class="detail-title">{{ activeItem.title }}</h3>
-              <p class="detail-subtitle">{{ activeItem.subtitle }}</p>
+              <span class="detail-icon" aria-hidden="true">{{ activeItem.icon }}</span>
             </div>
+            <p class="detail-subtitle">{{ activeItem.subtitle }}</p>
           </header>
 
           <div class="detail-body">
             <p class="detail-description">{{ activeItem.description }}</p>
 
-            <div class="detail-tags-block">
-              <span class="detail-tags-label">标签</span>
-              <ul class="detail-tags">
-                <li v-for="tag in activeItem.tags" :key="tag" class="detail-tag">{{ tag }}</li>
-              </ul>
+            <div class="detail-block">
+              <span class="detail-block-label">自动填入</span>
+              <dl class="detail-preview">
+                <div
+                  v-for="row in activeItem.preview"
+                  :key="row.label"
+                  class="preview-row preview-row-large"
+                >
+                  <dt class="preview-label">{{ row.label }}</dt>
+                  <dd class="preview-value">{{ row.value }}</dd>
+                </div>
+              </dl>
             </div>
 
-            <div class="detail-prefill-block">
-              <span class="detail-tags-label">将自动应用的设定</span>
-              <ul class="prefill-list">
+            <details class="detail-block detail-block-collapsible">
+              <summary class="detail-block-summary">
+                完整字段（开发者视图）
+              </summary>
+              <ul class="prefill-raw-list">
                 <li
                   v-for="(value, key) in activeItem.prefill"
                   :key="String(key)"
-                  class="prefill-row"
+                  class="prefill-raw-row"
                 >
-                  <code class="prefill-key">{{ key }}</code>
-                  <span class="prefill-value">{{ String(value) }}</span>
+                  <code class="prefill-raw-key">{{ key }}</code>
+                  <span class="prefill-raw-value">{{ String(value) }}</span>
                 </li>
+              </ul>
+            </details>
+
+            <div class="detail-tags-block">
+              <span class="detail-block-label">标签</span>
+              <ul class="detail-tags">
+                <li v-for="tag in activeItem.tags" :key="tag" class="detail-tag">{{ tag }}</li>
               </ul>
             </div>
           </div>
@@ -181,7 +235,7 @@ function kindLabel(kind: InspirationKind): string {
               class="detail-apply"
               @click="applyAndClose(activeItem)"
             >
-              用此{{ kindLabel(activeItem.kind).slice(0, 2) }}创作 →
+              {{ ctaLabel(activeItem.kind) }} →
             </button>
           </footer>
         </section>
@@ -198,14 +252,14 @@ function kindLabel(kind: InspirationKind): string {
 /* ── Header ─────────────────────────────────────────── */
 
 .inspiration-head {
-  margin-bottom: 24px;
+  margin-bottom: 28px;
 }
 
 .kicker {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 8px;
+  margin-bottom: 12px;
 }
 .kicker-line {
   width: 28px;
@@ -213,7 +267,7 @@ function kindLabel(kind: InspirationKind): string {
   background: linear-gradient(
     90deg,
     transparent,
-    color-mix(in srgb, var(--arc-300) 60%, transparent),
+    var(--border-arc),
     transparent
   );
 }
@@ -222,11 +276,11 @@ function kindLabel(kind: InspirationKind): string {
   font-weight: 700;
   letter-spacing: 0.28em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--arc-300) 88%, transparent);
+  color: var(--arc-300);
 }
 
 .inspiration-title {
-  margin: 4px 0 8px;
+  margin: 4px 0 10px;
   font-size: 1.5rem;
   font-weight: 700;
   letter-spacing: 0.01em;
@@ -236,7 +290,7 @@ function kindLabel(kind: InspirationKind): string {
 .inspiration-desc {
   margin: 0;
   font-size: 13px;
-  line-height: 1.65;
+  line-height: 1.7;
   color: var(--text-secondary);
 }
 
@@ -246,14 +300,14 @@ function kindLabel(kind: InspirationKind): string {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 24px;
+  margin-bottom: 28px;
 }
 .filter-pill {
   height: 32px;
   padding: 0 16px;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--arc-300) 24%, transparent);
-  background: color-mix(in srgb, var(--arc-400) 4%, rgba(8, 7, 5, 0.4));
+  border: 1px solid var(--border-glass);
+  background: var(--surface-overlay-soft);
   color: var(--text-secondary);
   font-size: 0.8125rem;
   font-weight: 600;
@@ -265,13 +319,13 @@ function kindLabel(kind: InspirationKind): string {
     color 0.15s ease;
 }
 .filter-pill:hover {
-  border-color: color-mix(in srgb, var(--arc-300) 52%, transparent);
+  border-color: var(--border-arc);
   color: var(--text-primary);
 }
 .filter-pill.active {
-  background: color-mix(in srgb, var(--arc-300) 18%, transparent);
-  border-color: color-mix(in srgb, var(--arc-300) 60%, transparent);
-  color: var(--arc-200);
+  background: color-mix(in srgb, var(--arc-300) 16%, transparent);
+  border-color: var(--arc-300);
+  color: var(--arc-300);
 }
 
 /* ── Sections ───────────────────────────────────────── */
@@ -279,35 +333,118 @@ function kindLabel(kind: InspirationKind): string {
 .inspiration-sections {
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 24px;
 }
 
-.section-eyebrow-row {
+/* Section container — subtle glass frame that "grounds" the section
+   header so it doesn't read as floating white text on the page bg.
+   Wraps both the title block and the card grid; cards inside still
+   have their own surface treatment, so there's a clear two-level
+   hierarchy: section frame (outer, very faint) → cards (inner, more
+   defined). */
+.inspiration-section {
+  padding: 28px 24px 30px;
+  border-radius: 18px;
+  border: 1px solid var(--border-subtle);
+  background:
+    linear-gradient(180deg, var(--surface-overlay-soft), transparent 30%),
+    var(--surface-overlay-soft);
+}
+
+/* Section header — left-aligned "collection page chapter head".
+   Gold circular icon badge anchors the left edge; title block lives
+   on the right with an English eyebrow above the Chinese title, plus
+   a count chip floating right. Reads as a real "section header" not a
+   floating label. */
+.section-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+/* The icon badge — circular, gold-bordered, holds a single Unicode
+   glyph per kind (◆ / ✦ / ❖). Adds visible decoration without going
+   childish; matches the abstract glyph style used by the studio
+   sidebar tabs. */
+.section-icon-badge {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  border: 1px solid var(--border-arc);
+  background:
+    radial-gradient(
+      circle at 30% 25%,
+      color-mix(in srgb, var(--arc-300) 22%, transparent),
+      transparent 65%
+    ),
+    var(--surface-overlay-soft);
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 14px;
+  justify-content: center;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--arc-200) 14%, transparent),
+    0 0 18px color-mix(in srgb, var(--arc-300) 12%, transparent);
 }
-.section-eyebrow {
-  font-size: 0.6875rem;
+.section-icon-glyph {
+  font-size: 1.125rem;
+  color: var(--arc-300);
+  line-height: 1;
+}
+
+.section-header-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 1px;
+}
+.section-header-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.section-title-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.section-eyebrow-mini {
+  font-size: 0.625rem;
   font-weight: 700;
-  letter-spacing: 0.24em;
+  letter-spacing: 0.28em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--arc-300) 80%, transparent);
+  color: var(--arc-300);
+  opacity: 0.85;
 }
-.section-eyebrow-line {
-  flex: 0 0 24px;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--arc-300) 36%, transparent),
-    transparent
-  );
+.section-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 0.005em;
+  color: var(--text-primary);
+  line-height: 1.25;
 }
-.section-eyebrow-meta {
-  font-size: 0.75rem;
+.section-count {
+  flex: 0 0 auto;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
   color: var(--text-muted);
-  letter-spacing: 0.02em;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-overlay-soft);
+  margin-top: 12px;
+}
+.section-desc {
+  margin: 4px 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  color: var(--text-muted);
 }
 
 /* ── Card grid ──────────────────────────────────────── */
@@ -318,139 +455,111 @@ function kindLabel(kind: InspirationKind): string {
   padding: 0;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
+  gap: 18px;
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1180px) {
   .inspiration-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
-@media (max-width: 820px) {
+@media (max-width: 880px) {
   .inspiration-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-@media (max-width: 520px) {
+@media (max-width: 540px) {
   .inspiration-grid { grid-template-columns: 1fr; }
 }
 
-/* Card — dark base with thin gold top-hairline, gold-tinted border on
-   hover. Designed to read as "native to the dark-gold theme" rather
-   than as bright sticker tiles. */
+/* Card — text-led. Uses theme tokens so dark + pearl both work. The
+   value sold by the card is the *preview rows*, not a decorative
+   cover, so the surface stays calm and lets typography lead. */
 .inspiration-card {
   position: relative;
   display: flex;
   flex-direction: column;
-  border-radius: 14px;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--arc-300) 14%, transparent);
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--arc-400) 4%, rgba(10, 8, 5, 0.62)),
-    color-mix(in srgb, var(--arc-400) 2%, rgba(6, 5, 3, 0.55))
-  );
+  padding: 20px 20px 18px;
+  border-radius: 16px;
+  border: 1px solid var(--border-glass);
+  background:
+    linear-gradient(180deg, var(--surface-overlay-soft), transparent 70%),
+    var(--bg-elevated);
   cursor: pointer;
   transition:
-    transform 0.18s ease,
-    border-color 0.18s ease,
-    box-shadow 0.18s ease;
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    background 0.2s ease,
+    box-shadow 0.2s ease;
 }
-/* Thin gold accent line at the very top — defines the dark-gold theme
-   identity even when the cover gradient is muted. */
+/* Thin gold accent line at top — same design language as landing-page
+   eyebrows. Adapts to both themes via the arc token. */
 .inspiration-card::before {
   content: '';
   position: absolute;
   top: 0;
-  left: 12px;
-  right: 12px;
+  left: 20px;
+  right: 20px;
   height: 1px;
   background: linear-gradient(
     90deg,
     transparent,
-    color-mix(in srgb, var(--arc-300) 36%, transparent),
+    var(--border-arc),
     transparent
   );
-  z-index: 2;
+  opacity: 0.7;
   pointer-events: none;
+  transition: opacity 0.2s ease;
 }
 .inspiration-card:hover,
 .inspiration-card:focus-visible {
-  transform: translateY(-3px);
-  border-color: color-mix(in srgb, var(--arc-300) 44%, transparent);
+  transform: translateY(-2px);
+  border-color: var(--border-arc);
+  background:
+    linear-gradient(180deg, var(--surface-overlay-mid), transparent 70%),
+    var(--bg-float);
   box-shadow:
-    0 14px 36px rgba(0, 0, 0, 0.42),
-    0 0 0 1px color-mix(in srgb, var(--arc-300) 18%, transparent),
-    0 0 22px color-mix(in srgb, var(--arc-300) 16%, transparent);
+    0 16px 36px var(--surface-overlay-strong),
+    0 0 0 1px color-mix(in srgb, var(--arc-300) 8%, transparent);
   outline: none;
 }
-
-.card-cover {
-  position: relative;
-  aspect-ratio: 16 / 10;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
+.inspiration-card:hover::before,
+.inspiration-card:focus-visible::before {
+  opacity: 1;
 }
-/* Inner highlight + bottom shadow lift the dark cover off the card. */
-.card-cover::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(
-      circle at 28% 24%,
-      color-mix(in srgb, var(--arc-300) 12%, transparent),
-      transparent 58%
-    ),
-    linear-gradient(
-      180deg,
-      transparent 60%,
-      rgba(0, 0, 0, 0.32) 100%
-    );
-  pointer-events: none;
+
+.card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.card-eyebrow {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--arc-300);
 }
 .card-icon {
-  font-size: 2.625rem;
+  font-size: 1.125rem;
   line-height: 1;
-  opacity: 0.72;
-  filter:
-    drop-shadow(0 2px 8px rgba(0, 0, 0, 0.55))
-    drop-shadow(0 0 18px color-mix(in srgb, var(--arc-300) 26%, transparent));
+  opacity: 0.65;
+  flex: 0 0 auto;
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
 .inspiration-card:hover .card-icon {
-  opacity: 0.92;
-  transform: scale(1.06);
-}
-.card-kind-badge {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  z-index: 1;
-  padding: 3px 9px;
-  border-radius: 999px;
-  background: rgba(8, 7, 5, 0.62);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  border: 1px solid color-mix(in srgb, var(--arc-300) 22%, transparent);
-  color: color-mix(in srgb, var(--arc-200) 88%, transparent);
-  font-size: 0.625rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  opacity: 0.95;
+  transform: scale(1.1);
 }
 
 .card-body {
-  padding: 14px 14px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-height: 0;
+  margin-bottom: 16px;
 }
 .card-title {
-  margin: 0;
-  font-size: 0.9375rem;
-  font-weight: 600;
-  color: color-mix(in srgb, var(--arc-200) 92%, var(--text-primary));
-  letter-spacing: 0.01em;
+  margin: 0 0 5px;
+  font-size: 1.0625rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.005em;
+  line-height: 1.3;
 }
 .card-subtitle {
   margin: 0;
@@ -458,26 +567,108 @@ function kindLabel(kind: InspirationKind): string {
   line-height: 1.5;
   color: var(--text-muted);
   display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Preview rows — the hero content. Shows what the click will configure,
+   in human-readable form. This is the actual value of the card. */
+.card-preview {
+  margin: 0 0 16px;
+  padding: 14px 0;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.preview-row {
+  display: grid;
+  grid-template-columns: 4.5em 1fr;
+  gap: 12px;
+  align-items: baseline;
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+.preview-label {
+  margin: 0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.preview-value {
+  margin: 0;
+  color: var(--text-secondary);
+  font-weight: 500;
+  display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+.card-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: auto;
+}
 .card-tags {
   list-style: none;
   padding: 0;
-  margin: 4px 0 0;
+  margin: 0;
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
 }
 .card-tag {
   font-size: 0.625rem;
-  padding: 2px 7px;
+  padding: 2px 8px;
   border-radius: 4px;
-  background: color-mix(in srgb, var(--arc-400) 10%, rgba(8, 7, 5, 0.45));
-  border: 1px solid color-mix(in srgb, var(--arc-300) 14%, transparent);
-  color: color-mix(in srgb, var(--arc-200) 70%, var(--text-secondary));
+  background: var(--surface-overlay-soft);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
   letter-spacing: 0.02em;
+}
+
+/* Card CTA chip — affords "this card is clickable" with a real pill
+   shape. Whole card remains clickable; this just makes the affordance
+   unmistakable. Uses arc tokens so dark = bright gold, pearl = deep
+   champagne — both read correctly against the card surface. */
+.card-cta-pill {
+  align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border-arc);
+  background: color-mix(in srgb, var(--arc-300) 10%, transparent);
+  color: var(--arc-300);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease;
+}
+.card-cta-arrow {
+  font-size: 0.875rem;
+  line-height: 1;
+  transition: transform 0.2s ease;
+}
+.inspiration-card:hover .card-cta-pill,
+.inspiration-card:focus-visible .card-cta-pill {
+  background: color-mix(in srgb, var(--arc-300) 22%, transparent);
+  border-color: var(--arc-300);
+}
+.inspiration-card:hover .card-cta-arrow,
+.inspiration-card:focus-visible .card-cta-arrow {
+  transform: translateX(3px);
 }
 
 /* ── Detail modal ───────────────────────────────────── */
@@ -490,24 +681,31 @@ function kindLabel(kind: InspirationKind): string {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(4, 3, 2, 0.72);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  /* Mid-strength overlay — page still shows through faintly so the modal
+     reads as a "lifted layer" not a wall covering the page. */
+  background: var(--surface-overlay-mid);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
 .detail-modal {
   position: relative;
-  width: min(540px, 100%);
+  width: min(560px, 100%);
   max-height: calc(100vh - 48px);
   overflow: auto;
   border-radius: 18px;
-  border: 1px solid color-mix(in srgb, var(--arc-300) 22%, transparent);
-  background: linear-gradient(
-    180deg,
-    rgba(22, 18, 10, 0.96),
-    rgba(12, 10, 6, 0.96)
-  );
-  box-shadow: 0 32px 72px rgba(0, 0, 0, 0.6);
+  border: 1px solid var(--border-arc);
+  /* Frosted-glass surface: a translucent base (78% bg + 22% nothing)
+     combined with the modal's own backdrop-filter means whatever is
+     behind blurs into a soft wash of color through the modal — the
+     "premium macOS sheet" effect. The gradient overlay on top gives
+     a subtle inner highlight from the upper edge. */
+  background:
+    linear-gradient(180deg, var(--surface-overlay-soft), transparent 50%),
+    color-mix(in srgb, var(--bg-elevated) 78%, transparent);
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
+  box-shadow: 0 32px 72px var(--surface-overlay-strong);
 }
 
 .detail-close {
@@ -518,72 +716,55 @@ function kindLabel(kind: InspirationKind): string {
   width: 32px;
   height: 32px;
   border-radius: 999px;
-  border: none;
-  background: rgba(8, 7, 5, 0.6);
-  color: rgba(255, 255, 255, 0.85);
+  border: 1px solid var(--border-glass);
+  background: var(--surface-overlay-soft);
+  color: var(--text-primary);
   font-size: 1.25rem;
   line-height: 1;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s, border-color 0.15s;
 }
 .detail-close:hover {
-  background: rgba(8, 7, 5, 0.9);
-  color: #fff;
+  background: var(--surface-overlay-mid);
+  border-color: var(--border-arc);
 }
 
 .detail-head {
-  position: relative;
+  padding: 28px 28px 20px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.detail-eyebrow {
+  display: block;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--arc-300);
+  margin-bottom: 10px;
+}
+.detail-head-row {
   display: flex;
   align-items: center;
-  gap: 18px;
-  padding: 28px 28px 24px;
-  overflow: hidden;
-}
-.detail-head::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(
-    circle at 20% 20%,
-    rgba(255, 255, 255, 0.18),
-    transparent 60%
-  );
-  pointer-events: none;
-}
-.detail-cover-icon {
-  font-size: 3.5rem;
-  line-height: 1;
-  flex: 0 0 auto;
-  filter: drop-shadow(0 2px 10px rgba(0, 0, 0, 0.45));
-}
-.detail-head-text {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-.detail-kind-badge {
-  display: inline-block;
-  padding: 3px 10px;
-  border-radius: 999px;
-  background: rgba(8, 7, 5, 0.55);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 0.625rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  margin-bottom: 8px;
+  gap: 12px;
+  margin-bottom: 6px;
 }
 .detail-title {
-  margin: 0 0 4px;
-  font-size: 1.25rem;
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: 1.375rem;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.98);
-  letter-spacing: 0.01em;
+  color: var(--text-primary);
+  letter-spacing: -0.005em;
+}
+.detail-icon {
+  flex: 0 0 auto;
+  font-size: 1.25rem;
+  opacity: 0.7;
 }
 .detail-subtitle {
   margin: 0;
   font-size: 0.8125rem;
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--text-muted);
   line-height: 1.5;
 }
 
@@ -596,22 +777,109 @@ function kindLabel(kind: InspirationKind): string {
 .detail-description {
   margin: 0;
   font-size: 0.875rem;
-  line-height: 1.7;
+  line-height: 1.75;
   color: var(--text-secondary);
 }
 
-.detail-tags-block,
-.detail-prefill-block {
+.detail-block {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
-.detail-tags-label {
+.detail-block-label {
   font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.2em;
   text-transform: uppercase;
   color: var(--text-muted);
+}
+
+.detail-preview {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: var(--surface-overlay-soft);
+  border: 1px solid var(--border-glass);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.preview-row-large {
+  grid-template-columns: 6em 1fr;
+  font-size: 0.8125rem;
+}
+.preview-row-large .preview-label {
+  font-size: 0.75rem;
+}
+
+.detail-block-collapsible {
+  border-radius: 10px;
+  background: var(--surface-overlay-soft);
+  border: 1px solid var(--border-subtle);
+  padding: 10px 14px;
+}
+.detail-block-summary {
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--arc-300);
+  list-style: none;
+  padding: 4px 0;
+}
+.detail-block-summary::-webkit-details-marker { display: none; }
+.detail-block-summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform 0.15s;
+}
+.detail-block-collapsible[open] .detail-block-summary::before {
+  transform: rotate(90deg);
+}
+.prefill-raw-list {
+  list-style: none;
+  padding: 10px 0 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 200px;
+  overflow: auto;
+}
+.prefill-raw-row {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+.prefill-raw-key {
+  flex: 0 0 auto;
+  font-family:
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  font-size: 0.6875rem;
+  color: var(--arc-300);
+  background: color-mix(in srgb, var(--arc-300) 12%, transparent);
+  border: 1px solid var(--border-subtle);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.prefill-raw-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+
+.detail-tags-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 .detail-tags {
   list-style: none;
@@ -625,49 +893,9 @@ function kindLabel(kind: InspirationKind): string {
   padding: 4px 10px;
   border-radius: 6px;
   font-size: 0.75rem;
-  background: color-mix(in srgb, var(--arc-300) 14%, transparent);
-  color: color-mix(in srgb, var(--arc-200) 80%, var(--text-secondary));
-}
-
-.prefill-list {
-  list-style: none;
-  padding: 12px 14px;
-  margin: 0;
-  border-radius: 8px;
-  background: rgba(8, 7, 5, 0.45);
-  border: 1px solid color-mix(in srgb, var(--arc-300) 14%, transparent);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 180px;
-  overflow: auto;
-}
-.prefill-row {
-  display: flex;
-  gap: 10px;
-  align-items: baseline;
-  font-size: 0.75rem;
-  line-height: 1.5;
-}
-.prefill-key {
-  flex: 0 0 auto;
-  font-family:
-    ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    Consolas,
-    monospace;
-  font-size: 0.6875rem;
-  color: var(--arc-300);
-  background: color-mix(in srgb, var(--arc-300) 14%, transparent);
-  padding: 1px 6px;
-  border-radius: 4px;
-}
-.prefill-value {
-  flex: 1 1 auto;
-  min-width: 0;
+  background: var(--surface-overlay-soft);
+  border: 1px solid var(--border-subtle);
   color: var(--text-secondary);
-  word-break: break-all;
 }
 
 .detail-foot {
@@ -675,38 +903,39 @@ function kindLabel(kind: InspirationKind): string {
   gap: 10px;
   justify-content: flex-end;
   padding: 16px 28px 24px;
+  border-top: 1px solid var(--border-subtle);
 }
 .detail-cancel,
 .detail-apply {
-  height: 38px;
-  padding: 0 18px;
-  border-radius: 8px;
+  height: 40px;
+  padding: 0 20px;
+  border-radius: 999px;
   font-size: 0.8125rem;
-  font-weight: 600;
+  font-weight: 700;
   font-family: inherit;
   cursor: pointer;
   transition:
-    background 0.15s,
-    border-color 0.15s,
+    background 0.2s,
+    border-color 0.2s,
+    color 0.2s,
     transform 0.1s;
 }
 .detail-cancel {
-  border: 1px solid color-mix(in srgb, var(--arc-300) 22%, transparent);
+  border: 1px solid var(--border-glass);
   background: transparent;
   color: var(--text-secondary);
 }
 .detail-cancel:hover {
-  border-color: color-mix(in srgb, var(--arc-300) 48%, transparent);
+  border-color: var(--border-arc);
   color: var(--text-primary);
 }
 .detail-apply {
-  border: 1px solid color-mix(in srgb, var(--arc-300) 60%, transparent);
-  background: color-mix(in srgb, var(--arc-300) 22%, transparent);
-  color: var(--arc-200);
+  border: 1px solid var(--arc-300);
+  background: color-mix(in srgb, var(--arc-300) 16%, transparent);
+  color: var(--arc-300);
 }
 .detail-apply:hover {
-  background: color-mix(in srgb, var(--arc-300) 38%, transparent);
-  border-color: color-mix(in srgb, var(--arc-300) 90%, transparent);
+  background: color-mix(in srgb, var(--arc-300) 30%, transparent);
 }
 .detail-apply:active { transform: translateY(1px); }
 </style>
