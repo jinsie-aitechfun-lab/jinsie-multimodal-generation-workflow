@@ -131,9 +131,14 @@ function availableSceneIds(): string {
   <section class="samples-panel">
     <div class="samples-panel-head">
       <div>
-        <h2 class="section-title">真实样片库</h2>
+        <div class="samples-kicker">
+          <span class="samples-kicker-line"></span>
+          <span class="samples-kicker-text">PROVIDER ARCHIVE · v2 预研</span>
+        </div>
+        <h2 class="section-title">分镜视频 Provider 样片归档</h2>
         <p class="samples-desc">
-          沉淀真实样片素材，支持后续创作参考、风格复用与案例展示。
+          为 v2 引入的分镜视频生成 provider（可灵 / 海螺 / 即梦 等）预留的样片归档基础设施。
+          当前 v1 聚焦绘本风视频生成；此页用一条真实可灵样片作为归档 schema 的验证。
         </p>
       </div>
 
@@ -182,6 +187,42 @@ function availableSceneIds(): string {
         </details>
       </div>
     </div>
+
+    <aside class="roadmap-card" aria-label="v2 Roadmap">
+      <div class="roadmap-card-head">
+        <span class="roadmap-card-icon" aria-hidden="true">◆</span>
+        <span class="roadmap-card-title">v2 Roadmap · 分镜视频 Provider 接入</span>
+      </div>
+
+      <ul class="roadmap-list">
+        <li class="roadmap-item roadmap-item-done">
+          <span class="roadmap-dot"></span>
+          <div class="roadmap-body">
+            <strong>可灵 (Kling)</strong>
+            <span class="roadmap-meta">已完成归档 schema 适配 · 1 条样片在库</span>
+          </div>
+        </li>
+        <li class="roadmap-item">
+          <span class="roadmap-dot"></span>
+          <div class="roadmap-body">
+            <strong>海螺 (Hailuo / MiniMax)</strong>
+            <span class="roadmap-meta">API 调研中 · 国内可直连</span>
+          </div>
+        </li>
+        <li class="roadmap-item">
+          <span class="roadmap-dot"></span>
+          <div class="roadmap-body">
+            <strong>即梦 (Jimeng)</strong>
+            <span class="roadmap-meta">规划中 · 字节官方 API</span>
+          </div>
+        </li>
+      </ul>
+
+      <p class="roadmap-foot">
+        v1 阶段聚焦把绘本风视频生成做完整；分镜视频涉及 provider 商业模型与单视频成本测算，
+        将随 v2 一并开放。
+      </p>
+    </aside>
 
     <div class="samples-layout">
       <section class="samples-list-panel">
@@ -241,11 +282,11 @@ function availableSceneIds(): string {
               打开备注文件
             </a>
 
-            <div class="notes-preview-block">
-              <span class="detail-label">备注预览</span>
+            <details class="notes-preview-block">
+              <summary class="notes-preview-summary">备注预览（原始 Scenario 元数据）</summary>
               <p v-if="selectedSampleNotesLoading" class="detail-text">备注加载中...</p>
               <pre v-else class="notes-preview">{{ selectedSampleNotesText || '-' }}</pre>
-            </div>
+            </details>
           </div>
 
           <div class="detail-block">
@@ -397,19 +438,153 @@ function availableSceneIds(): string {
 }
 
 .section-title {
-  margin: 0 0 4px;
-  font-size: 0.75rem;
+  margin: 6px 0 8px;
+  font-size: 1.25rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-muted);
+  letter-spacing: 0.01em;
+  color: var(--text-primary);
 }
 
 .samples-desc {
   color: var(--text-secondary);
   font-size: 13px;
-  line-height: 1.6;
+  line-height: 1.65;
   margin: 0;
+}
+
+/* v2 预研 eyebrow — establishes intent up-front so a reader (or
+   interviewer) immediately understands this page is an architectural
+   placeholder for unshipped provider integration, not a half-built
+   user feature. */
+.samples-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 4px;
+}
+.samples-kicker-line {
+  width: 28px;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--arc-300) 60%, transparent),
+    transparent
+  );
+}
+.samples-kicker-text {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--arc-300) 88%, transparent);
+}
+
+/* v2 Roadmap card — repositions the page from "sparse asset library"
+   to "intentional roadmap waypoint". Shows what's done + what's planned
+   so the reader doesn't ask "why so few entries?". */
+.roadmap-card {
+  position: relative;
+  margin: 18px 0 24px;
+  padding: 18px 20px 16px;
+  border: 1px solid color-mix(in srgb, var(--arc-300) 22%, transparent);
+  border-radius: 14px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--arc-400) 6%, rgba(8, 7, 5, 0.55)),
+    color-mix(in srgb, var(--arc-400) 3%, rgba(8, 7, 5, 0.40))
+  );
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--arc-200) 8%, transparent),
+    0 10px 28px rgba(0, 0, 0, 0.22);
+}
+.roadmap-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.roadmap-card-icon {
+  color: var(--arc-300);
+  font-size: 0.875rem;
+}
+.roadmap-card-title {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--arc-200);
+}
+.roadmap-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.roadmap-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+}
+.roadmap-dot {
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-muted) 60%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-muted) 12%, transparent);
+}
+.roadmap-item-done .roadmap-dot {
+  background: var(--arc-300);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--arc-300) 28%, transparent);
+}
+.roadmap-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.roadmap-body strong {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0.01em;
+}
+.roadmap-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.roadmap-foot {
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--arc-300) 14%, transparent);
+  font-size: 0.75rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+/* Collapsible raw notes preview — defaults closed so the page leads
+   with the video + structured fields, not a JSON dump. */
+.notes-preview-summary {
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--arc-300);
+  padding: 6px 0;
+  list-style: none;
+}
+.notes-preview-summary::-webkit-details-marker { display: none; }
+.notes-preview-summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform 0.15s;
+}
+.notes-preview-block[open] .notes-preview-summary::before {
+  transform: rotate(90deg);
 }
 
 .secondary-btn {
