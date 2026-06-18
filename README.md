@@ -228,11 +228,34 @@ cd frontend && npm run dev
 
 ## 已知问题与诚实声明
 
-- `app/services/runner.py` 仍是个 1700+ 行的 god class。20+ 次"refactor"只是把代码移到 helper 文件并保留 `self._runner` 回调，**结构耦合没有真改变**，下一轮需要重构。
-- 候选图的多角色一致性在纯 text-to-image provider 上有天花板，单纯叠 prompt / negative prompt 已接近极限。要质变需要 reference image / img2img / LoRA。
-- 增强画质按钮已下线——Kolors 文生图无法做到「同一张图、更高画质」（不同 inference steps 必然产生不同图）。重新生成保留，定位为「换一张」。
+### 1 · Runner 仍是 god class（结构债）
 
-完整问题清单见 [docs/post_refactor_todo.md](docs/post_refactor_todo.md)。
+`app/services/runner.py` 仍是 1700+ 行、108 个方法的单一类。20+ 次 `refactor: extract runner X support` 把代码物理移到 helper 文件，**但每个 helper 都通过 `self._runner.xxx` 回调主类**——耦合一点没断、抽象边界没建立。下一轮需要按职责真正拆开（3–5 天工作量），列在路线图里。
+
+### 2 · 多角色画面在纯文生图上的天花板
+
+当一个场景需要同时出现 2+ 物种（如「小海豹和小乌龟」「兔子和狐狸」），Kolors 这类**纯 text-to-image** 模型经常会：
+- 只画其中一个角色（更常见的物种胜出）
+- 出现身份串扰（兔子背了龟壳、乌龟长出兔耳朵）
+- 角色比例 / 体型互相污染
+
+这不只是 prompt 工程能解决的问题——是 pure text-to-image provider 的**结构性上限**。我在 prompt 层、negative_prompt 层、metadata 选优器层都做了缓解（详见 `docs/post_refactor_todo.md` BUG-004 / 005 / 006），收益已接近极限。
+
+**关键诚实**：这个问题**不止灵感参考预设会遇到**——用户自写「小动物和它的朋友」类多角色主题，路径上同样会翻车。**任何入口触发的多角色场景都受同一物理限制约束。** 要根治需要：
+
+- **Reference image / img2img 一致性**（已预留 schema，需 2–3 天验证）
+- **LoRA per-character**（训练成本高）
+- **换 reference-image-aware provider**（Runway / DALL-E 3，受商业模型可用性约束）
+
+属于 v2 工作。当前阶段已经在 README 顶部用绘本风（单角色为主）的样片做演示，多角色场景**在画面审核中可以手动重生**直到可用为止。
+
+### 3 · 增强画质按钮已下线
+
+Kolors 文生图的物理本质：**同种子 + 不同 inference_steps = 不同图**。"增强画质"按钮承诺"同一张图、更高画质"，但底层做不到。与其骗用户，不如下线。"重新生成"保留并定位为"换一张候选"。完整记录在 [PR #144](https://github.com/jinsie-aitechfun-lab/jinsie-multimodal-generation-workflow/pull/144) 之前的迭代。
+
+---
+
+完整问题清单（含已修复 + 待修复 + P0/P1 优先级标注）见 [docs/post_refactor_todo.md](docs/post_refactor_todo.md)。
 
 ---
 
