@@ -96,12 +96,13 @@
               <button
                 type="button"
                 class="pp-thumb-main"
-                :title="`视频 ${idx + 1}`"
+                :title="historyVideoTooltip(url, idx)"
                 @click="selectVideo(url)"
               >
                 <video class="pp-thumb-video" :src="url" preload="metadata" :muted="true"/>
                 <div class="pp-thumb-overlay"><span class="pp-thumb-play">▶</span></div>
                 <div class="pp-thumb-index">{{ idx + 1 }}</div>
+                <div class="pp-thumb-caption">{{ historyVideoLabel(url, idx) }}</div>
               </button>
               <button
                 type="button"
@@ -179,6 +180,7 @@
               <button
                 type="button"
                 class="pp-hist-card-main"
+                :title="historyVideoTooltip(url, idx)"
                 @click="selectVideo(url)"
               >
                 <div class="pp-hist-card-frame">
@@ -187,7 +189,7 @@
                     <span class="pp-hist-card-play">▶</span>
                   </div>
                 </div>
-                <div class="pp-hist-card-label">视频 {{ idx + 1 }}</div>
+                <div class="pp-hist-card-label">{{ historyVideoLabel(url, idx) }}</div>
               </button>
               <button
                 type="button"
@@ -361,9 +363,18 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
+interface RecentVideoMeta {
+  title?: string
+  topic?: string
+  createdAt?: string
+}
+
 const props = defineProps<{
   finalVideoUrl?: string
   recentVideoUrls?: string[]
+  /** url → { title, topic, createdAt } map. Optional; missing entries
+   *  fall back to "视频 N" / "视频 N (N=index+1)" tooltip. */
+  recentVideoMetadata?: Record<string, RecentVideoMeta>
   renderInFlight?: boolean
   isProcessing?: boolean
   refreshingImages?: boolean
@@ -395,6 +406,44 @@ const emit = defineEmits<{
 function requestDeleteVideo(url: string) {
   if (!url) return
   emit('delete-video', url)
+}
+
+/* History card label — the human-readable subtitle shown beneath the
+   thumbnail. Prefers the LLM-generated story title; falls back to the
+   user's input topic (truncated) ; then to the generic ordinal "视频 N"
+   so cards without any metadata don't go blank. */
+function historyVideoLabel(url: string, fallbackIndex: number): string {
+  const meta = props.recentVideoMetadata?.[url]
+  const title = (meta?.title || '').trim()
+  if (title) return title
+  const topic = (meta?.topic || '').trim()
+  if (topic) {
+    return topic.length > 14 ? `${topic.slice(0, 14)}…` : topic
+  }
+  return `视频 ${fallbackIndex + 1}`
+}
+
+/* History card tooltip — fuller info for hover. Shows title + topic +
+   generation date when available so a user can disambiguate two cards
+   with similar thumbnails. */
+function historyVideoTooltip(url: string, fallbackIndex: number): string {
+  const meta = props.recentVideoMetadata?.[url]
+  const title = (meta?.title || '').trim()
+  const topic = (meta?.topic || '').trim()
+  const createdAt = (meta?.createdAt || '').trim()
+  const parts: string[] = []
+  if (title) parts.push(title)
+  if (topic && topic !== title) parts.push(`主题：${topic}`)
+  if (createdAt) {
+    const dt = new Date(createdAt)
+    if (!Number.isNaN(dt.getTime())) {
+      parts.push(
+        `生成于 ${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')} ${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`,
+      )
+    }
+  }
+  if (parts.length === 0) return `视频 ${fallbackIndex + 1}`
+  return parts.join(' · ')
 }
 
 // ── All unique video URLs (current first, then history) ──
@@ -934,6 +983,12 @@ const doneCount = computed(
   font-weight: 600;
   color: var(--text-muted);
   padding: 0 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* Allow the label to occupy the full card width then truncate so
+     long story titles don't push the card layout. */
+  max-width: 100%;
 }
 
 .pp-hist-card:hover .pp-hist-card-label { color: var(--arc-300); }
@@ -1521,5 +1576,31 @@ const doneCount = computed(
   font-weight: 700;
   color: rgba(255,255,255,0.60);
   font-variant-numeric: tabular-nums;
+}
+
+/* History thumb caption — story title as a 1-line subtitle pinned to
+   the bottom of the thumbnail, on top of a soft gradient scrim so
+   readability survives any cover frame. Falls back to "视频 N" when
+   no metadata is attached, so older entries still look intentional. */
+.pp-thumb-caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 14px 8px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.92);
+  text-align: left;
+  letter-spacing: 0.01em;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    rgba(0, 0, 0, 0.62) 70%
+  );
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
 }
 </style>
