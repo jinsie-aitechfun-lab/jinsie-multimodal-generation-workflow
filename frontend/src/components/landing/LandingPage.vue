@@ -1543,7 +1543,12 @@ function starStyle(i: number) {
      the earlier ~72px gap. Page reads as a connected product flow rather
      than a long magazine spread. */
   padding: 40px 24px 48px;
-  max-width: 1100px;
+  /* Aligned to .landing-hero (1240). Earlier 1100 made the page step
+     in (1240 → 1100 → 1040), reading as a narrowing funnel that
+     wasn't intentional. With 1240 the workflow row, the showcase row
+     and the hero all share one vertical rail; only the CTA bar
+     intentionally pulls in. */
+  max-width: 1240px;
   margin: 0 auto;
 }
 @media (max-width: 1200px) {
@@ -1683,7 +1688,12 @@ function starStyle(i: number) {
      mobile via the media queries below. */
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 22px;
-  max-width: 1080px;
+  /* Bumped from 1080 to 1200 so each card grows to ~293px (16% wider
+     than before). The bigger cards let each auto-playing demo video
+     read at proper cinematic size instead of being a tiny thumbnail.
+     Stays inside the parent .landing-section (now 1240) with breathing
+     room on both sides. */
+  max-width: 1200px;
   margin: 0 auto;
 }
 @media (max-width: 1100px) {
@@ -1967,12 +1977,14 @@ function starStyle(i: number) {
 }
 .foot-content {
   position: relative;
-  /* Widened from 780 → 1040 so the CTA bar aligns with the case grid
-     (1080) and workflow rail above. Removes the previous "sudden narrow
-     band" jump that broke the page's vertical rhythm — now all three
-     below-hero sections terminate at roughly the same invisible vertical
-     edges. */
-  max-width: 1040px;
+  /* Aligned to the case grid (1200) so the CTA bar terminates on the
+     same invisible vertical edges. Previously 1040 (when case grid
+     was 1080); both were bumped together so the vertical rail stays
+     consistent: hero 1240, sections 1240 outer / 1200 case grid /
+     1200 foot. The 40px shoulder on the outer .landing-section gives
+     the cards just enough breathing room to read as "framed in" the
+     section, not flush with it. */
+  max-width: 1200px;
   margin: 0 auto;
   display: flex;
   flex-direction: row;
