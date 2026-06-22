@@ -170,12 +170,29 @@ function main() {
   }
   ok('App.vue: character-mode block does not assign inputPayload.speaker_profiles')
 
+  // Structured characters payload MUST NOT be coupled to voice mode.
+  // The character-mode brace block carries voice-domain concerns only
+  // (character_speaker_profiles); identity-domain fields (structured
+  // characters, main_character_*, secondary_character_*) flow in every
+  // voice mode so a single-narrator story about a structured character
+  // still gets the visual identity lock at story + image-prompt layer.
+  if (/structured_characters_enabled/.test(characterBlock)) {
+    fail(
+      'App.vue: structured_characters_enabled is assigned inside the character-mode block. ' +
+        'It must live in the top-level payload assembly so identity flows in single / multi modes too.',
+    )
+  }
+  ok('App.vue: structured_characters_enabled is not coupled to character voice mode')
+
+  // It still has to be wired SOMEWHERE — the top-level assembly should
+  // gate it on enableStructuredCharacters (the derived flag from the
+  // structured-character form section), not on voiceMode.
   mustInclude(
-    characterBlock,
-    'inputPayload.structured_characters_enabled = enableStructuredCharacters',
-    'Expected structured characters toggle to be wired in character mode.',
+    appVue,
+    'inputPayload.structured_characters_enabled = true',
+    'Expected structured_characters_enabled to be assigned at top-level payload assembly (gated by enableStructuredCharacters).',
   )
-  ok('App.vue: structured_characters_enabled wired in character mode')
+  ok('App.vue: structured_characters_enabled wired at top-level payload assembly')
 
   // ------------------------------------------------------------
   // WorkflowRunPanel.vue mode switching invariants

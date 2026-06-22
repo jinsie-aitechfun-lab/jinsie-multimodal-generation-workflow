@@ -2726,31 +2726,39 @@ async function runWorkflow() {
     }
   }
 
+  // Voice-mode-specific: only character mode needs per-character voice
+  // assignments. This payload is genuinely voice-domain.
   if (form.voiceMode === 'character') {
     inputPayload.character_speaker_profiles = {
       narrator: form.narratorVoiceStyle,
       main_character: form.childVoiceStyle,
       secondary_character: form.motherVoiceStyle,
     }
+  }
 
-    inputPayload.structured_characters_enabled = enableStructuredCharacters
+  // Character-identity payload — flows in EVERY voice mode. Previously
+  // these fields were nested inside the `voiceMode === 'character'`
+  // block, which coupled "who the character is" with "how each character
+  // is voiced". Wrong: character identity (species, name, visual traits)
+  // governs story generation + image-prompt anchoring regardless of
+  // voice configuration. A single-voice narrator can still tell a story
+  // about 波波 the 小海豹 with the structured visual lock attached.
+  if (enableStructuredCharacters) {
+    inputPayload.structured_characters_enabled = true
+    inputPayload.characters = finalCharacters
+  }
 
-    if (enableStructuredCharacters) {
-      inputPayload.characters = finalCharacters
-    }
+  if (mainCharacterDisplay || mainCharacterSpecies) {
+    inputPayload.main_character = mainCharacterSpecies || mainCharacterDisplay
+    inputPayload.main_character_display = mainCharacterDisplay
+    inputPayload.main_character_species = mainCharacterSpecies
+  }
 
-    if (mainCharacterDisplay || mainCharacterSpecies) {
-      inputPayload.main_character = mainCharacterSpecies || mainCharacterDisplay
-      inputPayload.main_character_display = mainCharacterDisplay
-      inputPayload.main_character_species = mainCharacterSpecies
-    }
-
-    if (secondaryCharacterDisplay || secondaryCharacterSpecies) {
-      inputPayload.secondary_character =
-        secondaryCharacterSpecies || secondaryCharacterDisplay
-      inputPayload.secondary_character_display = secondaryCharacterDisplay
-      inputPayload.secondary_character_species = secondaryCharacterSpecies
-    }
+  if (secondaryCharacterDisplay || secondaryCharacterSpecies) {
+    inputPayload.secondary_character =
+      secondaryCharacterSpecies || secondaryCharacterDisplay
+    inputPayload.secondary_character_display = secondaryCharacterDisplay
+    inputPayload.secondary_character_species = secondaryCharacterSpecies
   }
 
   const stepsSet = new Set(selectedSteps.value)
