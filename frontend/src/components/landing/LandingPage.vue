@@ -26,7 +26,7 @@
         class="landing-enter-studio"
         @click="goStudio"
       >
-        <span class="landing-enter-studio-text">Enter Studio</span>
+        <span class="landing-enter-studio-text">进入 Studio</span>
         <span class="landing-enter-studio-arrow" aria-hidden="true">→</span>
       </button>
     </div>
@@ -70,14 +70,14 @@
           <div class="hero-cta-row">
             <button type="button" class="hero-primary" @click="goStudio">
               <span class="hero-primary-icon" aria-hidden="true">✦</span>
-              Start Creating
+              开始创作
             </button>
             <button
               type="button"
               class="hero-secondary"
               @click="scrollTo('workflow')"
             >
-              View Workflow
+              查看工作流
             </button>
           </div>
 
@@ -715,16 +715,16 @@ function startFooterTypewriter() {
       }
       if (charIndex >= phrase.length) {
         phase = 'holdFull'
-        footTypeTimer = setTimeout(tick, 1500)
+        footTypeTimer = setTimeout(tick, 2400)
         return
       }
-      footTypeTimer = setTimeout(tick, 70)
+      footTypeTimer = setTimeout(tick, 280)
       return
     }
 
     if (phase === 'holdFull') {
       phase = 'delete'
-      footTypeTimer = setTimeout(tick, 35)
+      footTypeTimer = setTimeout(tick, 140)
       return
     }
 
@@ -733,17 +733,17 @@ function startFooterTypewriter() {
       footTitleTyped.value = phrase.slice(0, charIndex)
       if (charIndex <= 0) {
         phase = 'holdEmpty'
-        footTypeTimer = setTimeout(tick, 350)
+        footTypeTimer = setTimeout(tick, 700)
         return
       }
-      footTypeTimer = setTimeout(tick, 35)
+      footTypeTimer = setTimeout(tick, 140)
       return
     }
 
     // phase === 'holdEmpty' — advance phrase, start typing again.
     phraseIndex = (phraseIndex + 1) % FOOT_TITLES.length
     phase = 'type'
-    footTypeTimer = setTimeout(tick, 70)
+    footTypeTimer = setTimeout(tick, 280)
   }
 
   tick()
@@ -2182,7 +2182,19 @@ function starStyle(i: number) {
 }
 .foot-copy {
   display: inline-flex;
-  align-items: baseline;
+  /* `center` instead of `baseline`: the caret span has no text so
+     its baseline is at the bottom of the inline-block, while the
+     typed-text span's baseline is at the cap-height. Baseline align
+     made the caret hang ~3px below the text. Centering the flex
+     items vertically puts the caret middle on the text middle —
+     reads as properly aligned. */
+  align-items: center;
+  /* Reserve one full line of height regardless of typed-text length.
+     Without this, the line collapses to ~caret height (1.05em) when
+     the typewriter is mid-delete or empty, causing the whole CTA bar
+     to "bounce" between phrase cycles. 1.6em matches the default
+     line-height of the typography below. */
+  min-height: 1.6em;
 }
 .foot-copy-text {
   /* Match the existing foot-copy typography (kept lower in the file) —
@@ -2196,10 +2208,13 @@ function starStyle(i: number) {
 .foot-copy-cursor {
   display: inline-block;
   width: 2px;
-  height: 1.05em;
-  margin-left: 2px;
+  /* Slightly shorter than a full em — caret should sit between
+     cap-height and descender, not span the entire line-box. With
+     the parent's `align-items: center` this lands as a properly
+     centered short bar relative to the typed text. */
+  height: 0.95em;
+  margin-left: 3px;
   background: var(--arc-300);
-  vertical-align: -0.12em;
   animation: foot-caret-blink 1s steps(1) infinite;
   transition: opacity 0.35s ease;
 }
