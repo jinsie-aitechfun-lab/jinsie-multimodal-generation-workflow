@@ -26,7 +26,7 @@
         class="landing-enter-studio"
         @click="goStudio"
       >
-        <span class="landing-enter-studio-text">Enter Studio</span>
+        <span class="landing-enter-studio-text">进入 Studio</span>
         <span class="landing-enter-studio-arrow" aria-hidden="true">→</span>
       </button>
     </div>
@@ -70,14 +70,14 @@
           <div class="hero-cta-row">
             <button type="button" class="hero-primary" @click="goStudio">
               <span class="hero-primary-icon" aria-hidden="true">✦</span>
-              Start Creating
+              开始创作
             </button>
             <button
               type="button"
               class="hero-secondary"
               @click="scrollTo('workflow')"
             >
-              View Workflow
+              查看工作流
             </button>
           </div>
 
@@ -231,6 +231,7 @@
               loop
               playsinline
               preload="metadata"
+              @loadedmetadata="onCaseVideoMetadata(caseItem.id, $event)"
             ></video>
             <!-- MOON: night sky + crescent moon (bitten) + tiny mouse -->
             <svg
@@ -452,11 +453,11 @@
 
           <div class="case-meta">
             <div class="case-meta-info" aria-hidden="true">
-              <span class="case-meta-duration">60s</span>
+              <span class="case-meta-duration">
+                {{ caseDurations[caseItem.id] || '—' }}
+              </span>
               <span class="case-meta-dot">·</span>
-              <span>画面风格</span>
-              <span class="case-meta-dot">·</span>
-              <span>AI 生成</span>
+              <span>{{ caseItem.provenance || 'AI 自动生成' }}</span>
             </div>
             <div class="case-tag-row">
               <span
@@ -488,7 +489,6 @@
           <div
             class="foot-copy"
             :aria-label="FOOT_TITLE_FULL"
-            :class="{ 'foot-copy--done': footTitleTyped === FOOT_TITLE_FULL }"
           >
             <span class="foot-copy-text" aria-hidden="true">{{ footTitleTyped }}</span><span
               class="foot-copy-cursor"
@@ -496,15 +496,15 @@
             ></span>
           </div>
           <!-- Value-prop sub-tagline. Fades + slides in once the title
-               finishes typing. Pipe separators are decorative, NOT in
-               the read text — `aria-hidden="true"` on each separator. -->
+               finishes typing the first phrase (then stays in — we
+               don't pulse it in/out alongside every delete cycle). -->
           <div
             class="foot-subtitle"
-            :class="{ 'foot-subtitle--in': footTitleTyped === FOOT_TITLE_FULL }"
+            :class="{ 'foot-subtitle--in': footTitleDone }"
           >
             <span>1 个主题</span>
             <span class="foot-subtitle-sep" aria-hidden="true">·</span>
-            <span>60 秒成片</span>
+            <span>故事 + 画面 + 配音</span>
             <span class="foot-subtitle-sep" aria-hidden="true">·</span>
             <span>完全免费</span>
           </div>
@@ -650,34 +650,102 @@ const showcaseVideoRef = ref<HTMLVideoElement | null>(null)
 const caseVideoRefs = ref<HTMLVideoElement[]>([])
 let caseVideoObserver: IntersectionObserver | null = null
 
+// Real video durations read from the <video> element's metadata as
+// soon as each clip's metadata loads. Keyed by case id so the meta-
+// row in the template can stop hardcoding "60s" and reflect the
+// actual length of each sample (the reference clip is ~2:30; the AI
+// samples sit around 50-90s depending on story length).
+const caseDurations = ref<Record<string, string>>({})
+function onCaseVideoMetadata(caseId: string, event: Event) {
+  const video = event.target as HTMLVideoElement | null
+  if (!video || !Number.isFinite(video.duration) || video.duration <= 0) return
+  caseDurations.value = {
+    ...caseDurations.value,
+    [caseId]: formatVideoDuration(video.duration),
+  }
+}
+function formatVideoDuration(seconds: number): string {
+  const total = Math.round(seconds)
+  if (total < 60) return `${total}s`
+  const m = Math.floor(total / 60)
+  const s = total % 60
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
 // ── Footer typewriter (CTA) ─────────────────────────────────────────
-// The footer copy types in character-by-character once it scrolls into
-// view. Sub-tagline fades in after the title finishes. Only runs once
-// per page life (the "已播过" flag below) — replaying every scroll
-// feels gimmicky on the third pass.
-const FOOT_TITLE_FULL = '开始创作你的故事视频'
+// Loops through several value-prop phrasings: type → hold → backspace
+// → hold → next. Starts on viewport entry; never stops. The deliberate
+// pace (70ms type, 35ms delete) plus the 1.5s pause at full text keeps
+// it engaging without being twitchy.
+const FOOT_TITLES = [
+  '开始创作你的故事视频',
+  '把一句主题变成完整动画',
+  '让 AI 替你讲一个新故事',
+]
+// First entry used as the static aria-label so screen readers don't
+// get the rotating loop spoken every cycle.
+const FOOT_TITLE_FULL = FOOT_TITLES[0]
 const footTitleTyped = ref('')
+const footTitleDone = ref(false)
 const footContentRef = ref<HTMLElement | null>(null)
 let footTypeTimer: ReturnType<typeof setTimeout> | null = null
 let footIntersectObserver: IntersectionObserver | null = null
-let footHasTyped = false
+let footHasStarted = false
 
 function startFooterTypewriter() {
-  if (footHasTyped) return
-  footHasTyped = true
-  let i = 0
+  if (footHasStarted) return
+  footHasStarted = true
+
+  let phraseIndex = 0
+  let charIndex = 0
+  let phase: 'type' | 'holdFull' | 'delete' | 'holdEmpty' = 'type'
+
   const tick = () => {
-    if (i >= FOOT_TITLE_FULL.length) {
-      footTypeTimer = null
+    const phrase = FOOT_TITLES[phraseIndex]
+
+    if (phase === 'type') {
+      charIndex += 1
+      footTitleTyped.value = phrase.slice(0, charIndex)
+      // First phrase only — mark "title done" so the sub-tagline can
+      // fade in. Once it's in, leave it in even as the typewriter
+      // keeps cycling — pulsing the sub-tagline in and out alongside
+      // every delete would be motion-overload.
+      if (!footTitleDone.value && charIndex === phrase.length) {
+        footTitleDone.value = true
+      }
+      if (charIndex >= phrase.length) {
+        phase = 'holdFull'
+        footTypeTimer = setTimeout(tick, 2400)
+        return
+      }
+      footTypeTimer = setTimeout(tick, 280)
       return
     }
-    footTitleTyped.value = FOOT_TITLE_FULL.slice(0, i + 1)
-    i += 1
-    // 70ms per char ≈ 700ms total for the 10-char title — long enough
-    // to feel deliberate, short enough that a reader skimming the
-    // footer doesn't have to wait.
-    footTypeTimer = setTimeout(tick, 70)
+
+    if (phase === 'holdFull') {
+      phase = 'delete'
+      footTypeTimer = setTimeout(tick, 140)
+      return
+    }
+
+    if (phase === 'delete') {
+      charIndex -= 1
+      footTitleTyped.value = phrase.slice(0, charIndex)
+      if (charIndex <= 0) {
+        phase = 'holdEmpty'
+        footTypeTimer = setTimeout(tick, 700)
+        return
+      }
+      footTypeTimer = setTimeout(tick, 140)
+      return
+    }
+
+    // phase === 'holdEmpty' — advance phrase, start typing again.
+    phraseIndex = (phraseIndex + 1) % FOOT_TITLES.length
+    phase = 'type'
+    footTypeTimer = setTimeout(tick, 280)
   }
+
   tick()
 }
 
@@ -827,6 +895,10 @@ type CaseItem = {
   /** Marks the entry as a Reference Showcase (inspiration sample) so the
       modal renders the "灵感样片" kicker and Reference framing. */
   isReference?: boolean
+  /** Provenance label shown in the meta row under the poster.
+      AI-generated samples render "AI 自动生成"; the reference clip
+      renders "手工参考" since it was assembled outside the pipeline. */
+  provenance?: string
 }
 const caseList: CaseItem[] = [
   {
@@ -837,6 +909,7 @@ const caseList: CaseItem[] = [
     tone: 'moon',
     badge: 'REFERENCE',
     isReference: true,
+    provenance: '手工参考',
     videoSrc: '/showcase/mouse-moon-reference.mp4',
     description:
       '《小老鼠吃月亮》是一支原创亲子故事参考样片，也是 Jinsie AI Video Studio 的产品灵感来源。该样片通过多工具手工流程完成，用于展示从故事脚本、分镜画面、配音字幕到视频成片的目标创作效果。',
@@ -847,6 +920,7 @@ const caseList: CaseItem[] = [
     subtitle: '原创亲子故事',
     tags: ['插画风', '亲子'],
     tone: 'forest',
+    provenance: 'AI 自动生成',
     videoSrc: '/showcase/forest-companions.mp4',
   },
   {
@@ -855,6 +929,7 @@ const caseList: CaseItem[] = [
     subtitle: '池塘里的成长',
     tags: ['原创故事', '成长'],
     tone: 'ocean',
+    provenance: 'AI 自动生成',
     videoSrc: '/showcase/tadpole-adventure.mp4',
   },
   {
@@ -863,6 +938,7 @@ const caseList: CaseItem[] = [
     subtitle: '奇幻旅程',
     tags: ['奇幻故事', '成长'],
     tone: 'train',
+    provenance: 'AI 自动生成',
     videoSrc: '/showcase/starlight-train.mp4',
   },
 ]
@@ -2106,7 +2182,19 @@ function starStyle(i: number) {
 }
 .foot-copy {
   display: inline-flex;
-  align-items: baseline;
+  /* `center` instead of `baseline`: the caret span has no text so
+     its baseline is at the bottom of the inline-block, while the
+     typed-text span's baseline is at the cap-height. Baseline align
+     made the caret hang ~3px below the text. Centering the flex
+     items vertically puts the caret middle on the text middle —
+     reads as properly aligned. */
+  align-items: center;
+  /* Reserve one full line of height regardless of typed-text length.
+     Without this, the line collapses to ~caret height (1.05em) when
+     the typewriter is mid-delete or empty, causing the whole CTA bar
+     to "bounce" between phrase cycles. 1.6em matches the default
+     line-height of the typography below. */
+  min-height: 1.6em;
 }
 .foot-copy-text {
   /* Match the existing foot-copy typography (kept lower in the file) —
@@ -2120,10 +2208,13 @@ function starStyle(i: number) {
 .foot-copy-cursor {
   display: inline-block;
   width: 2px;
-  height: 1.05em;
-  margin-left: 2px;
+  /* Slightly shorter than a full em — caret should sit between
+     cap-height and descender, not span the entire line-box. With
+     the parent's `align-items: center` this lands as a properly
+     centered short bar relative to the typed text. */
+  height: 0.95em;
+  margin-left: 3px;
   background: var(--arc-300);
-  vertical-align: -0.12em;
   animation: foot-caret-blink 1s steps(1) infinite;
   transition: opacity 0.35s ease;
 }
