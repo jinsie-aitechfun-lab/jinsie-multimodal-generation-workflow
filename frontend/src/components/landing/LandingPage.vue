@@ -216,8 +216,22 @@
           :class="['case-card', `case-card--${caseItem.tone}`]"
           @click="openShowcaseCase(caseItem)"
         >
-          <!-- Thumbnail surface — per-tone illustration -->
+          <!-- Thumbnail surface — auto-playing video cover when a real
+               sample exists; falls back to the hand-drawn SVG illustration
+               below if the video fails to load or is missing. -->
           <div :class="['case-poster', `case-poster--${caseItem.tone}`]" aria-hidden="true">
+            <video
+              v-if="caseItem.videoSrc"
+              class="case-video"
+              ref="caseVideoRefs"
+              :src="caseItem.videoSrc"
+              :data-case-id="caseItem.id"
+              autoplay
+              muted
+              loop
+              playsinline
+              preload="metadata"
+            ></video>
             <!-- MOON: night sky + crescent moon (bitten) + tiny mouse -->
             <svg
               v-if="caseItem.tone === 'moon'"
@@ -599,6 +613,15 @@ function goStudio() {
 const activeShowcaseCase = ref<CaseItem | null>(null)
 const showcaseVideoRef = ref<HTMLVideoElement | null>(null)
 
+// Refs collected from `v-for` on the case grid. Vue 3 binds the same
+// template ref to an array when used inside v-for; we use it to drive
+// the IntersectionObserver below (pause off-screen videos so a long
+// scroll doesn't keep 4 mp4 decoders alive). The default browser
+// autoplay will resume video playback automatically when the element
+// re-enters the viewport.
+const caseVideoRefs = ref<HTMLVideoElement[]>([])
+let caseVideoObserver: IntersectionObserver | null = null
+
 function openShowcaseCase(item: CaseItem) {
   if (!item.videoSrc) {
     goStudio()
@@ -633,9 +656,43 @@ function handleShowcaseKeydown(e: KeyboardEvent) {
 
 onMounted(() => {
   window.addEventListener('keydown', handleShowcaseKeydown)
+
+  // Pause case-grid videos when scrolled out of view so a long page
+  // doesn't keep 4 mp4 decoders running in the background. Re-plays
+  // automatically when they scroll back in. IntersectionObserver is
+  // ~universally supported on the target browsers; guarded with
+  // typeof check for SSR / older runtimes that fall through without it.
+  if (typeof IntersectionObserver !== 'undefined' && caseVideoRefs.value.length > 0) {
+    caseVideoObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const video = entry.target as HTMLVideoElement
+          if (entry.isIntersecting) {
+            // .play() returns a Promise; swallow autoplay rejection silently
+            // (browsers may block autoplay in obscure contexts). Muted video
+            // is allowed by default so this almost always resolves.
+            const result = video.play()
+            if (result && typeof result.then === 'function') {
+              result.catch(() => { /* autoplay blocked — no-op */ })
+            }
+          } else {
+            video.pause()
+          }
+        }
+      },
+      { threshold: 0.25 },
+    )
+    for (const video of caseVideoRefs.value) {
+      caseVideoObserver.observe(video)
+    }
+  }
 })
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleShowcaseKeydown)
+  if (caseVideoObserver) {
+    caseVideoObserver.disconnect()
+    caseVideoObserver = null
+  }
 })
 
 function scrollTo(id: string) {
@@ -1486,7 +1543,12 @@ function starStyle(i: number) {
      the earlier ~72px gap. Page reads as a connected product flow rather
      than a long magazine spread. */
   padding: 40px 24px 48px;
-  max-width: 1100px;
+  /* Aligned to .landing-hero (1240). Earlier 1100 made the page step
+     in (1240 → 1100 → 1040), reading as a narrowing funnel that
+     wasn't intentional. With 1240 the workflow row, the showcase row
+     and the hero all share one vertical rail; only the CTA bar
+     intentionally pulls in. */
+  max-width: 1240px;
   margin: 0 auto;
 }
 @media (max-width: 1200px) {
@@ -1626,7 +1688,12 @@ function starStyle(i: number) {
      mobile via the media queries below. */
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 22px;
-  max-width: 1080px;
+  /* Bumped from 1080 to 1200 so each card grows to ~293px (16% wider
+     than before). The bigger cards let each auto-playing demo video
+     read at proper cinematic size instead of being a tiny thumbnail.
+     Stays inside the parent .landing-section (now 1240) with breathing
+     room on both sides. */
+  max-width: 1200px;
   margin: 0 auto;
 }
 @media (max-width: 1100px) {
@@ -1727,6 +1794,34 @@ function starStyle(i: number) {
     #060914 60%,
     #03060e 100%
   );
+}
+
+/* Auto-playing video cover. Sits on top of the SVG fallback (which
+   stays in the DOM as a graceful degradation surface) with z-index 2
+   and object-fit:cover so any aspect-mismatch is centre-cropped
+   cleanly. Slight initial fade-in so the swap from SVG to video
+   doesn't pop. */
+.case-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  z-index: 2;
+  background: transparent;
+  pointer-events: none;
+  transition:
+    transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 0.4s ease;
+  animation: case-video-in 0.55s ease both;
+}
+.case-card:hover .case-video {
+  transform: scale(1.03);
+}
+@keyframes case-video-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 .case-svg {
@@ -1882,12 +1977,14 @@ function starStyle(i: number) {
 }
 .foot-content {
   position: relative;
-  /* Widened from 780 → 1040 so the CTA bar aligns with the case grid
-     (1080) and workflow rail above. Removes the previous "sudden narrow
-     band" jump that broke the page's vertical rhythm — now all three
-     below-hero sections terminate at roughly the same invisible vertical
-     edges. */
-  max-width: 1040px;
+  /* Aligned to the case grid (1200) so the CTA bar terminates on the
+     same invisible vertical edges. Previously 1040 (when case grid
+     was 1080); both were bumped together so the vertical rail stays
+     consistent: hero 1240, sections 1240 outer / 1200 case grid /
+     1200 foot. The 40px shoulder on the outer .landing-section gives
+     the cards just enough breathing room to read as "framed in" the
+     section, not flush with it. */
+  max-width: 1200px;
   margin: 0 auto;
   display: flex;
   flex-direction: row;
