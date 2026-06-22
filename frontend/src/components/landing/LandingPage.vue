@@ -479,8 +479,36 @@
 
     <!-- ── Footer banner ── -->
     <footer class="landing-foot">
-      <div class="foot-content">
-        <div class="foot-copy">开始创作你的故事视频</div>
+      <div class="foot-content" ref="footContentRef">
+        <div class="foot-text">
+          <!-- Typewriter title. `aria-label` carries the full text so
+               screen readers don't read it one character at a time;
+               the visible <span> holds the progressive substring and
+               the cursor blinks until the user moves on. -->
+          <div
+            class="foot-copy"
+            :aria-label="FOOT_TITLE_FULL"
+            :class="{ 'foot-copy--done': footTitleTyped === FOOT_TITLE_FULL }"
+          >
+            <span class="foot-copy-text" aria-hidden="true">{{ footTitleTyped }}</span><span
+              class="foot-copy-cursor"
+              aria-hidden="true"
+            ></span>
+          </div>
+          <!-- Value-prop sub-tagline. Fades + slides in once the title
+               finishes typing. Pipe separators are decorative, NOT in
+               the read text — `aria-hidden="true"` on each separator. -->
+          <div
+            class="foot-subtitle"
+            :class="{ 'foot-subtitle--in': footTitleTyped === FOOT_TITLE_FULL }"
+          >
+            <span>1 个主题</span>
+            <span class="foot-subtitle-sep" aria-hidden="true">·</span>
+            <span>60 秒成片</span>
+            <span class="foot-subtitle-sep" aria-hidden="true">·</span>
+            <span>完全免费</span>
+          </div>
+        </div>
         <button type="button" class="foot-cta" @click="goStudio">
           进入 Studio
           <span class="foot-cta-arrow">→</span>
@@ -622,6 +650,37 @@ const showcaseVideoRef = ref<HTMLVideoElement | null>(null)
 const caseVideoRefs = ref<HTMLVideoElement[]>([])
 let caseVideoObserver: IntersectionObserver | null = null
 
+// ── Footer typewriter (CTA) ─────────────────────────────────────────
+// The footer copy types in character-by-character once it scrolls into
+// view. Sub-tagline fades in after the title finishes. Only runs once
+// per page life (the "已播过" flag below) — replaying every scroll
+// feels gimmicky on the third pass.
+const FOOT_TITLE_FULL = '开始创作你的故事视频'
+const footTitleTyped = ref('')
+const footContentRef = ref<HTMLElement | null>(null)
+let footTypeTimer: ReturnType<typeof setTimeout> | null = null
+let footIntersectObserver: IntersectionObserver | null = null
+let footHasTyped = false
+
+function startFooterTypewriter() {
+  if (footHasTyped) return
+  footHasTyped = true
+  let i = 0
+  const tick = () => {
+    if (i >= FOOT_TITLE_FULL.length) {
+      footTypeTimer = null
+      return
+    }
+    footTitleTyped.value = FOOT_TITLE_FULL.slice(0, i + 1)
+    i += 1
+    // 70ms per char ≈ 700ms total for the 10-char title — long enough
+    // to feel deliberate, short enough that a reader skimming the
+    // footer doesn't have to wait.
+    footTypeTimer = setTimeout(tick, 70)
+  }
+  tick()
+}
+
 function openShowcaseCase(item: CaseItem) {
   if (!item.videoSrc) {
     goStudio()
@@ -686,12 +745,43 @@ onMounted(() => {
       caseVideoObserver.observe(video)
     }
   }
+
+  // Footer typewriter — fire once when the footer scrolls into view.
+  // threshold:0.35 means the user has to actually be looking at the
+  // CTA bar before it starts; 0.0 would type before it's visible and
+  // the user would scroll down to find a completed line.
+  if (typeof IntersectionObserver !== 'undefined' && footContentRef.value) {
+    footIntersectObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            startFooterTypewriter()
+            // One-shot — disconnect so this never replays on scroll back.
+            if (footIntersectObserver) {
+              footIntersectObserver.disconnect()
+              footIntersectObserver = null
+            }
+          }
+        }
+      },
+      { threshold: 0.35 },
+    )
+    footIntersectObserver.observe(footContentRef.value)
+  }
 })
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleShowcaseKeydown)
   if (caseVideoObserver) {
     caseVideoObserver.disconnect()
     caseVideoObserver = null
+  }
+  if (footIntersectObserver) {
+    footIntersectObserver.disconnect()
+    footIntersectObserver = null
+  }
+  if (footTypeTimer) {
+    clearTimeout(footTypeTimer)
+    footTypeTimer = null
   }
 })
 
@@ -2007,10 +2097,73 @@ function starStyle(i: number) {
     0 16px 42px rgba(0, 0, 0, 0.24);
   overflow: hidden;
 }
-.foot-copy {
+.foot-text {
   flex: 1 1 auto;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
+.foot-copy {
+  display: inline-flex;
+  align-items: baseline;
+}
+.foot-copy-text {
+  /* Match the existing foot-copy typography (kept lower in the file) —
+     this span carries the visible characters while the cursor span
+     below blinks alongside. */
+  display: inline;
+}
+/* Blinking caret — vertical bar in the arc gold accent. Fades out
+   once the title has finished typing so the sub-tagline gets the
+   reader's attention next. */
+.foot-copy-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 2px;
+  background: var(--arc-300);
+  vertical-align: -0.12em;
+  animation: foot-caret-blink 1s steps(1) infinite;
+  transition: opacity 0.35s ease;
+}
+.foot-copy--done .foot-copy-cursor {
+  opacity: 0;
+  /* Stop the blink once the title is done so a static "0 opacity"
+     element doesn't keep repainting every second. */
+  animation: none;
+}
+@keyframes foot-caret-blink {
+  0%, 49%   { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+/* Value-prop sub-tagline. Hidden until the title finishes; fades in
+   + lifts up 6px so it reads as "earned" content rather than a
+   second static line. */
+.foot-subtitle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  opacity: 0;
+  transform: translateY(6px);
+  transition:
+    opacity 0.5s ease 0.15s,
+    transform 0.5s ease 0.15s;
+}
+.foot-subtitle--in {
+  opacity: 1;
+  transform: translateY(0);
+}
+.foot-subtitle-sep {
+  color: color-mix(in srgb, var(--arc-300) 60%, transparent);
+}
+
 .foot-cta {
   flex: 0 0 auto;
 }
@@ -2024,7 +2177,13 @@ function starStyle(i: number) {
     gap: 16px;
     padding: 22px 24px 22px;
   }
-  .foot-copy { flex: 0 0 auto; }
+  .foot-text {
+    flex: 0 0 auto;
+    align-items: center;
+  }
+  .foot-subtitle {
+    justify-content: center;
+  }
 }
 .foot-content::before {
   content: '';
