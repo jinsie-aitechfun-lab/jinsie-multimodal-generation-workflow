@@ -274,13 +274,13 @@ const TEMPLATES: InspirationItem[] = [
     icon: '🌙',
     preview: [
       { label: '故事种子', value: '夜幕降临，小动物各自回家，星星眨眼' },
-      { label: '时长', value: '90 秒' },
+      { label: '时长', value: '60 秒' },
       { label: '旁白配音', value: '故事妈妈' },
     ],
     prefill: {
       topic:
         '讲一个节奏舒缓的睡前儿童故事。夜幕降临，小动物们各自回到温暖的家。月亮升起，星星眨眼，整片森林安静下来，小白兔依偎着妈妈轻轻闭上眼睛。',
-      durationSec: 90,
+      durationSec: 60,
       voiceStyle: 'warm_mother',
       narratorVoiceStyle: 'warm_mother',
     },

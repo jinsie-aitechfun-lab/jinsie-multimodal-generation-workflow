@@ -329,13 +329,17 @@ function pushRecentFinalVideoUrl(url: string, meta?: RecentVideoMeta) {
     ...recentFinalVideoUrls.value.filter((item) => item !== u),
   ].slice(0, 10)
 
-  // Merge new metadata over any existing entry (so a later push with
-  // richer info upgrades the previous record rather than wiping it).
-  if (meta) {
-    const existing = recentVideoMetadata.value[u] || {}
+  // First-write-wins: metadata is set ONLY when a URL is brand new in
+  // the map. Re-applies of the same workflow (e.g. tab nav, SPA mount
+  // restoration) must not overwrite the topic with whatever the form
+  // currently holds — otherwise a user who generated 「小海豹」then
+  // edited the form to 「小兔子」would see the seal card's tooltip
+  // suddenly say "rabbit". The topic-at-time-of-generation is what
+  // history wants to preserve, not the live form value.
+  if (meta && !recentVideoMetadata.value[u]) {
     recentVideoMetadata.value = {
       ...recentVideoMetadata.value,
-      [u]: { ...existing, ...meta },
+      [u]: meta,
     }
   }
   // Drop metadata entries whose URL is no longer in the list so the
