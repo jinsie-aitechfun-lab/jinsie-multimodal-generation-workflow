@@ -754,6 +754,11 @@ function setExampleTopic(topic: string) {
 // to confirm anything happened.
 function onApplyInspiration(item: InspirationItem) {
   workflowForm.value = { ...workflowForm.value, ...item.prefill }
+  // Snapshot the topic-at-fill-time so the "topic changed, characters
+  // may not match" warning doesn't fire immediately after the preset
+  // applied (topic + characters were filled *together*, they're in
+  // sync by construction).
+  topicAtCharacterFill.value = String(workflowForm.value.topic || '')
   activeTab.value = 'run'
   // Defer the scroll until Vue has rendered the run tab, otherwise the
   // form anchor doesn't exist yet.
@@ -763,6 +768,90 @@ function onApplyInspiration(item: InspirationItem) {
       (anchor as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
   })
+}
+
+// ── Topic-changed-but-characters-still-stale warning ────────────────
+//
+// When the user changes the topic significantly after structured
+// character fields are already populated (e.g. they applied the
+// 「波波·小海豹」preset then later changed topic to "讲一个小兔子
+// 的故事"), the form ends up in a self-contradictory state — the
+// generation result will mix species from the preset character with
+// the new topic intent.
+//
+// Detection: compare the live topic against `topicAtCharacterFill`,
+// the snapshot taken either at preset-apply or at the last time the
+// user dismissed this warning. If the first 20 characters differ AND
+// any structured character field is populated, surface a confirmation
+// modal asking the user to either clear or keep.
+
+const topicAtCharacterFill = ref<string>('')
+const topicChangeWarningOpen = ref<boolean>(false)
+let topicChangeDebounce: ReturnType<typeof setTimeout> | null = null
+
+const hasCharacterFields = computed<boolean>(() => {
+  const f = workflowForm.value || {}
+  return Boolean(
+    (f.primaryCharacterDisplayName || '').trim() ||
+      (f.primaryCharacterSpecies || '').trim() ||
+      (f.primaryCharacterVisualTraits || '').trim() ||
+      (f.secondaryCharacterDisplayName || '').trim() ||
+      (f.secondaryCharacterSpecies || '').trim() ||
+      (f.secondaryCharacterVisualTraits || '').trim(),
+  )
+})
+
+/** Two topics are "significantly different" iff their first 20
+ *  characters don't match. Picked 20 because:
+ *  - typo fixes / appended phrases usually keep the prefix intact
+ *  - a full rewrite reliably changes the opening
+ *  - cheap to compute, no Levenshtein nonsense
+ */
+function topicIsSignificantlyDifferent(a: string, b: string): boolean {
+  const sa = String(a || '').trim()
+  const sb = String(b || '').trim()
+  if (sa === sb) return false
+  if (!sa || !sb) return true
+  return sa.slice(0, 20) !== sb.slice(0, 20)
+}
+
+watch(
+  () => workflowForm.value?.topic || '',
+  (newTopic) => {
+    if (topicChangeDebounce) clearTimeout(topicChangeDebounce)
+    // 1s after the user stops typing — long enough to feel "they
+    // committed" but short enough that they remember which edit
+    // we're warning about.
+    topicChangeDebounce = setTimeout(() => {
+      if (!hasCharacterFields.value) return
+      if (!topicIsSignificantlyDifferent(newTopic, topicAtCharacterFill.value)) return
+      topicChangeWarningOpen.value = true
+    }, 1000)
+  },
+)
+
+function clearCharacterFieldsAfterTopicChange() {
+  workflowForm.value = {
+    ...workflowForm.value,
+    structuredCharactersEnabled: false,
+    primaryCharacterDisplayName: '',
+    primaryCharacterSpecies: '',
+    primaryCharacterVisualTraits: '',
+    primaryCharacterForbiddenTraits: '',
+    secondaryCharacterDisplayName: '',
+    secondaryCharacterSpecies: '',
+    secondaryCharacterVisualTraits: '',
+    secondaryCharacterForbiddenTraits: '',
+  }
+  topicAtCharacterFill.value = String(workflowForm.value.topic || '')
+  topicChangeWarningOpen.value = false
+}
+
+function keepCharacterFieldsAfterTopicChange() {
+  // Re-snapshot so we don't keep nagging on every subsequent keystroke.
+  // The user has made a conscious decision; respect it for *this* topic.
+  topicAtCharacterFill.value = String(workflowForm.value.topic || '')
+  topicChangeWarningOpen.value = false
 }
 
 onMounted(() => {
@@ -814,6 +903,12 @@ onMounted(() => {
       workflowForm.value = { ...DEFAULT_WORKFLOW_FORM, ...savedForm }
     } catch { /* ignore malformed */ }
   }
+
+  // Snapshot the restored topic so the watcher's first emit doesn't
+  // immediately trigger the "topic changed" warning. Without this the
+  // baseline starts as empty string, so any saved topic looks like a
+  // dramatic change on first paint and pops the modal.
+  topicAtCharacterFill.value = String(workflowForm.value.topic || '')
 
   const savedSessionId = localStorage.getItem(STORAGE_KEY_SESSION)
   if (savedSessionId) {
@@ -3388,6 +3483,43 @@ async function runWorkflow() {
           <div class="confirm-actions">
             <button class="confirm-btn confirm-btn-ghost" @click="cancelDeleteRecentVideo">取消</button>
             <button class="confirm-btn confirm-btn-primary" @click="performDeleteRecentVideo">删除</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <!-- Topic-changed-but-characters-stale warning. Fires 1s after the
+       user stops editing the topic IF structured character fields are
+       populated AND the new topic's opening differs significantly
+       from the snapshot. Either action updates the snapshot so we
+       don't keep nagging on this same edit. Own <Transition> wrapper
+       because Vue's <Transition> requires exactly one child. -->
+  <Teleport to="body">
+    <Transition name="confirm-fade">
+      <div
+        v-if="topicChangeWarningOpen"
+        class="confirm-overlay"
+        role="dialog"
+        aria-modal="true"
+        @click.self="keepCharacterFieldsAfterTopicChange"
+      >
+        <div class="confirm-dialog">
+          <h3 class="confirm-title">主题变了，要清空已填的角色配置吗？</h3>
+          <p class="confirm-message">
+            你刚修改了故事主题，但角色名 / 物种 / 外观这些字段还停留在之前的设定。
+            如果新主题里的主角跟原来不同（比如从"小海豹"换成"小兔子"），
+            建议清空让系统按新主题自动推断；如果只是润色文字、主角不变，可以保留。
+          </p>
+          <div class="confirm-actions">
+            <button
+              class="confirm-btn confirm-btn-ghost"
+              @click="keepCharacterFieldsAfterTopicChange"
+            >保留角色</button>
+            <button
+              class="confirm-btn confirm-btn-primary"
+              @click="clearCharacterFieldsAfterTopicChange"
+            >清空角色</button>
           </div>
         </div>
       </div>

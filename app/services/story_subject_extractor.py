@@ -64,6 +64,31 @@ def _clean_piece(value: str) -> str:
     return text.strip(" \t\n\r，。！？、,.!?：:；;“”\"'《》")
 
 
+def _starts_with_verb(text: str) -> bool:
+    """True iff jieba's first POS-tagged token is a verb.
+
+    Used to short-circuit subject extraction on *instruction-style*
+    topics like "讲一个节奏舒缓的睡前儿童故事..." or "写一个奇幻冒险
+    的故事...". Topics that open with a verb have no human-name
+    subject in their preamble — any "name" we'd otherwise extract
+    (e.g. "讲一", "写一") is a false positive that then flows
+    downstream as the protagonist's name, producing nonsense story
+    text like "讲一继续认真尝试".
+
+    Returns False when jieba is unavailable (caller proceeds with the
+    legacy fallback path), and False on empty / whitespace input.
+    """
+    if not _JIEBA_AVAILABLE:
+        return False
+    cleaned = str(text or "").strip()
+    if not cleaned:
+        return False
+    tokens = list(_posseg.cut(cleaned))
+    if not tokens:
+        return False
+    return tokens[0].flag.startswith("v")
+
+
 def _cut_at_verb_boundary_jieba(text: str) -> str:
     """遇到动词或第二个非修饰名词（activity noun）就截断，返回角色名部分。"""
     tokens = list(_posseg.cut(text))
@@ -162,6 +187,15 @@ def _extract_open_xiao_subject(piece: str) -> str:
 def _extract_open_leading_subject(piece: str) -> str:
     value = _clean_piece(piece)
     if not value:
+        return ""
+
+    # BUG-001 fix. Instruction-style topics ("讲一个 X 的故事 / 写一段
+    # 关于 Y 的故事") have no real subject name in their preamble; the
+    # regex below would blindly grab the first 2–4 chars (e.g. "讲一",
+    # "讲一个节") and that fake "name" would flow downstream as the
+    # protagonist, producing story text like "讲一继续认真尝试".
+    # Short-circuit when jieba reports the very first token is a verb.
+    if _starts_with_verb(value):
         return ""
 
     value = _cut_at_generic_syntax_boundary(value)
