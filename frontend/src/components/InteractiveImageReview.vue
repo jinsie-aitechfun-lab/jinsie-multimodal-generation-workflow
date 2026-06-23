@@ -124,16 +124,18 @@ function isSelectionLocked(item: ImageReviewSelectedAsset): boolean {
 
 const storyExpanded = ref(false)
 
-// scene_id whose narration is currently expanded in a modal. The modal
-// shows the full narration text without growing the underlying card
-// (the card itself stays a fixed height — only ~3 lines of clamped
-// narration sit inline). `null` = no modal open.
-const narrationModalSceneId = ref<string | null>(null)
-const narrationModalText = computed(() => {
-  const sceneId = narrationModalSceneId.value
-  if (!sceneId) return ''
-  return props.sceneNarrationMap?.[sceneId] || ''
-})
+// scene_ids whose narration is currently expanded in-place. Replaces
+// the old modal-based "详情" flow (which scroll-jumped users from a
+// deep scene card back to the top of the viewport — disorienting).
+// Now "详情" toggles line-clamp off for just that one card; "收起"
+// puts it back. Each card expands independently.
+const expandedNarrations = ref<Set<string>>(new Set())
+function toggleNarration(sceneId: string) {
+  const next = new Set(expandedNarrations.value)
+  if (next.has(sceneId)) next.delete(sceneId)
+  else next.add(sceneId)
+  expandedNarrations.value = next
+}
 const normalizedStoryText = computed(() => String(props.storyText || '').trim())
 const storyNeedsToggle = computed(() => normalizedStoryText.value.length > 260)
 const visibleStoryText = computed(() => {
@@ -641,23 +643,25 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                   <span class="preview-state-tag preview-state-tag-done">已生成</span>
                 </div>
 
-                <!-- Inline narration — sits in the right column next
-                     to the image. Capped at 2 lines via CSS line-clamp
-                     so the card height stays stable. Most narrations
-                     fit in 1-2 lines naturally; only truly long ones
-                     (> 100 chars, rare) show "详情" inline to open the
-                     full text in a modal. The eyebrow label gives the
-                     paragraph context so the floating sentence reads as
-                     "this scene's narration", not loose body text. -->
+                <!-- Inline narration. Default state clamps to 2 lines
+                     so the card height is stable. Long narrations get a
+                     "详情" toggle that expands the SAME paragraph in
+                     place (no modal — the old modal flow scroll-jumped
+                     users back to the viewport top, which was
+                     disorienting when expanding a card N screens down).
+                     The eyebrow label gives paragraph context so the
+                     floating sentence reads as "this scene's narration"
+                     and not loose body text. -->
                 <p
                   v-if="sceneNarrationMap?.[entry.sceneId]"
                   class="narration-inline-text"
+                  :class="{ 'is-expanded': expandedNarrations.has(entry.sceneId) }"
                 ><span class="narration-eyebrow">画面内容 ·</span>{{ sceneNarrationMap[entry.sceneId] }}<button
-                    v-if="(sceneNarrationMap[entry.sceneId] || '').length > 100"
+                    v-if="(sceneNarrationMap[entry.sceneId] || '').length > 140"
                     type="button"
                     class="narration-detail-link"
-                    @click="narrationModalSceneId = entry.sceneId"
-                  >详情</button></p>
+                    @click="toggleNarration(entry.sceneId)"
+                  >{{ expandedNarrations.has(entry.sceneId) ? '收起' : '详情' }}</button></p>
 
                 <div class="action-row">
                   <a
@@ -1111,36 +1115,6 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
       </article>
     </div>
 
-    <!-- Narration "详情" modal — opens when the user clicks the
-         inline "详情" button on any scene card. Keeps the underlying
-         card height stable: long narrations live in this modal, not
-         in the card itself. Click backdrop or the close button to
-         dismiss; ESC also dismisses via the keyup handler on the
-         backdrop overlay (focus is moved there on open). -->
-    <div
-      v-if="narrationModalSceneId"
-      class="narration-modal-backdrop"
-      role="dialog"
-      aria-modal="true"
-      tabindex="-1"
-      @click.self="narrationModalSceneId = null"
-      @keyup.esc="narrationModalSceneId = null"
-    >
-      <div class="narration-modal-card">
-        <div class="narration-modal-head">
-          <span class="narration-modal-title">画面内容</span>
-          <button
-            type="button"
-            class="narration-modal-close"
-            aria-label="关闭"
-            @click="narrationModalSceneId = null"
-          >
-            ×
-          </button>
-        </div>
-        <p class="narration-modal-body">{{ narrationModalText }}</p>
-      </div>
-    </div>
   </section>
 </template>
 
@@ -1608,6 +1582,12 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   -webkit-box-orient: vertical;
   overflow: hidden;
   word-break: break-word;
+  transition: -webkit-line-clamp 200ms ease;
+}
+.narration-inline-text.is-expanded {
+  -webkit-line-clamp: unset;
+  line-clamp: unset;
+  overflow: visible;
 }
 .narration-detail-link {
   display: inline;
@@ -1634,72 +1614,6 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
   align-items: center;
   gap: 8px;
   margin-top: 4px;
-}
-
-/* Modal that holds the full narration. Independent of card height. */
-.narration-modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(2px);
-  z-index: 100;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-}
-.narration-modal-card {
-  width: min(560px, 100%);
-  max-height: 70vh;
-  background: var(--surface-elevated, #1a1410);
-  border: 1px solid rgba(245, 158, 11, 0.22);
-  border-radius: 14px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-.narration-modal-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 18px;
-  border-bottom: 1px solid rgba(245, 158, 11, 0.12);
-}
-.narration-modal-title {
-  color: var(--text-muted);
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-.narration-modal-close {
-  width: 28px;
-  height: 28px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: 0;
-  border-radius: 6px;
-  color: var(--text-secondary, #c8c8c8);
-  font-size: 1.25rem;
-  line-height: 1;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-.narration-modal-close:hover {
-  background: rgba(255, 255, 255, 0.06);
-}
-.narration-modal-body {
-  margin: 0;
-  padding: 18px;
-  color: var(--text-primary, #f0e6dc);
-  font-size: 0.9375rem;
-  line-height: 1.7;
-  white-space: pre-wrap;
-  word-break: break-word;
-  overflow-y: auto;
 }
 
 .candidate-header {

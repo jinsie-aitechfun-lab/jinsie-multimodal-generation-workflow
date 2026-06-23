@@ -161,6 +161,22 @@ const imageAssetCount = computed(() => {
   return Array.isArray(assets) ? assets.length : 0
 })
 
+// Title of the scene currently being refreshed — appended to the
+// inline progress pill so it matches the top progress bar's
+// "候选图生成中：11/12 · 美好的下午" copy. Without this, the user
+// could see "11/12 · 美好的下午" up top and just "11/12" in the pill
+// for the same in-flight run — confusing state mismatch.
+const currentRefreshingSceneTitle = computed(() => {
+  const id = props.sceneRefreshingId
+  if (!id) return ''
+  const scenes = storyboard.value?.scenes
+  if (!Array.isArray(scenes)) return ''
+  const scene = (scenes as Array<Record<string, unknown>>).find(
+    (s) => asStr(s?.scene_id) === id,
+  )
+  return scene ? asStr(scene.scene_title) : ''
+})
+
 const audioItemCount = computed(() => {
   const items = audioSegments.value?.items
   return Array.isArray(items) ? items.length : 0
@@ -229,7 +245,12 @@ const progressLabel = computed(() => {
   if (props.renderInFlight || finalStatus.value === 'rendering') return '视频渲染中'
   if (!sceneCount.value) return '等待 Storyboard'
   if (!assetsReady.value) {
-    if (props.refreshingImages) return `候选图生成中（${imageAssetCount.value}/${sceneCount.value}）`
+    if (props.refreshingImages) {
+      const sceneSuffix = currentRefreshingSceneTitle.value
+        ? ` · ${currentRefreshingSceneTitle.value}`
+        : ''
+      return `候选图生成中（${imageAssetCount.value}/${sceneCount.value}${sceneSuffix}）`
+    }
     if (imageAssetCount.value > 0) return `候选图已暂停（${imageAssetCount.value}/${sceneCount.value}）`
     return `候选图待生成（0/${sceneCount.value}）`
   }
