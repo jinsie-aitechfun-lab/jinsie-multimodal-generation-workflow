@@ -3,6 +3,10 @@ import { computed } from 'vue'
 
 const props = defineProps<{
   storyText: string
+  /** Raw JSON of the story step output (LLM text + title + provider
+   *  metadata + fallback_reason etc). Shown in the "故事" section as
+   *  the source-of-truth for what the story step actually produced. */
+  storyOutputText: string
   storyboardText: string
   imagePromptsText: string
   imageAssetsText: string
@@ -86,6 +90,8 @@ function promptFragmentClass(fragment: string): string {
 }
 
 const hasDeveloperContent = computed(() => Boolean(
+  props.storyOutputText ||
+  props.storyText ||
   props.storyboardText ||
   props.imagePromptsText ||
   props.imageAssetsText ||
@@ -164,6 +170,17 @@ const imagePromptEntries = computed<PromptSummary[]>(() => {
   >
     <details>
       <summary>生成细节</summary>
+
+      <section v-if="storyOutputText || storyText" class="developer-result-block">
+        <details>
+          <summary class="developer-subsummary">故事</summary>
+          <p class="developer-explainer">
+            LLM 第一步的产出——故事完整文本、自动生成的标题、所用 provider、是否走过 fallback 等元数据。后续所有分镜 / 角色 / 画面 prompt 都从这一步衍生。
+          </p>
+          <pre v-if="storyOutputText" class="light-result">{{ storyOutputText }}</pre>
+          <pre v-else class="light-result">{{ storyText }}</pre>
+        </details>
+      </section>
 
       <section v-if="storyboardText" class="developer-result-block">
         <details>

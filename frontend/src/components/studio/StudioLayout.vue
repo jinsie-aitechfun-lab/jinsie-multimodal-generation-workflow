@@ -68,7 +68,15 @@
     <!-- ═══════════════════════════════════
          LEFT SIDEBAR
     ═══════════════════════════════════ -->
-    <aside class="sidebar">
+    <aside class="sidebar" :class="{ 'is-dev': devMode }">
+      <!-- Dev-mode indicator — lives inside the sidebar column so it
+           never overlays main content. Tiny glass chip above the brand
+           hex. Read-only; toggle is Cmd/Ctrl+Shift+D. -->
+      <div v-if="devMode" class="sb-dev-chip" role="status" aria-live="polite" title="Cmd/Ctrl + Shift + D 切换">
+        <span class="sb-dev-chip-dot" aria-hidden="true"/>
+        <span class="sb-dev-chip-label">DEV</span>
+      </div>
+
       <!-- Brand — clickable: returns to landing page. Theme is preserved
            by the module-level useTheme singleton + localStorage. -->
       <button
@@ -113,7 +121,13 @@
       <!-- Footer: header-actions slot + dev toggle + identity tag -->
       <div class="sb-footer">
         <slot name="header-actions"/>
-        <button v-if="devMode" class="sb-dev-btn" title="Dev mode" @click="$emit('toggle-dev')">⚙</button>
+        <!-- Dev mode toggle is handled by a global keyboard shortcut
+             (Ctrl/Cmd+Shift+D) instead of a footer button — keeps the
+             non-dev product UI clean (a ⚙ button next to a circular
+             avatar reads as visual clutter), and the keyboard is
+             ergonomically faster for the only person who needs it
+             (me, debugging). The button has been removed; the
+             listener lives in StudioView.vue. -->
 
         <!-- Lightweight identity — local-only, no auth / API. -->
         <div class="sb-identity" aria-label="当前用户">
@@ -147,7 +161,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { animate } from 'animejs'
 import { useRouter } from 'vue-router'
 import ThemeSwitcher from './ThemeSwitcher.vue'
@@ -161,7 +175,6 @@ const props = defineProps<{
 
 defineEmits<{
   (e: 'update:modelValue', tab: string): void
-  (e: 'toggle-dev'): void
 }>()
 
 // ── Theme (shared composable) ────────────────────
@@ -231,6 +244,31 @@ onMounted(() => {
 watch(() => props.modelValue, () => {
   setTimeout(animateContentIn, 16)
 })
+
+// Tabs are conditionally rendered (e.g. "开发诊断" only when devMode is
+// on). The initial onMounted animation handles items present at mount,
+// but newly-inserted .sb-item elements inherit the CSS default
+// opacity:0 and would otherwise stay invisible forever. Watch the
+// tabs array and fade in any item that is still at opacity:0 after
+// Vue flushes the DOM. We only target new items by computed style so
+// existing visible items aren't re-animated (which would cause a
+// flash).
+watch(
+  () => props.tabs.map(t => t.id),
+  async () => {
+    await nextTick()
+    const items = Array.from(document.querySelectorAll<HTMLElement>('.sb-item'))
+    const hidden = items.filter(el => getComputedStyle(el).opacity === '0')
+    if (!hidden.length) return
+    animate(hidden, {
+      opacity: [0, 1],
+      translateX: [-10, 0],
+      duration: 380,
+      easing: 'easeOutCubic',
+    })
+  },
+  { flush: 'post' },
+)
 </script>
 
 <style scoped>
@@ -484,21 +522,63 @@ watch(() => props.modelValue, () => {
   border-top: 1px solid var(--sidebar-border, rgba(245,158,11,0.08));
 }
 
-.sb-dev-btn {
-  width: 36px; height: 36px;
-  border-radius: 10px;
-  font-size: 14px;
-  font-family: inherit;
-  color: rgba(255,255,255,0.35);
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.08);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: color 0.18s, background 0.18s;
+/* .sb-dev-btn styles removed — the button itself was deleted in favour
+   of the global Ctrl/Cmd+Shift+D keyboard shortcut. */
+
+/* ── Dev-mode indicator (sidebar-scoped, never overlays content) ── */
+/* A tiny glass chip above the brand hex + a faint amber tint on the
+   sidebar's right border. Both only render when .sidebar.is-dev. */
+.sidebar.is-dev {
+  border-right-color: var(--dev-edge, rgba(245,158,11,0.32));
+  box-shadow:
+    var(--sidebar-shadow, 4px 0 32px rgba(0,0,0,0.55)),
+    inset -1px 0 0 rgba(245,158,11,0.22);
 }
-.sb-dev-btn:hover { color: rgba(255,255,255,0.65); background: rgba(255,255,255,0.08); }
+.sb-dev-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 10px;
+  padding: 3px 9px 3px 7px;
+  border-radius: 999px;
+  background: rgba(245,158,11,0.10);
+  border: 1px solid rgba(245,158,11,0.32);
+  color: rgba(252,211,77,0.92);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: help;
+  user-select: none;
+}
+.sb-dev-chip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgb(245,158,11);
+  box-shadow: 0 0 0 0 rgba(245,158,11,0.55);
+  animation: sbDevPulse 1.8s ease-out infinite;
+}
+.sb-dev-chip-label { line-height: 1; }
+@keyframes sbDevPulse {
+  0%   { box-shadow: 0 0 0 0   rgba(245,158,11,0.55); }
+  70%  { box-shadow: 0 0 0 8px rgba(245,158,11,0);     }
+  100% { box-shadow: 0 0 0 0   rgba(245,158,11,0);     }
+}
+/* Theme-aware tint — light/pearl theme uses warmer copper to match */
+.s-root[data-theme="pearl"] .sb-dev-chip {
+  background: rgba(180,120,40,0.12);
+  border-color: rgba(180,120,40,0.40);
+  color: rgba(140,90,30,0.95);
+}
+.s-root[data-theme="pearl"] .sb-dev-chip-dot {
+  background: rgb(180,120,40);
+}
+/* Collapsed-sidebar (mobile) — hide label, keep dot only */
+@media (max-width: 720px) {
+  .sb-dev-chip-label { display: none; }
+  .sb-dev-chip { padding: 4px; }
+}
 
 /* ── Lightweight identity tag (local-only, no auth) ── */
 .sb-identity {
@@ -788,8 +868,6 @@ watch(() => props.modelValue, () => {
 .s-root[data-theme="pearl"] .sb-item:hover:not(.is-active) .sb-label{ color: rgba(60,66,76,0.85); }
 .s-root[data-theme="pearl"] .sb-item.is-active .sb-icon,
 .s-root[data-theme="pearl"] .sb-item.is-active .sb-label            { color: #8b6722; }
-.s-root[data-theme="pearl"] .sb-dev-btn                             { color: rgba(60,66,76,0.55); background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.08); }
-.s-root[data-theme="pearl"] .sb-dev-btn:hover                       { color: rgba(60,66,76,0.85); background: rgba(0,0,0,0.07); }
 
 /* Soft white highlight on active item */
 .s-root[data-theme="pearl"] .sb-item.is-active {
