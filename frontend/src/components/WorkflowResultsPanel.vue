@@ -45,6 +45,46 @@ function stringifyValue(value: unknown): string {
   }
 }
 
+/* Split a Kolors prompt string on its native separator (`; ` then `;`
+   then `. `) so the wall-of-text becomes a scannable list. The pieces
+   themselves are kept verbatim — the prompt sent to the model is
+   still the original concatenated string; this is display-only.
+   Filters out blanks introduced by trailing separators. */
+function splitPromptFragments(prompt: string): string[] {
+  if (!prompt) return []
+  return prompt
+    .split(/[;。](?:\s+|$)/g)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+}
+
+/* Classify a fragment so different rule families get different visual
+   weight. Negative constraints (must-avoid / do-not) get a softer
+   warning tint; identity / role descriptors get a gold accent so the
+   "who's this about" lines stand out. */
+function promptFragmentClass(fragment: string): string {
+  const f = fragment.toLowerCase()
+  if (
+    f.startsWith('must avoid') ||
+    f.startsWith('do not') ||
+    f.includes('forbidden') ||
+    f.includes('不要')
+  ) {
+    return 'prompt-fragment--avoid'
+  }
+  if (
+    f.startsWith('must keep') ||
+    f.startsWith('character ') ||
+    f.startsWith('required ') ||
+    f.includes('identity lock') ||
+    f.includes('身份锁') ||
+    f.includes('character trait lock')
+  ) {
+    return 'prompt-fragment--anchor'
+  }
+  return ''
+}
+
 const hasDeveloperContent = computed(() => Boolean(
   props.storyboardText ||
   props.imagePromptsText ||
@@ -128,7 +168,13 @@ const imagePromptEntries = computed<PromptSummary[]>(() => {
       <section v-if="storyboardText" class="developer-result-block">
         <details>
           <summary class="developer-subsummary">分镜结构</summary>
+          <p class="developer-explainer">
+            把整个故事按场景拆解的结构化结果。每个场景包含场景标题、画面描述、镜头类型、转场方式、出场角色等元信息——后续画面 prompt 的生成依据。
+          </p>
           <div v-if="storyboardScenes.length" class="scene-summary-list">
+            <p class="developer-count-line">
+              本次共生成 <strong>{{ storyboardScenes.length }}</strong> 个场景：
+            </p>
             <article
               v-for="scene in storyboardScenes"
               :key="scene.id"
@@ -139,84 +185,135 @@ const imagePromptEntries = computed<PromptSummary[]>(() => {
               <p v-if="scene.description">{{ scene.description }}</p>
             </article>
           </div>
-          <p v-else class="developer-empty-copy">
-            分镜结构已生成，可在开发者原始数据中查看完整 JSON。
-          </p>
+          <!-- Same raw-JSON pattern as the sibling sections below.
+               Sits at the bottom of every section so every node of the
+               pipeline reads the same way: 这是什么 → 这是数据. -->
+          <pre class="light-result">{{ storyboardText }}</pre>
         </details>
       </section>
 
       <section v-if="imagePromptsText" class="developer-result-block">
         <details>
           <summary class="developer-subsummary">图片提示词</summary>
+          <p class="developer-explainer">
+            送给文生图模型（如 Kolors）的实际 prompt 文本，按场景一一对应。
+            包含主体描述、视觉风格、角色身份锁、负面词等约束——决定每张候选图的样子。
+          </p>
           <div v-if="imagePromptEntries.length" class="prompt-summary-list">
+            <p class="developer-count-line">
+              本次共生成 <strong>{{ imagePromptEntries.length }}</strong> 条 prompt，点击展开查看：
+            </p>
             <details
               v-for="entry in imagePromptEntries"
               :key="entry.id"
               class="prompt-summary-item"
             >
               <summary>{{ entry.id }}</summary>
-              <p>{{ entry.prompt }}</p>
+              <!-- Wall-of-text prompts (single line broken only by ';
+                   ') are unreadable for a human even though they're
+                   what Kolors wants. Split on the same separator and
+                   render each rule on its own indented line —
+                   semantics preserved (it's still the exact same
+                   string concatenated by ';'), but scannable. -->
+              <ul class="prompt-fragment-list">
+                <li
+                  v-for="(fragment, idx) in splitPromptFragments(entry.prompt)"
+                  :key="idx"
+                  class="prompt-fragment"
+                  :class="promptFragmentClass(fragment)"
+                >{{ fragment }}</li>
+              </ul>
             </details>
           </div>
-          <p v-else class="developer-empty-copy">
-            图片提示词已生成，可在开发者原始数据中查看完整 JSON。
-          </p>
+          <pre class="light-result">{{ imagePromptsText }}</pre>
         </details>
       </section>
 
-      <section class="developer-result-block">
+      <!-- Pipeline-order siblings under 生成细节. Each is a self-
+           contained section: title + one-line explainer + raw JSON.
+           Same structure as 分镜结构/图片提示词 above (those just have
+           an extra parsed view between explainer and raw), so the
+           hierarchy reads as one consistent list of "workflow output
+           nodes" instead of split into two awkward groups. -->
+
+      <section v-if="characterCandidatesText" class="developer-result-block">
         <details>
-          <summary class="developer-subsummary">开发者原始数据</summary>
+          <summary class="developer-subsummary">角色候选</summary>
+          <p class="developer-explainer">
+            LLM 从主题文本里抽取出来的候选角色——名称、物种、是否主角。后续会沉淀为正式的「角色设定清单」。
+          </p>
+          <pre class="light-result">{{ characterCandidatesText }}</pre>
+        </details>
+      </section>
 
-          <div v-if="storyboardText" class="raw-data-block">
-            <h2 class="section-title">完整 Storyboard JSON</h2>
-            <pre class="light-result">{{ storyboardText }}</pre>
-          </div>
+      <section v-if="characterManifestText" class="developer-result-block">
+        <details>
+          <summary class="developer-subsummary">角色设定清单</summary>
+          <p class="developer-explainer">
+            每个角色的视觉身份锁——必须保留的外观特征（must_keep）和必须避免的特征（must_avoid）。
+            多角色场景下还携带跨角色的互斥约束（如「兔子不能有龟壳」），用于约束图像 prompt。
+          </p>
+          <pre class="light-result">{{ characterManifestText }}</pre>
+        </details>
+      </section>
 
-          <div v-if="imagePromptsText" class="raw-data-block">
-            <h2 class="section-title">Image Prompts JSON</h2>
-            <pre class="light-result">{{ imagePromptsText }}</pre>
-          </div>
+      <section v-if="imageAssetsText" class="developer-result-block">
+        <details>
+          <summary class="developer-subsummary">图片素材</summary>
+          <p class="developer-explainer">
+            实际生成的候选图元数据——按场景分组，每场景两张 A/B 候选，包含文件路径、provider、是否被选中等信息。
+          </p>
+          <pre class="light-result">{{ imageAssetsText }}</pre>
+        </details>
+      </section>
 
-          <div v-if="imageAssetsText" class="raw-data-block">
-            <h2 class="section-title">图片素材原始数据</h2>
-            <pre class="light-result">{{ imageAssetsText }}</pre>
-          </div>
+      <section v-if="imageReviewText" class="developer-result-block">
+        <details>
+          <summary class="developer-subsummary">画面审核 / 素材选择</summary>
+          <p class="developer-explainer">
+            自动 selector 的打分结果 + 用户手动审核时的最终选择记录——每个场景最终选了 A 还是 B、是 auto 还是 manual。
+          </p>
+          <pre class="light-result">{{ imageReviewText }}</pre>
+        </details>
+      </section>
 
-          <div v-if="imageReviewText" class="raw-data-block">
-            <h2 class="section-title">画面审核 / 素材选择原始数据</h2>
-            <pre class="light-result">{{ imageReviewText }}</pre>
-          </div>
+      <section v-if="narrationText" class="developer-result-block">
+        <details>
+          <summary class="developer-subsummary">旁白</summary>
+          <p class="developer-explainer">
+            送给 TTS 的旁白脚本——含完整文本、按场景切分的段落、每段的说话人和声线设定。
+          </p>
+          <pre class="light-result">{{ narrationText }}</pre>
+        </details>
+      </section>
 
-          <div v-if="videoPromptsText" class="raw-data-block">
-            <h2 class="section-title">视频提示词原始数据</h2>
-            <pre class="light-result">{{ videoPromptsText }}</pre>
-          </div>
+      <section v-if="subtitlesText" class="developer-result-block">
+        <details>
+          <summary class="developer-subsummary">字幕</summary>
+          <p class="developer-explainer">
+            带时间轴的字幕条目——FFmpeg 合成时按这份时间轴把文字烧进视频。
+          </p>
+          <pre class="light-result">{{ subtitlesText }}</pre>
+        </details>
+      </section>
 
-          <div v-if="narrationText" class="raw-data-block">
-            <h2 class="section-title">旁白原始数据</h2>
-            <pre class="light-result">{{ narrationText }}</pre>
-          </div>
+      <section v-if="videoPromptsText" class="developer-result-block">
+        <details>
+          <summary class="developer-subsummary">视频提示词</summary>
+          <p class="developer-explainer">
+            送给分镜视频 provider（如可灵 / 海螺）的 prompt 文本——v1 默认走绘本风，本节点只有在 v2 接入分镜视频 provider 时才会被消费。
+          </p>
+          <pre class="light-result">{{ videoPromptsText }}</pre>
+        </details>
+      </section>
 
-          <div v-if="subtitlesText" class="raw-data-block">
-            <h2 class="section-title">字幕原始数据</h2>
-            <pre class="light-result">{{ subtitlesText }}</pre>
-          </div>
-
-          <div v-if="renderPlanText" class="raw-data-block">
-            <h2 class="section-title">渲染计划原始数据</h2>
-            <pre class="light-result">{{ renderPlanText }}</pre>
-          </div>
-
-          <div v-if="characterCandidatesText" class="raw-data-block">
-            <h2 class="section-title">角色候选原始数据</h2>
-            <pre class="light-result">{{ characterCandidatesText }}</pre>
-          </div>
-
-          <div v-if="characterManifestText" class="raw-data-block">
-            <h2 class="section-title">角色设定清单原始数据</h2>
-            <pre class="light-result">{{ characterManifestText }}</pre>
-          </div>
+      <section v-if="renderPlanText" class="developer-result-block">
+        <details>
+          <summary class="developer-subsummary">渲染计划</summary>
+          <p class="developer-explainer">
+            最终交给 FFmpeg 的合成方案——时间轴、转场、画面与音频的对齐关系。视频成片就是按这份计划渲染出来的。
+          </p>
+          <pre class="light-result">{{ renderPlanText }}</pre>
         </details>
       </section>
     </details>
@@ -252,6 +349,14 @@ const imagePromptEntries = computed<PromptSummary[]>(() => {
   margin-top: 16px;
   padding-top: 14px;
   border-top: 1px solid rgba(245,158,11,0.08);
+  /* Visual containment cue: a thin gold "tree-branch" rail on the
+     left side shows that this block is a *child* of 生成细节, not a
+     sibling. Without it the 3 inner sub-sections (分镜结构 / 图片
+     提示词 / 开发者原始数据) read as same-level entries as 生成
+     细节 itself, breaking the parent-child hierarchy on screen. */
+  margin-left: 14px;
+  padding-left: 16px;
+  border-left: 2px solid color-mix(in srgb, var(--arc-300) 22%, transparent);
 }
 
 .developer-subsummary {
@@ -270,6 +375,14 @@ const imagePromptEntries = computed<PromptSummary[]>(() => {
   display: grid;
   gap: 10px;
   margin-top: 12px;
+  /* Nested children of a sub-section (e.g. scene_01..scene_06 under
+     图片提示词) need to read as deeper-nested than the sub-section
+     itself. The sub-section already has its rail from the outer
+     .developer-result-block; this adds a second smaller indent so
+     the visual hierarchy goes: 生成细节 → 图片提示词 → scene_N. */
+  margin-left: 10px;
+  padding-left: 12px;
+  border-left: 1px solid color-mix(in srgb, var(--arc-300) 14%, transparent);
 }
 
 .scene-summary-card,
@@ -304,6 +417,37 @@ const imagePromptEntries = computed<PromptSummary[]>(() => {
   white-space: pre-wrap;
 }
 
+/* Explainer preamble — sits directly under the section's summary
+   trigger, before any list. Tells the reader WHAT this thing is
+   ("把整个故事按场景拆解的结构化结果...") so the section header
+   alone isn't doing all the explanatory work. Styled as a soft
+   info card, not as ordinary body text, so it reads as "meta /
+   docs" rather than "content". */
+.developer-explainer {
+  margin: 12px 0 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--arc-300) 6%, transparent);
+  border-left: 2px solid color-mix(in srgb, var(--arc-300) 38%, transparent);
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.65;
+}
+
+/* Count line — "本次共生成 X 个场景" between the explainer and the
+   list. Gives the user a "what to expect" preview before they start
+   scrolling. */
+.developer-count-line {
+  margin: 6px 0 8px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.developer-count-line strong {
+  color: var(--arc-300);
+  font-weight: 700;
+  margin: 0 2px;
+}
+
 .prompt-summary-item summary {
   color: var(--arc-300);
   cursor: pointer;
@@ -315,8 +459,49 @@ const imagePromptEntries = computed<PromptSummary[]>(() => {
   margin-top: 8px;
 }
 
-.raw-data-block {
-  margin-top: 14px;
+/* Structured prompt view — each `;`-separated rule becomes a list
+   item with its own bullet, indent and (when applicable) coloured
+   tint based on classification: gold for identity/role anchors,
+   muted red for "must avoid / do not" negative constraints. Plain
+   rules stay in the default secondary text colour. */
+.prompt-fragment-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.prompt-fragment {
+  position: relative;
+  padding: 4px 0 4px 18px;
+  font-size: 0.8125rem;
+  line-height: 1.65;
+  color: var(--text-secondary);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  word-break: break-word;
+}
+.prompt-fragment::before {
+  content: '◦';
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  color: color-mix(in srgb, var(--arc-300) 55%, transparent);
+  font-size: 0.75rem;
+}
+.prompt-fragment--anchor {
+  color: color-mix(in srgb, var(--arc-200) 90%, var(--text-primary));
+}
+.prompt-fragment--anchor::before {
+  content: '◆';
+  color: var(--arc-300);
+}
+.prompt-fragment--avoid {
+  color: color-mix(in srgb, #f87171 70%, var(--text-secondary));
+}
+.prompt-fragment--avoid::before {
+  content: '⊘';
+  color: #f87171;
 }
 
 .section-title {
@@ -344,5 +529,31 @@ const imagePromptEntries = computed<PromptSummary[]>(() => {
   line-height: 1.6;
   color: var(--text-secondary);
   font-family: 'SF Mono', 'Fira Code', monospace;
+  /* Cap each raw-JSON dump at ~6 lines worth (was unbounded — a
+     full storyboard JSON could run 15+ screens, making it
+     impossible to scroll back up to collapse the parent <details>).
+     Internal scroll keeps the surrounding layout stable. */
+  max-height: 360px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--surface-overlay-soft);
+  border: 1px solid var(--border-subtle);
+}
+/* Custom thin scrollbar so the boxed JSON doesn't feel "trapped" by
+   the OS-default chunky scrollbar at this small surface. */
+.light-result::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.light-result::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--arc-300) 32%, transparent);
+  border-radius: 3px;
+}
+.light-result::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--arc-300) 56%, transparent);
+}
+.light-result::-webkit-scrollbar-track {
+  background: transparent;
 }
 </style>

@@ -538,6 +538,7 @@ function performDeleteRecentVideo() {
     userHasInteractedWithImages.value = false
     mockAudioIndexUrl.value = ''
     mockAudioSceneGroups.value = []
+    mockAudioSegmentTextMap.value = {}
     mockAudioDirectoryText.value = ''
     errorMessage.value = ''
 
@@ -578,6 +579,10 @@ const characterManifestText = ref('')
 const mockAudioIndexUrl = ref('')
 const mockAudioSceneGroups = ref<AudioSceneGroup[]>([])
 const mockAudioDirectoryText = ref('')
+// scene_id → ordered list of segment text (parallel to the audio
+// assets array of the same scene). Lets the Review-tab audio panel
+// show "what this segment is saying" next to the player link.
+const mockAudioSegmentTextMap = ref<Record<string, string[]>>({})
 
 const samplesLoading = ref(false)
 const samplesErrorMessage = ref('')
@@ -1075,6 +1080,27 @@ const sceneNarrationMap = computed<Record<string, string>>(() => {
     if (!sceneId) continue
     const narration = String(sceneObj.narration || '').trim()
     if (narration) result[sceneId] = narration
+  }
+  return result
+})
+
+// scene_id → scene_title from the storyboard. Used by the audio panel
+// to show "礁石上的波波" instead of generic "场景 01" — matches the
+// image-review card pattern.
+const sceneTitleMap = computed<Record<string, string>>(() => {
+  const result: Record<string, string> = {}
+  const storyboard = currentWorkflowResponse.value?.outputs?.storyboard as
+    | Record<string, unknown>
+    | undefined
+  const scenes = storyboard?.scenes
+  if (!Array.isArray(scenes)) return result
+  for (const scene of scenes) {
+    if (!scene || typeof scene !== 'object') continue
+    const sceneObj = scene as Record<string, unknown>
+    const sceneId = String(sceneObj.scene_id || '').trim()
+    if (!sceneId) continue
+    const title = String(sceneObj.scene_title || '').trim()
+    if (title) result[sceneId] = title
   }
   return result
 })
@@ -1596,8 +1622,32 @@ function extractMockAudioState(data: WorkflowRunResponse) {
     : []
   mockAudioDirectoryText.value =
     audioOutput?.directory_manifest ? stringifyPretty(audioOutput.directory_manifest) : ''
+
+  // Build a scene_id → array<text> map from narration.segments so the
+  // audio panel can show what each segment is saying. Segments come
+  // back in order per scene, so the i-th audio asset under a scene
+  // maps to the i-th text in that scene's list. The map is recomputed
+  // every workflow apply so stale text from a previous run never
+  // leaks into a fresh take.
+  const narrationOutput = data?.outputs?.narration as
+    | { segments?: Array<{ scene_id?: string; text?: string }> }
+    | undefined
+  const segs = Array.isArray(narrationOutput?.segments)
+    ? narrationOutput?.segments || []
+    : []
+  const map: Record<string, string[]> = {}
+  for (const seg of segs) {
+    const sid = String(seg?.scene_id || '').trim()
+    const text = String(seg?.text || '').trim()
+    if (!sid || !text) continue
+    ;(map[sid] = map[sid] || []).push(text)
+  }
+  mockAudioSegmentTextMap.value = map
 }
 
+// Audio-asset display helpers used by the "配音素材" panel under the
+// Review tab. Kept here (rather than colocated with the component)
+// because the mockAudio* refs they format also live in this file.
 function sceneDisplayName(sceneId?: string): string {
   const value = String(sceneId || '').trim()
   const match = value.match(/(?:scene[-_]?|^)(\d+)/i)
@@ -1616,11 +1666,6 @@ function formatAudioDuration(seconds?: number): string {
     return '时长待确认'
   }
   return `约 ${Math.round(seconds)} 秒`
-}
-
-function audioSpeakerLabel(speaker?: string): string {
-  const value = String(speaker || '').trim()
-  return value ? `配音：${value}` : '配音信息待确认'
 }
 
 function formatPreview(output?: Record<string, unknown>): string {
@@ -2375,6 +2420,7 @@ function performDiscardCurrentDraft() {
   mockAudioIndexUrl.value = ''
   mockAudioSceneGroups.value = []
   mockAudioDirectoryText.value = ''
+  mockAudioSegmentTextMap.value = {}
 
   // Regenerate the session id. The backend's RunnerSessionStore keys
   // its in-memory `previous_session_data` (last_story / last_storyboard /
@@ -2656,6 +2702,7 @@ async function runWorkflow() {
   mockAudioIndexUrl.value = ''
   mockAudioSceneGroups.value = []
   mockAudioDirectoryText.value = ''
+  mockAudioSegmentTextMap.value = {}
   activeTab.value = 'review'
 
   const form = workflowForm.value
@@ -3128,6 +3175,113 @@ async function runWorkflow() {
               :character-candidates-text="characterCandidatesText"
               :character-manifest-text="characterManifestText"
             />
+
+            <!-- 配音素材 — per-scene TTS asset inspection. Lives in
+                 the Review tab because it's "check the output of the
+                 last workflow", same semantic family as the image
+                 review above. (Previously lived under 素材库 / 灵感
+                 参考; that tab's role is now "creation starters",
+                 which doesn't fit a results inspector.) Only renders
+                 when the current workflow actually produced audio
+                 segments — hidden cleanly when not applicable. -->
+            <details
+              v-if="mockAudioIndexUrl || mockAudioSceneGroups.length > 0 || mockAudioDirectoryText"
+              class="glass-card review-audio-card animate-fade-in"
+            >
+              <summary class="review-audio-summary">
+                <span class="review-section-icon" aria-hidden="true">▤</span>
+                <span class="review-section-title">配音素材</span>
+                <span class="review-audio-summary-count">
+                  {{ mockAudioSceneGroups.length }} 个场景 ·
+                  {{ mockAudioSceneGroups.reduce((n, g) => n + ((g.assets || []).length), 0) }} 段音频
+                </span>
+                <span class="review-audio-summary-chevron" aria-hidden="true">▸</span>
+              </summary>
+
+              <div v-if="mockAudioSceneGroups.length > 0" class="review-audio-scenes">
+                <article
+                  v-for="group in mockAudioSceneGroups"
+                  :key="group.scene_id || 'unknown-scene'"
+                  class="review-audio-scene"
+                >
+                  <header class="review-audio-scene-head">
+                    <div class="review-audio-scene-title-block">
+                      <strong>{{ sceneDisplayName(group.scene_id) }}</strong>
+                      <span
+                        v-if="sceneTitleMap[group.scene_id || '']"
+                        class="review-audio-scene-title"
+                      >· {{ sceneTitleMap[group.scene_id || ''] }}</span>
+                    </div>
+                    <span class="review-audio-count">{{ (group.assets || []).length }} 个片段</span>
+                  </header>
+                  <ul class="review-audio-asset-list">
+                    <li
+                      v-for="(asset, index) in group.assets || []"
+                      :key="asset.asset_id || asset.segment_id || asset.file_name"
+                      class="review-audio-asset-item"
+                    >
+                      <!-- Decorative waveform glyph — visual landmark so each
+                           segment row has a left-edge anchor instead of
+                           starting with raw text. Pure CSS bars, no SVG. -->
+                      <div class="review-audio-wave" aria-hidden="true">
+                        <span></span><span></span><span></span><span></span>
+                      </div>
+                      <div class="review-audio-asset-main">
+                        <div class="review-audio-asset-row">
+                          <strong>{{ audioAssetTitle(index) }}</strong>
+                          <span
+                            class="review-audio-speaker-pill"
+                            :class="`review-audio-speaker-pill--${(asset.speaker || 'unknown').toLowerCase()}`"
+                          >{{ asset.speaker || 'unknown' }}</span>
+                          <span class="review-audio-duration">
+                            {{ formatAudioDuration(asset.duration_estimate_sec) }}
+                          </span>
+                        </div>
+                        <!-- Spoken text — pulled from outputs.narration.segments
+                             matched by index within the scene. Mirrors the
+                             image card's "画面内容" so the audio side carries
+                             the same semantic weight: each segment shows
+                             what it's saying, not just file metadata. -->
+                        <p
+                          v-if="(mockAudioSegmentTextMap[group.scene_id || ''] || [])[index]"
+                          class="review-audio-text"
+                        >
+                          {{ (mockAudioSegmentTextMap[group.scene_id || ''] || [])[index] }}
+                        </p>
+                      </div>
+                      <a
+                        v-if="asset.public_url"
+                        class="review-audio-play"
+                        :href="`${apiBaseUrl}${asset.public_url}`"
+                        target="_blank"
+                        rel="noreferrer"
+                        :title="`播放 ${audioAssetTitle(index)}`"
+                        aria-label="打开音频"
+                      >
+                        <span aria-hidden="true">▶</span>
+                      </a>
+                    </li>
+                  </ul>
+                </article>
+              </div>
+
+              <details v-if="mockAudioIndexUrl || mockAudioDirectoryText" class="review-audio-details">
+                <summary>开发者信息</summary>
+                <div v-if="mockAudioIndexUrl" class="review-audio-dev-row">
+                  <span class="review-audio-dev-label">索引文件</span>
+                  <a
+                    class="review-audio-play-inline"
+                    :href="`${apiBaseUrl}${mockAudioIndexUrl}`"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    打开 index.json ↗
+                  </a>
+                  <code>{{ mockAudioIndexUrl }}</code>
+                </div>
+                <pre v-if="mockAudioDirectoryText" class="light-result compact-result">{{ mockAudioDirectoryText }}</pre>
+              </details>
+            </details>
           </template>
         </template>
 
@@ -3139,86 +3293,6 @@ async function runWorkflow() {
       </section>
       <section v-if="activeTab === 'assets'">
         <InspirationLibraryPanel @apply="onApplyInspiration" />
-        <section
-          v-if="mockAudioIndexUrl || mockAudioSceneGroups.length > 0 || mockAudioDirectoryText"
-          class="result-panel"
-        >
-          <h2 class="section-title">配音素材</h2>
-          <p class="mock-audio-intro">这里沉淀本次生成的配音片段，方便核对场景声音素材。</p>
-
-          <div v-if="mockAudioSceneGroups.length > 0" class="mock-audio-scenes">
-            <article
-              v-for="group in mockAudioSceneGroups"
-              :key="group.scene_id || 'unknown-scene'"
-              class="mock-audio-scene-card"
-            >
-              <div class="mock-audio-scene-head">
-                <strong>{{ sceneDisplayName(group.scene_id) }}</strong>
-                <span>{{ (group.assets || []).length }} 个片段</span>
-              </div>
-
-              <ul class="mock-audio-asset-list">
-                <li
-                  v-for="(asset, index) in group.assets || []"
-                  :key="asset.asset_id || asset.segment_id || asset.file_name"
-                  class="mock-audio-asset-item"
-                >
-                  <div class="mock-audio-asset-main">
-                    <strong>{{ audioAssetTitle(index) }}</strong>
-                    <span class="mock-audio-meta">
-                      {{ audioSpeakerLabel(asset.speaker) }} · {{ formatAudioDuration(asset.duration_estimate_sec) }}
-                    </span>
-                  </div>
-
-                  <a
-                    v-if="asset.public_url"
-                    class="asset-link"
-                    :href="`${apiBaseUrl}${asset.public_url}`"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    打开音频
-                  </a>
-                </li>
-              </ul>
-            </article>
-          </div>
-
-          <p v-else class="mock-audio-empty">暂无可展示的配音素材。</p>
-
-          <details
-            v-if="mockAudioIndexUrl || mockAudioSceneGroups.length > 0 || mockAudioDirectoryText"
-            class="mock-audio-details"
-          >
-            <summary>开发者信息</summary>
-            <div v-if="mockAudioIndexUrl" class="mock-audio-link-row">
-              <span class="mock-audio-label">索引文件</span>
-              <a
-                class="asset-link"
-                :href="`${apiBaseUrl}${mockAudioIndexUrl}`"
-                target="_blank"
-                rel="noreferrer"
-              >
-                打开 index.json
-              </a>
-              <code>{{ mockAudioIndexUrl }}</code>
-            </div>
-            <div
-              v-for="group in mockAudioSceneGroups"
-              :key="`${group.scene_id || 'unknown-scene'}-developer`"
-              class="mock-audio-link-row"
-            >
-              <span class="mock-audio-label">{{ group.scene_id || 'unknown-scene' }}</span>
-              <code
-                v-for="asset in group.assets || []"
-                :key="asset.asset_id || asset.segment_id || asset.file_name"
-              >
-                {{ asset.file_name || '-' }} · {{ asset.public_url || '-' }}
-              </code>
-            </div>
-            <pre v-if="mockAudioDirectoryText" class="light-result compact-result">{{ mockAudioDirectoryText }}</pre>
-          </details>
-        </section>
       </section>
       <section v-if="activeTab === 'debug'" class="debug-layout">
         <div v-if="!hasDebugContent" class="review-empty-state glass-card animate-fade-in">
@@ -3356,8 +3430,257 @@ async function runWorkflow() {
 }
 
 .review-video-card,
-.review-images-card {
+.review-images-card,
+.review-audio-card {
   overflow: hidden;
+}
+
+/* 配音素材 — collapsible card. Closed by default so it doesn't
+   dominate the Review tab; expand to inspect TTS output per scene.
+   Inner styling drops the dev-tool "wall of text" look: speaker
+   pills, mini waveform glyph, circular play button. */
+.review-audio-card {
+  display: block;
+}
+.review-audio-card[open] .review-audio-summary-chevron {
+  transform: rotate(90deg);
+}
+.review-audio-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.875rem 1.25rem;
+  cursor: pointer;
+  list-style: none;
+  border-bottom: 1px solid transparent;
+  background: linear-gradient(90deg, rgba(245,158,11,0.05) 0%, transparent 60%);
+  transition: border-color 0.18s ease, background 0.18s ease;
+}
+.review-audio-summary::-webkit-details-marker { display: none; }
+.review-audio-card[open] .review-audio-summary {
+  border-bottom-color: rgba(245,158,11,0.12);
+}
+.review-audio-summary-count {
+  margin-left: auto;
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.review-audio-summary-chevron {
+  color: var(--arc-300);
+  font-size: 0.6875rem;
+  transition: transform 0.18s ease;
+}
+
+.review-audio-scenes {
+  padding: 1rem 1.25rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.review-audio-scene {
+  padding: 0.875rem 1rem;
+  border-radius: 12px;
+  border: 1px solid var(--border-glass);
+  background: var(--surface-overlay-soft);
+}
+.review-audio-scene-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 0.75rem;
+}
+.review-audio-scene-head strong {
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  letter-spacing: 0.01em;
+}
+.review-audio-scene-title-block {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.review-audio-scene-title {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+.review-audio-count {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
+.review-audio-asset-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.review-audio-asset-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.review-audio-asset-item:last-child { border-bottom: 0; }
+
+/* Mini waveform — decorative left-edge anchor. 4 vertical bars with
+   alternating heights, animated on hover so each segment row reads
+   as an "audio thing", not just text. */
+.review-audio-wave {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 4px;
+  height: 14px;
+}
+.review-audio-wave span {
+  width: 2px;
+  background: var(--arc-300);
+  border-radius: 1px;
+  opacity: 0.55;
+  transition: opacity 0.18s ease;
+}
+.review-audio-wave span:nth-child(1) { height: 30%; }
+.review-audio-wave span:nth-child(2) { height: 75%; }
+.review-audio-wave span:nth-child(3) { height: 50%; }
+.review-audio-wave span:nth-child(4) { height: 90%; }
+.review-audio-asset-item:hover .review-audio-wave span { opacity: 1; }
+
+.review-audio-asset-main {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.review-audio-asset-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.review-audio-asset-row strong {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+/* Speaker pills — same shape, different tint per speaker so the
+   reader can scan "who's talking" without reading the label. Fallback
+   for unknown roles is a neutral pill. */
+.review-audio-speaker-pill {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-overlay-strong);
+  color: var(--text-secondary);
+}
+.review-audio-speaker-pill--narrator {
+  color: color-mix(in srgb, var(--arc-200) 90%, var(--text-primary));
+  border-color: color-mix(in srgb, var(--arc-300) 36%, transparent);
+  background: color-mix(in srgb, var(--arc-300) 14%, transparent);
+}
+.review-audio-speaker-pill--mother {
+  color: #f5b8d8;
+  border-color: rgba(244, 114, 182, 0.32);
+  background: rgba(244, 114, 182, 0.10);
+}
+.review-audio-speaker-pill--child {
+  color: #a7d8ff;
+  border-color: rgba(96, 165, 250, 0.32);
+  background: rgba(96, 165, 250, 0.10);
+}
+
+.review-audio-duration {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+/* Spoken text — mirrors the image-card "画面内容" pattern. Slightly
+   indented from the wave anchor so eye can naturally trace from the
+   waveform → speaker pill → spoken line. */
+.review-audio-text {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.65;
+  color: var(--text-primary);
+  letter-spacing: 0.01em;
+}
+
+/* Circular play button — replaces the wordy "打开音频 ↗" link.
+   Visual landmark on the right; touching aria-label for screen readers. */
+.review-audio-play {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-arc);
+  background: color-mix(in srgb, var(--arc-300) 12%, transparent);
+  color: var(--arc-300);
+  font-size: 0.625rem;
+  text-decoration: none;
+  margin-top: 2px;
+  transition: background 0.18s ease, border-color 0.18s ease, transform 0.12s ease;
+}
+.review-audio-play:hover {
+  background: color-mix(in srgb, var(--arc-300) 26%, transparent);
+  border-color: var(--arc-300);
+}
+.review-audio-play:active { transform: scale(0.94); }
+.review-audio-play-inline {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--arc-300);
+  text-decoration: none;
+  margin-right: 8px;
+}
+.review-audio-play-inline:hover { color: var(--arc-200); }
+.review-audio-details {
+  padding: 0 1.25rem 1.25rem;
+}
+.review-audio-details summary {
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--arc-300);
+  padding: 0.5rem 0;
+}
+.review-audio-dev-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0.3rem 0;
+  font-size: 0.75rem;
+}
+.review-audio-dev-row code {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  background: var(--surface-overlay-soft);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.review-audio-dev-label {
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 .review-section-header {

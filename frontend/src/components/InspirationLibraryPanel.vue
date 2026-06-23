@@ -60,6 +60,29 @@ function ctaLabel(kind: InspirationKind): string {
 function padIndex(n: number): string {
   return String(n + 1).padStart(2, '0')
 }
+
+/* Spotlight cursor effect — writes the live mouse position (relative
+   to the card) into two CSS custom properties on the card itself.
+   The CSS uses them as the centre of a radial gradient overlay so
+   the card appears "lit" by a soft gold glow that follows the
+   cursor. Linear / Vercel landing-page signature move. */
+function onCardMouseMove(event: MouseEvent) {
+  const el = event.currentTarget as HTMLElement | null
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  const x = ((event.clientX - rect.left) / rect.width) * 100
+  const y = ((event.clientY - rect.top) / rect.height) * 100
+  el.style.setProperty('--spot-x', `${x}%`)
+  el.style.setProperty('--spot-y', `${y}%`)
+  // Fade the spotlight in on first move so the card doesn't pop on
+  // re-entry; CSS handles the actual transition.
+  el.style.setProperty('--spot-opacity', '1')
+}
+function onCardMouseLeave(event: MouseEvent) {
+  const el = event.currentTarget as HTMLElement | null
+  if (!el) return
+  el.style.setProperty('--spot-opacity', '0')
+}
 </script>
 
 <template>
@@ -119,9 +142,12 @@ function padIndex(n: number): string {
             :key="item.id"
             class="inspiration-card"
             tabindex="0"
+            :style="{ '--card-stagger': `${index * 60}ms` }"
             @click="openDetail(item)"
             @keydown.enter="openDetail(item)"
             @keydown.space.prevent="openDetail(item)"
+            @mousemove="onCardMouseMove($event)"
+            @mouseleave="onCardMouseLeave($event)"
           >
             <div class="card-head">
               <span class="card-eyebrow">
@@ -470,7 +496,16 @@ function padIndex(n: number): string {
 
 /* Card — text-led. Uses theme tokens so dark + pearl both work. The
    value sold by the card is the *preview rows*, not a decorative
-   cover, so the surface stays calm and lets typography lead. */
+   cover, so the surface stays calm and lets typography lead.
+   ── Two interaction polishes layered on top ──
+   1. Stagger entrance: each card fades + lifts in 60ms after the
+      previous one, driven by the inline `--card-stagger` style set
+      in the template (v-for index × 60). Single-shot animation;
+      doesn't re-fire on filter switch.
+   2. Spotlight cursor: a radial gold gradient pseudo-element follows
+      the mouse, centred on the live --spot-x / --spot-y the script
+      writes on mousemove. Reads as a soft "card under a torch"
+      effect — premium without being noisy. */
 .inspiration-card {
   position: relative;
   display: flex;
@@ -482,11 +517,64 @@ function padIndex(n: number): string {
     linear-gradient(180deg, var(--surface-overlay-soft), transparent 70%),
     var(--bg-elevated);
   cursor: pointer;
+  overflow: hidden;
   transition:
     transform 0.2s ease,
     border-color 0.2s ease,
     background 0.2s ease,
     box-shadow 0.2s ease;
+  /* Local custom props with defaults — keeps the CSS valid even when
+     the mousemove handler hasn't fired yet (i.e. before the cursor
+     enters the card). */
+  --spot-x: 50%;
+  --spot-y: 50%;
+  --spot-opacity: 0;
+  --card-stagger: 0ms;
+  animation: card-enter 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: var(--card-stagger);
+}
+/* Spotlight overlay — sits above the card surface but below the
+   content (z-index 0 on this layer, content is z-index auto/1).
+   Opacity is driven from JS via --spot-opacity so hover state
+   doesn't flicker on tiny mouse moves outside the card. */
+.inspiration-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    280px circle at var(--spot-x) var(--spot-y),
+    color-mix(in srgb, var(--arc-300) 22%, transparent) 0%,
+    transparent 60%
+  );
+  opacity: var(--spot-opacity);
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+  z-index: 0;
+}
+/* Content stacks above the spotlight overlay. */
+.inspiration-card > * {
+  position: relative;
+  z-index: 1;
+}
+@keyframes card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+/* Respect reduced-motion users — skip stagger + spotlight transition. */
+@media (prefers-reduced-motion: reduce) {
+  .inspiration-card {
+    animation: none;
+  }
+  .inspiration-card::after {
+    transition: none;
+  }
 }
 /* Thin gold accent line at top — same design language as landing-page
    eyebrows. Adapts to both themes via the arc token. */
