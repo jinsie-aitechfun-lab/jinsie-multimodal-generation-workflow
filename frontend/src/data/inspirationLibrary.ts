@@ -16,7 +16,22 @@
 // downstream image prompts can pick up the character anchor even
 // without structured_characters.
 
-export type InspirationKind = 'character' | 'style' | 'template'
+// `package` is the hero kind — a one-click *complete* configuration that
+// fills all creation fields (topic / audience / tone / visual / character
+// / voice mode + voice slots / duration / quality / structured-character
+// fields). Character / style / template kinds are partial-prefill cards
+// (4-8 fields each) used combinatorially. A package is *not* user-
+// editable in v1 — the point is "3 秒从零到生成"; once the user starts
+// editing, they're back to the normal form. They can still override
+// individual fields after applying.
+//
+// Packages intentionally do NOT touch 4 preference fields and 5 system
+// fields:
+//   prefs:  renderMode, audioEnabled, voiceoverEnabled, subtitleEnabled
+//   system: sessionId, language, videoProvider, outputMode
+// These are user workflow habits or technical defaults — packages make
+// creative decisions, not habit decisions.
+export type InspirationKind = 'package' | 'character' | 'style' | 'template'
 
 export interface InspirationItem {
   id: string
@@ -39,6 +54,255 @@ export interface InspirationItem {
    */
   prefill: Record<string, unknown>
 }
+
+const PACKAGES: InspirationItem[] = [
+  {
+    id: 'pkg-bedtime-bunny',
+    kind: 'package',
+    title: '温馨睡前 · 小白兔的森林夜',
+    subtitle: '舒缓睡前故事 · 水彩童话 · 故事妈妈旁白',
+    description:
+      '夜幕降临，米米回到森林家中，月光、星星与温柔的母亲声陪伴入睡。水彩童话画风、单人旁白、60 秒短篇——最经典的睡前组合。',
+    tags: ['睡前', '温馨', '单人旁白', '60s'],
+    icon: '🌙',
+    preview: [
+      { label: '故事种子', value: '小白兔米米在森林家中入睡的夜晚' },
+      { label: '画面风格', value: '水彩童话 · 温暖治愈' },
+      { label: '配音', value: '单人旁白 · 故事妈妈' },
+      { label: '时长 / 画质', value: '60 秒 · 标准' },
+    ],
+    prefill: {
+      topic:
+        '讲一个节奏舒缓的睡前儿童故事。主角是米米，一只蓬松白色长毛、粉色耳朵内侧的温柔小白兔。夜幕降临，米米和森林里的朋友们道别回家，月亮升起，星星眨眼，妈妈唱起轻轻的歌，米米依偎着妈妈安然入睡。',
+      audience: 'children',
+      tone: 'bedtime',
+      visualStyle: 'watercolor',
+      characterStyle: 'animal',
+      voiceMode: 'single',
+      voiceStyle: 'warm_female',
+      narratorVoiceStyle: 'warm_mother',
+      motherVoiceStyle: '',
+      childVoiceStyle: '',
+      durationSec: 60,
+      qualityTier: 'quality',
+      structuredCharactersEnabled: true,
+      primaryCharacterDisplayName: '米米',
+      primaryCharacterSpecies: '小白兔',
+      primaryCharacterVisualTraits:
+        '蓬松的白色长毛，粉色耳朵内侧，温柔的大眼睛，圆圆的脸',
+      primaryCharacterForbiddenTraits: '不要灰色、不要红眼睛、不要短毛',
+      secondaryCharacterDisplayName: '',
+      secondaryCharacterSpecies: '',
+      secondaryCharacterVisualTraits: '',
+      secondaryCharacterForbiddenTraits: '',
+    },
+  },
+  {
+    id: 'pkg-curious-seal',
+    kind: 'package',
+    title: '好奇探险 · 海边小海豹',
+    subtitle: '可爱绘本 · 温暖单人旁白 · 60 秒',
+    description:
+      '波波沿着浪线发现新事物，遇到陌生海洋朋友，带回一颗小礼物。可爱绘本画风，温柔女声旁白——最易共鸣的童趣探险。',
+    tags: ['探险', '童趣', '动物', '60s'],
+    icon: '🦭',
+    preview: [
+      { label: '故事种子', value: '小海豹波波沿浪线探险，发现新朋友' },
+      { label: '画面风格', value: '可爱绘本 · 温暖治愈' },
+      { label: '配音', value: '单人旁白 · 温柔女声' },
+      { label: '时长 / 画质', value: '60 秒 · 标准' },
+    ],
+    prefill: {
+      topic:
+        '讲一个充满童趣的儿童探险故事。主角是波波，一只圆圆胖胖、银灰色光滑皮肤、圆圆大眼睛的可爱小海豹。它好奇心强，沿着海岸线追逐浪花和阳光，途中遇到了一只从未见过的小螃蟹，两个小家伙一起度过了奇妙的一天，最后波波带着小贝壳作为纪念回到礁石间的家。',
+      audience: 'children',
+      tone: 'warm',
+      visualStyle: 'cute_chibi_anime',
+      characterStyle: 'animal',
+      voiceMode: 'single',
+      voiceStyle: 'warm_female',
+      narratorVoiceStyle: 'warm_female',
+      motherVoiceStyle: '',
+      childVoiceStyle: '',
+      durationSec: 60,
+      qualityTier: 'quality',
+      structuredCharactersEnabled: true,
+      primaryCharacterDisplayName: '波波',
+      primaryCharacterSpecies: '小海豹',
+      primaryCharacterVisualTraits:
+        '银灰色光滑皮肤，圆圆胖胖的身形，圆圆的大眼睛，短小可爱的鳍',
+      primaryCharacterForbiddenTraits: '不要尖牙、不要瘦削、不要黑色',
+      secondaryCharacterDisplayName: '',
+      secondaryCharacterSpecies: '',
+      secondaryCharacterVisualTraits: '',
+      secondaryCharacterForbiddenTraits: '',
+    },
+  },
+  {
+    id: 'pkg-friendship-duo',
+    kind: 'package',
+    title: '友谊双角色 · 米米与松松',
+    subtitle: '角色配音 · 双主角对话 · 120 秒',
+    description:
+      '温柔小白兔与活泼小松鼠在森林相遇，一起分享橡果、躲过雨天、成为挚友。角色配音模式（主角+配角+旁白三声），最能体现配音差异化的演示。',
+    tags: ['友谊', '双角色', '角色配音', '120s'],
+    icon: '🤝',
+    preview: [
+      { label: '故事种子', value: '小白兔遇上小松鼠，从害羞到挚友' },
+      { label: '画面风格', value: '可爱绘本 · 温暖治愈' },
+      { label: '配音', value: '角色配音 · 三种声线' },
+      { label: '时长 / 画质', value: '120 秒 · 标准' },
+    ],
+    prefill: {
+      topic:
+        '讲一个关于友谊的儿童故事。一只温柔的小白兔米米和一只活泼的小松鼠松松在森林里第一次相遇。米米性格安静喜欢倾听，松松性格活泼爱蹦跳。它们从最初的害羞试探，到一起分享橡果、躲过一场小雨，最后慢慢变成了形影不离的好朋友。',
+      audience: 'children',
+      tone: 'warm',
+      visualStyle: 'cute_chibi_anime',
+      characterStyle: 'animal',
+      voiceMode: 'character',
+      voiceStyle: 'warm_female',
+      narratorVoiceStyle: 'warm_female',
+      motherVoiceStyle: 'warm_female',
+      childVoiceStyle: 'gentle_child',
+      durationSec: 120,
+      qualityTier: 'quality',
+      structuredCharactersEnabled: true,
+      primaryCharacterDisplayName: '米米',
+      primaryCharacterSpecies: '小白兔',
+      primaryCharacterVisualTraits:
+        '蓬松的白色长毛，粉色耳朵内侧，温柔的大眼睛，圆圆的脸',
+      primaryCharacterForbiddenTraits: '不要灰色、不要红眼睛、不要短毛',
+      secondaryCharacterDisplayName: '松松',
+      secondaryCharacterSpecies: '小松鼠',
+      secondaryCharacterVisualTraits:
+        '红棕色蓬松大尾巴，圆圆的脸蛋，灵动的黑眼睛，小巧灵活',
+      secondaryCharacterForbiddenTraits: '不要灰松鼠、尾巴不要细小、不要黑色',
+    },
+  },
+  {
+    id: 'pkg-family-cozy',
+    kind: 'package',
+    title: '亲子共读 · 森林家庭日',
+    subtitle: '亲子轮流配音 · 水彩童话 · 120 秒',
+    description:
+      '兔妈妈与小兔米米的一日相处——清晨采花、午后野餐、傍晚回家。亲子轮流配音模式（妈妈声 + 孩子声），还原睡前故事会的语境。',
+    tags: ['亲子', '日常', '亲子轮流', '120s'],
+    icon: '🐰',
+    preview: [
+      { label: '故事种子', value: '兔妈妈与小兔米米的森林家庭日' },
+      { label: '画面风格', value: '水彩童话 · 温暖治愈' },
+      { label: '配音', value: '亲子轮流 · 妈妈声 + 孩子声' },
+      { label: '时长 / 画质', value: '120 秒 · 标准' },
+    ],
+    prefill: {
+      topic:
+        '讲一个温馨的亲子日常故事。兔妈妈带着小兔米米在森林里度过一天——清晨一起去溪边采花，午后在大树下野餐分享胡萝卜蛋糕，傍晚牵着手走回家，途中聊起今天最开心的事。',
+      audience: 'family',
+      tone: 'warm',
+      visualStyle: 'watercolor',
+      characterStyle: 'animal',
+      voiceMode: 'multi',
+      voiceStyle: 'warm_female',
+      narratorVoiceStyle: 'warm_female',
+      motherVoiceStyle: 'warm_mother',
+      childVoiceStyle: 'gentle_child',
+      durationSec: 120,
+      qualityTier: 'quality',
+      structuredCharactersEnabled: false,
+      primaryCharacterDisplayName: '',
+      primaryCharacterSpecies: '',
+      primaryCharacterVisualTraits: '',
+      primaryCharacterForbiddenTraits: '',
+      secondaryCharacterDisplayName: '',
+      secondaryCharacterSpecies: '',
+      secondaryCharacterVisualTraits: '',
+      secondaryCharacterForbiddenTraits: '',
+    },
+  },
+  {
+    id: 'pkg-fantasy-cinematic',
+    kind: 'package',
+    title: '奇幻冒险 · 月夜萤火之旅',
+    subtitle: '电影感画面 · 180 秒长篇 · Cinematic 画质',
+    description:
+      '月圆之夜，小灰鼠跟随发光的萤火虫进入森林深处，遇到夜行小伙伴，度过一晚奇遇。电影感画风、长篇时长、cinematic 画质——展示画面叙事密度的高配套餐。',
+    tags: ['奇幻', '冒险', '电影感', 'cinematic', '180s'],
+    icon: '✨',
+    preview: [
+      { label: '故事种子', value: '小灰鼠在月夜跟随萤火虫的奇遇之旅' },
+      { label: '画面风格', value: '电影感 · 温暖治愈' },
+      { label: '配音', value: '单人旁白 · 故事旁白声' },
+      { label: '时长 / 画质', value: '180 秒 · Cinematic' },
+    ],
+    prefill: {
+      topic:
+        '讲一个充满奇幻感的儿童冒险故事。一只柔和灰白毛色、明亮好奇眼睛的小灰鼠在月圆之夜被一只发光的萤火虫领进了森林深处，沿途月光洒下，溪水反着银光。它先后遇到了戴着橡果帽的夜行小蚁、披着叶子披风的小刺猬，加入了它们的夜间漫步，最终在天亮前被萤火虫送回家门口，留下了一晚难忘的回忆。',
+      audience: 'children',
+      tone: 'adventure',
+      visualStyle: 'cinematic',
+      characterStyle: 'animal',
+      voiceMode: 'single',
+      voiceStyle: 'narrator_female',
+      narratorVoiceStyle: 'narrator_female',
+      motherVoiceStyle: '',
+      childVoiceStyle: '',
+      durationSec: 180,
+      qualityTier: 'cinematic',
+      structuredCharactersEnabled: true,
+      primaryCharacterDisplayName: '小鼠',
+      primaryCharacterSpecies: '小灰鼠',
+      primaryCharacterVisualTraits:
+        '柔和的灰白毛色，明亮好奇的大眼睛，小巧的身形，圆润的耳朵',
+      primaryCharacterForbiddenTraits: '不要黑色、不要尖锐的牙、不要病态瘦削',
+      secondaryCharacterDisplayName: '',
+      secondaryCharacterSpecies: '',
+      secondaryCharacterVisualTraits: '',
+      secondaryCharacterForbiddenTraits: '',
+    },
+  },
+  {
+    id: 'pkg-chinese-folk',
+    kind: 'package',
+    title: '国风童话 · 竹林小白兔',
+    subtitle: '国风插画 · 童趣启蒙 · 60 秒',
+    description:
+      '小白兔在竹林里遇见会说话的兰花，听它讲季节更替与花开花落的小道理。国风插画画风、科普启蒙基调——展示中式童话美学的独家套餐。',
+    tags: ['国风', '科普启蒙', '童趣', '60s'],
+    icon: '🎋',
+    preview: [
+      { label: '故事种子', value: '小白兔与竹林兰花，认识四季' },
+      { label: '画面风格', value: '国风插画 · 温暖治愈' },
+      { label: '配音', value: '单人旁白 · 温柔女声' },
+      { label: '时长 / 画质', value: '60 秒 · 标准' },
+    ],
+    prefill: {
+      topic:
+        '讲一个充满中式童趣的儿童启蒙故事。一只蓬松白色长毛的小白兔米米在江南竹林里散步，遇到一朵会说话的兰花。兰花告诉它春天的雨、夏天的萤火、秋天的桂香、冬天的雪——四季在竹林里轮转的小道理。',
+      audience: 'children',
+      tone: 'educational',
+      visualStyle: 'chinese_illustration',
+      characterStyle: 'animal',
+      voiceMode: 'single',
+      voiceStyle: 'warm_female',
+      narratorVoiceStyle: 'warm_female',
+      motherVoiceStyle: '',
+      childVoiceStyle: '',
+      durationSec: 60,
+      qualityTier: 'quality',
+      structuredCharactersEnabled: true,
+      primaryCharacterDisplayName: '米米',
+      primaryCharacterSpecies: '小白兔',
+      primaryCharacterVisualTraits:
+        '蓬松的白色长毛，粉色耳朵内侧，温柔的大眼睛，圆圆的脸',
+      primaryCharacterForbiddenTraits: '不要灰色、不要红眼睛、不要短毛',
+      secondaryCharacterDisplayName: '',
+      secondaryCharacterSpecies: '',
+      secondaryCharacterVisualTraits: '',
+      secondaryCharacterForbiddenTraits: '',
+    },
+  },
+]
 
 const CHARACTERS: InspirationItem[] = [
   {
@@ -308,13 +572,21 @@ const TEMPLATES: InspirationItem[] = [
   },
 ]
 
+// Packages first so they render as the hero section on the page.
 export const INSPIRATION_ITEMS: InspirationItem[] = [
+  ...PACKAGES,
   ...CHARACTERS,
   ...STYLES,
   ...TEMPLATES,
 ]
 
 export const KIND_META: Record<InspirationKind, { label: string; eyebrow: string; description: string; icon: string }> = {
+  package: {
+    label: '完整套餐',
+    eyebrow: 'STORY PACKAGES',
+    description: '一键就绪——故事种子、画面风格、角色配音、时长画质全部填好，点了就能生成。',
+    icon: '◉',
+  },
   character: {
     label: '角色形象',
     eyebrow: 'CHARACTERS',
