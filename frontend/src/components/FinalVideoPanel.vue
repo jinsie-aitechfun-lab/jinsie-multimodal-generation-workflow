@@ -71,6 +71,7 @@
           v-if="
             renderMode === 'manual' &&
             assetsReady &&
+            !hasFailedAssets &&
             !renderInFlight &&
             !finalVideoUrl &&
             audioItemCount > 0 &&
@@ -161,6 +162,33 @@ const imageAssetCount = computed(() => {
   return Array.isArray(assets) ? assets.length : 0
 })
 
+// Scenes whose image generation failed and were persisted as
+// status='failed' placeholders by the backend (B1 in PR #154). When
+// any exist, the panel must short-circuit into a "图片生成失败" state
+// — rendering is blocked until the user clicks per-scene 重试. Without
+// this, length(image_assets.assets) reaches scene_count and assetsReady
+// flips to true, and the panel falsely shows "等待渲染 / 生成视频".
+const failedAssetCount = computed(() => {
+  const n = asNum(imageAssets.value?.failed_count)
+  if (n != null && n >= 0) return n
+  const ids = imageAssets.value?.failed_scene_ids
+  if (Array.isArray(ids)) return ids.length
+  const assets = imageAssets.value?.assets
+  if (Array.isArray(assets)) {
+    return assets.filter((a) => {
+      const status = asStr((a as UnknownRecord | null)?.status).toLowerCase()
+      return status === 'failed'
+    }).length
+  }
+  return 0
+})
+const hasFailedAssets = computed(() => failedAssetCount.value > 0)
+const generatedAssetCount = computed(() => {
+  const n = asNum(imageAssets.value?.generated_count)
+  if (n != null && n >= 0) return n
+  return Math.max(0, imageAssetCount.value - failedAssetCount.value)
+})
+
 // Title of the scene currently being refreshed — appended to the
 // inline progress pill so it matches the top progress bar's
 // "候选图生成中：11/12 · 美好的下午" copy. Without this, the user
@@ -214,7 +242,11 @@ const hasBlockingError = computed(() => {
 })
 
 const assetsReady = computed(() => {
-  return sceneCount.value > 0 && imageAssetCount.value >= sceneCount.value
+  return (
+    sceneCount.value > 0 &&
+    imageAssetCount.value >= sceneCount.value &&
+    !hasFailedAssets.value
+  )
 })
 
 const progressPct = computed(() => {
@@ -224,6 +256,13 @@ const progressPct = computed(() => {
     return Math.max(0, Math.min(100, Math.round(props.workflowStatusProgress)))
   }
   if (!sceneCount.value) return 0
+
+  // Failed scenes count against progress — show only the generated
+  // ratio so the bar visibly stays below the "ready" threshold.
+  if (hasFailedAssets.value) {
+    const ratio = Math.min(1, Math.max(0, generatedAssetCount.value / sceneCount.value))
+    return Math.floor(ratio * 85)
+  }
 
   const ratio = Math.min(1, Math.max(0, imageAssetCount.value / sceneCount.value))
   return Math.floor(ratio * 85)
@@ -237,8 +276,14 @@ const progressLabel = computed(() => {
   // otherwise trip the "失败" branch — but a user-initiated pause is not
   // a failure, and the copy should reflect that.
   if (props.cancelRequested) return '正在取消生成…'
-  if (props.pausedByUser) return `候选图已暂停（${imageAssetCount.value}/${sceneCount.value || '?'}）`
-  if (hasBlockingError.value) return `候选图生成失败（${imageAssetCount.value}/${sceneCount.value || '?'}）`
+  if (props.pausedByUser) return `候选图已暂停（${generatedAssetCount.value}/${sceneCount.value || '?'}）`
+  if (hasBlockingError.value) return `候选图生成失败（${generatedAssetCount.value}/${sceneCount.value || '?'}）`
+  // Persisted per-scene failures (B1). Must come BEFORE any check that
+  // counts asset length, since failed placeholders inflate the length
+  // and would otherwise let the state machine cross into "等待渲染".
+  if (hasFailedAssets.value && !props.refreshingImages && !props.sceneRefreshingId) {
+    return `候选图生成失败（${generatedAssetCount.value}/${sceneCount.value || '?'}）`
+  }
   if (workflowInFlight.value) return '处理中…'
   if (indeterminate.value) return '准备中…'
   if (props.finalVideoUrl) return '已生成'
@@ -249,9 +294,19 @@ const progressLabel = computed(() => {
       const sceneSuffix = currentRefreshingSceneTitle.value
         ? ` · ${currentRefreshingSceneTitle.value}`
         : ''
-      return `候选图生成中（${imageAssetCount.value}/${sceneCount.value}${sceneSuffix}）`
+      // Exclude failed placeholders from the count — a partial bulk
+      // refresh after a prior failure would otherwise show e.g. 12/12.
+      return `候选图生成中（${generatedAssetCount.value}/${sceneCount.value}${sceneSuffix}）`
     }
-    if (imageAssetCount.value > 0) return `候选图已暂停（${imageAssetCount.value}/${sceneCount.value}）`
+    // Per-scene retry triggered from a failed-scene card. Label matches
+    // the title ("正在重新生成候选图") and counts only successful assets.
+    if (props.sceneRefreshingId) {
+      const sceneSuffix = currentRefreshingSceneTitle.value
+        ? ` · ${currentRefreshingSceneTitle.value}`
+        : ''
+      return `正在重新生成（${generatedAssetCount.value}/${sceneCount.value}${sceneSuffix}）`
+    }
+    if (generatedAssetCount.value > 0) return `候选图已暂停（${generatedAssetCount.value}/${sceneCount.value}）`
     return `候选图待生成（0/${sceneCount.value}）`
   }
   return '等待用户触发渲染'
@@ -261,6 +316,9 @@ const placeholderTitle = computed(() => {
   if (props.cancelRequested) return '正在取消生成'
   if (props.pausedByUser) return '候选图已暂停'
   if (hasBlockingError.value) return '候选图生成失败'
+  if (hasFailedAssets.value && !props.refreshingImages && !props.sceneRefreshingId) {
+    return '场景图片生成失败'
+  }
   if (workflowInFlight.value) return '正在生成分镜'
   if (props.renderInFlight || finalStatus.value === 'rendering') return '正在生成视频'
   if (!sceneCount.value) return '等待分镜'
@@ -287,6 +345,9 @@ const placeholderDesc = computed(() => {
   }
   if (hasBlockingError.value) {
     return blockingErrorMessage.value
+  }
+  if (hasFailedAssets.value && !props.refreshingImages && !props.sceneRefreshingId) {
+    return `${failedAssetCount.value} 个场景的候选图生成失败，请点击对应场景的「重试该场景」按钮重新生成；全部成功后会自动继续合成视频。`
   }
   if (workflowInFlight.value) {
     return props.workflowStatusMessage || 'Workflow 已提交，后端正在生成故事与分镜。完成后会自动进入候选图与视频准备阶段。'

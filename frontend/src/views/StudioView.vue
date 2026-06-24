@@ -675,10 +675,44 @@ const isWorkflowReadyForRender = computed(() => {
   const audioEnabled = audioSegments?.enabled === true
   const audioOk = !audioEnabled || audioItems.length > 0
 
+  // image_assets.assets includes status='failed' placeholders (B1), so
+  // length alone can hit scene_count on a partially-failed run. Exclude
+  // those — otherwise the auto-render watcher sees ready=true and the
+  // manual hint banner ("候选图尚未就绪") incorrectly disappears.
+  const failedCountRaw = imageAssets?.failed_count
+  const failedCount = typeof failedCountRaw === 'number' ? failedCountRaw : 0
+  const failedIdsLen = Array.isArray(imageAssets?.failed_scene_ids)
+    ? imageAssets.failed_scene_ids.length
+    : 0
+  const failedFromStatus = imageAssetList.filter(
+    (a: any) => typeof a?.status === 'string' && a.status.toLowerCase() === 'failed',
+  ).length
+  const totalFailed = Math.max(failedCount, failedIdsLen, failedFromStatus)
+  const successfulAssetCount = imageAssetList.length - totalFailed
+
   return (
     scenes.length > 0 &&
-    imageAssetList.length >= scenes.length &&
+    successfulAssetCount >= scenes.length &&
     audioOk
+  )
+})
+
+// Exposed for the manual-mode hint below (and any other consumer that
+// needs to distinguish "still generating" from "stopped with failures").
+const hasImageFailures = computed(() => {
+  const imageAssets = currentWorkflowResponse.value?.outputs?.image_assets as
+    | Record<string, unknown>
+    | undefined
+  if (!imageAssets) return false
+  const failedCount =
+    typeof imageAssets.failed_count === 'number' ? imageAssets.failed_count : 0
+  if (failedCount > 0) return true
+  const ids = imageAssets.failed_scene_ids
+  if (Array.isArray(ids) && ids.length > 0) return true
+  const assets = imageAssets.assets
+  if (!Array.isArray(assets)) return false
+  return assets.some(
+    (a: any) => typeof a?.status === 'string' && a.status.toLowerCase() === 'failed',
   )
 })
 
@@ -2325,6 +2359,22 @@ async function renderFinalVideoIfReady(baseResponse: WorkflowRunResponse) {
   if (scenes.length === 0) return
   if (imageAssetList.length < scenes.length) return
 
+  // Per-scene failures (B1) inflate imageAssetList.length to scene_count
+  // with status='failed' placeholders. The length check above can't tell
+  // them apart, so check the explicit failure signals here. Without this,
+  // auto-mode would POST /v1/final-video/render on a partially-failed
+  // workflow — the backend would 4xx (B2 gate), but better to short-circuit.
+  const failedCountRaw = imageAssets?.failed_count
+  const failedCount = typeof failedCountRaw === 'number' ? failedCountRaw : 0
+  const failedIds = Array.isArray(imageAssets?.failed_scene_ids)
+    ? (imageAssets.failed_scene_ids as unknown[]).length
+    : 0
+  const hasFailedFromStatus = imageAssetList.some((a) => {
+    const status = (a as Record<string, unknown> | null)?.status
+    return typeof status === 'string' && status.toLowerCase() === 'failed'
+  })
+  if (failedCount > 0 || failedIds > 0 || hasFailedFromStatus) return
+
   // 允许无声视频
   // 只有在 audio_segments 存在且明确 enabled=true 但没有生成时才阻止
   const audioEnabled = audioSegments?.enabled === true
@@ -3371,6 +3421,7 @@ async function runWorkflow() {
         :is-processing="workflowIsProcessing"
         :refreshing-images="refreshingImageReview"
         :awaiting-manual-render="awaitingManualRender"
+        :has-image-failures="hasImageFailures"
         :status-label="workflowRunStatusMessage || (refreshingImageReview ? reviewRefreshProgress.text : '')"
         :completed-steps="workflowStatusData?.completed_steps ?? 0"
         :total-steps="workflowStatusData?.total_steps ?? 0"
@@ -3417,7 +3468,7 @@ async function runWorkflow() {
                 @render="renderFinalVideoIfReady(currentWorkflowResponse || {})"
                 :show-render-button="workflowForm.renderMode === 'auto'"
               />
-              <div v-if="workflowForm.renderMode === 'manual' && !isWorkflowReadyForRender" class="manual-hint" style="text-align:center;padding:0.5rem 0 0;">
+              <div v-if="workflowForm.renderMode === 'manual' && !isWorkflowReadyForRender && !hasImageFailures" class="manual-hint" style="text-align:center;padding:0.5rem 0 0;">
                 等待候选图与音频生成完成…
               </div>
             </div>
