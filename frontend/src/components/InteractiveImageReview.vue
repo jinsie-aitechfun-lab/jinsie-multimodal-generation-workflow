@@ -391,7 +391,12 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
     // OLD image unchanged while the background API call runs — there's
     // no visual indication anything's happening, and once the new image
     // arrives it appears to "just change" without any progress feedback.
-    if (matchedItem && placeholder.state !== 'refreshing' && placeholder.state !== 'waiting') {
+    if (
+      matchedItem &&
+      placeholder.state !== 'refreshing' &&
+      placeholder.state !== 'waiting' &&
+      placeholder.state !== 'failed'
+    ) {
       entries.push({
         kind: 'item',
         sceneId,

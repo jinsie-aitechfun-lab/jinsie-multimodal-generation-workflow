@@ -2017,14 +2017,75 @@ function buildReviewPlaceholdersFromStoryboard(data: WorkflowRunResponse): Revie
       .filter(Boolean),
   )
 
+  // Scenes the backend already marked as `status: 'failed'` in
+  // image_assets.assets. After B1 (image_provider failures persisted
+  // as placeholders), these are explicit dead scenes and must NOT
+  // render as "waiting" — that copy implies generation is still
+  // pending, which would confuse the user into thinking the workflow
+  // is still working.
+  const imageAssetList = Array.isArray((imageAssets as Record<string, unknown>)?.assets)
+    ? ((imageAssets as Record<string, unknown>).assets as unknown[])
+    : []
+  const failedSceneIds = new Set(
+    imageAssetList
+      .map((item: unknown) => {
+        if (!item || typeof item !== 'object') return ''
+        const rec = item as Record<string, unknown>
+        return String(rec.status || '').toLowerCase() === 'failed'
+          ? String(rec.scene_id || '')
+          : ''
+      })
+      .filter(Boolean),
+  )
+
+  // Legacy outputs (written before B1) silently dropped failed scenes
+  // — image_assets.assets just had fewer entries than storyboard
+  // scenes and no `failed` marker anywhere. In that case the only
+  // signal we have is "the workflow is already done" (final_video is
+  // present): a scene that's missing from selected_assets in a
+  // terminal run can't still be "waiting" — it must be a failure.
+  const finalVideo = data.outputs?.final_video as Record<string, unknown> | undefined
+  const finalVideoStatus = String(finalVideo?.status || '').toLowerCase()
+  const workflowIsTerminal =
+    Boolean(finalVideo?.public_url) ||
+    finalVideoStatus === 'generated' ||
+    finalVideoStatus === 'degraded'
+
+  // The render step now also records `missing_scene_ids` when it
+  // produces a degraded video. Trust that list when present — it's
+  // the authoritative source for "rendered without this scene".
+  const renderMissingSceneIds = new Set(
+    (Array.isArray((finalVideo as Record<string, unknown>)?.missing_scene_ids)
+      ? ((finalVideo as Record<string, unknown>).missing_scene_ids as unknown[])
+      : []
+    )
+      .map((id) => String(id || ''))
+      .filter(Boolean),
+  )
+
   return scenes.map((scene: unknown) => {
     const sceneRecord = scene as Record<string, unknown>
     const sceneId = String(sceneRecord.scene_id || '')
     const sceneTitle = String(sceneRecord.scene_title || sceneId || 'unknown-scene')
+
+    let state: ReviewPlaceholderItem['state']
+    if (doneSceneIds.has(sceneId)) {
+      state = 'done'
+    } else if (failedSceneIds.has(sceneId) || renderMissingSceneIds.has(sceneId)) {
+      state = 'failed'
+    } else if (workflowIsTerminal) {
+      // Legacy / unmarked: workflow ended without this scene's asset
+      state = 'failed'
+    } else {
+      state = 'waiting'
+    }
+
     return {
       scene_id: sceneId,
       scene_title: sceneTitle,
-      state: doneSceneIds.has(sceneId) ? 'done' : 'waiting',
+      state,
+      error_message:
+        state === 'failed' ? '该场景图片生成失败' : undefined,
     }
   })
 }
@@ -2395,13 +2456,25 @@ async function refreshImageReviewScene(sceneId: string, signal?: AbortSignal, qu
 
   const data: ImageReviewRefreshSceneResponse = await response.json()
 
+  // Strip the stale final_video — a successful per-scene refresh
+  // means the previously-rendered video no longer matches the image
+  // set. If we kept it, applyWorkflowResponse below would restore
+  // finalVideoUrl to the old public_url and undo the retry-clear in
+  // retryImageReviewScene, trapping the user in the same state.
+  const priorOutputs = currentWorkflowResponse.value.outputs || {}
+  const { final_video: _staleVideo, ...priorOutputsSansVideo } = priorOutputs as Record<
+    string,
+    unknown
+  >
+  void _staleVideo
+
   const mergedResponse: WorkflowRunResponse = {
     ...(currentWorkflowResponse.value || {}),
     workflow_id: data.workflow_id || currentWorkflowResponse.value.workflow_id,
     session_id: data.session_id || currentWorkflowResponse.value.session_id,
     run_id: data.run_id || currentWorkflowResponse.value.run_id,
     outputs: {
-      ...(currentWorkflowResponse.value.outputs || {}),
+      ...priorOutputsSansVideo,
       image_assets:
         data.image_assets || currentWorkflowResponse.value.outputs?.image_assets || {},
       image_review:
@@ -2433,6 +2506,26 @@ async function retryImageReviewScene(sceneId: string) {
 
   errorMessage.value = ''
   imageReviewRefreshAbortController = new AbortController()
+
+  // Retrying a failed scene invalidates the existing final video — it
+  // was rendered without this scene (or with a stale version of it).
+  // Clearing finalVideoUrl does three things at once:
+  //   1. FinalVideoPanel falls through to the placeholder branch and
+  //      picks up the existing "正在重新生成候选图" copy + animation,
+  //      so the user no longer sees a frozen old video paired with
+  //      "等待候选图生成完成…".
+  //   2. renderFinalVideoIfReady's `if (finalVideoUrl.value) return`
+  //      guard no longer short-circuits, so a successful retry in
+  //      auto mode immediately kicks off a re-render with the now-
+  //      complete image set.
+  //   3. The 重新生成 (per-scene) button on done cards reappears
+  //      because its `!videoGenerated` guard flips back to truthy —
+  //      the user can keep fixing other scenes too.
+  // localStorage's STORAGE_KEY_VIDEO_URL is intentionally NOT removed
+  // here — that key feeds the history-video list, which should keep
+  // the prior video accessible until a new one writes back via
+  // applyWorkflowResponse on render completion.
+  finalVideoUrl.value = ''
 
   try {
     await refreshImageReviewScene(sceneId, imageReviewRefreshAbortController.signal)
