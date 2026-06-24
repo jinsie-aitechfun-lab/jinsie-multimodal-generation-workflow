@@ -7,6 +7,7 @@ type FilterValue = 'all' | InspirationKind
 
 const FILTERS: Array<{ value: FilterValue; label: string }> = [
   { value: 'all',       label: '全部' },
+  { value: 'package',   label: '完整套餐' },
   { value: 'character', label: '角色形象' },
   { value: 'style',     label: '画面风格' },
   { value: 'template',  label: '故事模板' },
@@ -24,8 +25,9 @@ interface SectionGroup {
   items: InspirationItem[]
 }
 
+// `package` first so it renders as the hero section.
 const groupedItems = computed<SectionGroup[]>(() => {
-  const kinds: InspirationKind[] = ['character', 'style', 'template']
+  const kinds: InspirationKind[] = ['package', 'character', 'style', 'template']
   return kinds
     .filter((kind) => activeFilter.value === 'all' || activeFilter.value === kind)
     .map((kind) => ({
@@ -52,6 +54,7 @@ function kindLabel(kind: InspirationKind): string {
 }
 
 function ctaLabel(kind: InspirationKind): string {
+  if (kind === 'package')   return '一键应用套餐'
   if (kind === 'character') return '用此角色创作'
   if (kind === 'style')     return '用此风格创作'
   return '用此模板创作'
@@ -141,6 +144,7 @@ function onCardMouseLeave(event: MouseEvent) {
             v-for="(item, index) in group.items"
             :key="item.id"
             class="inspiration-card"
+            :class="{ 'inspiration-card--package': item.kind === 'package' }"
             tabindex="0"
             :style="{ '--card-stagger': `${index * 60}ms` }"
             @click="openDetail(item)"
@@ -153,7 +157,10 @@ function onCardMouseLeave(event: MouseEvent) {
               <span class="card-eyebrow">
                 {{ KIND_META[item.kind].eyebrow }} · {{ padIndex(index) }}
               </span>
-              <span class="card-icon" aria-hidden="true">{{ item.icon }}</span>
+              <span class="card-head-right">
+                <span v-if="item.kind === 'package'" class="card-pill">一键就绪</span>
+                <span class="card-icon" aria-hidden="true">{{ item.icon }}</span>
+              </span>
             </div>
 
             <div class="card-body">
@@ -636,6 +643,47 @@ function onCardMouseLeave(event: MouseEvent) {
 .inspiration-card:hover .card-icon {
   opacity: 0.95;
   transform: scale(1.1);
+}
+
+/* Right cluster in the card head — pill + icon stacked horizontally so
+   the pill sits next to the icon, not under the eyebrow. */
+.card-head-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+/* "一键就绪" tag on package cards. Tiny pill, gold tint, doesn't
+   compete with the title — it's a value-prop badge, not a CTA. */
+.card-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--arc-400) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--arc-300) 35%, transparent);
+  color: var(--arc-200);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+/* Package cards get a slightly more saturated border / shadow than
+   character/style/template cards — they're the headline kind. The
+   spotlight hover effect from `.inspiration-card::before` still works
+   on top of this, so hover still feels premium. */
+.inspiration-card--package {
+  border-color: color-mix(in srgb, var(--arc-300) 38%, var(--border-glass));
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28),
+              inset 0 0 0 1px color-mix(in srgb, var(--arc-300) 14%, transparent);
+}
+.inspiration-card--package:hover,
+.inspiration-card--package:focus-visible {
+  border-color: color-mix(in srgb, var(--arc-300) 55%, var(--border-glass));
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.34),
+              inset 0 0 0 1px color-mix(in srgb, var(--arc-300) 22%, transparent);
 }
 
 .card-body {
