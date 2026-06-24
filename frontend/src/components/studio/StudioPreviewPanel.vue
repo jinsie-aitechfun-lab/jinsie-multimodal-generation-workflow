@@ -205,6 +205,48 @@
         </div>
       </template>
 
+      <!-- ════ A3: Workflow halted by image failures.
+           Sits above B / E so failures dominate the right column even
+           when history exists or the workflow has settled. Without
+           this, a partially-failed run with no video shows either the
+           history grid or an empty illustration on the main tab — the
+           failure is only visible on the 画面审核 tab, which doesn't
+           match how the user navigates. ════ -->
+      <template v-else-if="hasImageFailures">
+        <div class="pp-work">
+          <div class="pp-work-head">
+            <div class="pp-work-head-left">
+              <div class="pp-work-eyebrow">本轮生成</div>
+              <div class="pp-work-filename">部分场景候选图失败，请前往「画面审核」重试</div>
+            </div>
+            <span class="pp-work-badge pp-work-badge--failed">
+              <span class="pp-work-badge-dot" aria-hidden="true"></span>
+              生成失败 · 工作流
+            </span>
+          </div>
+
+          <ol class="pp-work-flow" aria-label="生成链路">
+            <template v-for="(step, idx) in workflowChain" :key="step.id">
+              <li :class="['pp-flow-node', `pp-flow-node--${step.state}`]">
+                <span class="pp-flow-dot" aria-hidden="true"></span>
+                <span class="pp-flow-label">{{ step.label }}</span>
+              </li>
+              <li
+                v-if="idx < workflowChain.length - 1"
+                :class="['pp-flow-link', { 'pp-flow-link--done': step.state === 'done' }]"
+                aria-hidden="true"
+              ></li>
+            </template>
+          </ol>
+
+          <div class="pp-work-foot">
+            <span class="pp-work-foot-text">
+              已完成 {{ doneCount }} / {{ workflowChain.length }} 步骤
+            </span>
+          </div>
+        </div>
+      </template>
+
       <!-- ════ B: Has history but no current — history as main content ════ -->
       <div v-else-if="allVideoUrls.length > 0" class="pp-hist-main">
         <div class="pp-hist-main-header">
@@ -383,6 +425,14 @@ const props = defineProps<{
   // want the workflow chain to STAY visible (video step active) so the
   // page doesn't look frozen during the wait.
   awaitingManualRender?: boolean
+  // True when image_assets has persisted failed-scene placeholders.
+  // Drives the workflow chain into a halted state: images step shows
+  // as 'failed' (red), and the audio/subtitle/video steps stay
+  // pending. Without this, the chain advances past the image step
+  // (since the backend reports image_assets as a completed step in
+  // step_summaries) and visually claims everything is done — directly
+  // contradicting the FinalVideoPanel showing "场景图片生成失败".
+  hasImageFailures?: boolean
   statusLabel?: string
   completedSteps?: number
   totalSteps?: number
@@ -522,7 +572,7 @@ const progressSteps = computed(() => {
 //   • otherwise          → derive from completedSteps / totalSteps
 // Stage indices into STEP_DEFS:
 //   0 story · 1 storyboard · 2 images · 3 voice · 4 subtitles · 5 video
-type FlowState = 'done' | 'active' | 'pending'
+type FlowState = 'done' | 'active' | 'pending' | 'failed'
 
 // During the initial workflow run, the backend's `completed_steps` walks
 // through ~11 internal stages including audio/subtitle/video — but those
@@ -549,6 +599,23 @@ function buildChainWithActive(activeIdx: number) {
 }
 
 const workflowChain = computed<{ id: string; label: string; flowLabel: string; state: FlowState }[]>(() => {
+  // Image failures halt the pipeline. Story / storyboard are done by
+  // definition (image generation can't have failed without those
+  // running first), images shows 'failed', downstream stays pending.
+  // Sits above renderInFlight so a stale prior-render in-flight flag
+  // can't overrule a fresh failure state — but in practice render
+  // wouldn't be in flight when failures are persisted (B2 gate).
+  if (props.hasImageFailures) {
+    return STEP_DEFS.map((step, idx) => ({
+      ...step,
+      state: (
+        idx <= 1 ? 'done'           // story / storyboard
+        : idx === 2 ? 'failed'      // images — halted
+        : 'pending'                 // voice / subtitle / video
+      ) as FlowState,
+    }))
+  }
+
   // Final-video render — every prior step is finished, only "视频合成" is live.
   if (props.renderInFlight) return buildChainWithActive(5)
 
@@ -1235,6 +1302,16 @@ const doneCount = computed(
   animation: ppFlowPulse 1.6s ease-in-out infinite;
 }
 
+.pp-work-badge--failed {
+  border-color: color-mix(in srgb, #f87171 50%, transparent);
+  background: color-mix(in srgb, #f87171 12%, transparent);
+  color: #fca5a5;
+}
+.pp-work-badge--failed .pp-work-badge-dot {
+  background: #f87171;
+  box-shadow: 0 0 6px color-mix(in srgb, #f87171 60%, transparent);
+}
+
 /* ═══════════════════════════════════════════════
    Workflow Timeline — minimalist horizontal rail
    • 6 stops along a continuous 1px gold rail
@@ -1286,6 +1363,14 @@ const doneCount = computed(
   animation: ppFlowPulse 1.8s ease-in-out infinite;
 }
 
+.pp-flow-node--failed .pp-flow-dot {
+  background: #f87171;
+  border-color: #f87171;
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, #f87171 22%, transparent),
+    0 0 10px color-mix(in srgb, #f87171 45%, transparent);
+}
+
 .pp-flow-label {
   position: absolute;
   top: calc(100% + 8px);
@@ -1306,6 +1391,11 @@ const doneCount = computed(
 
 .pp-flow-node--active .pp-flow-label {
   color: var(--arc-200);
+  font-weight: 600;
+}
+
+.pp-flow-node--failed .pp-flow-label {
+  color: #f87171;
   font-weight: 600;
 }
 
