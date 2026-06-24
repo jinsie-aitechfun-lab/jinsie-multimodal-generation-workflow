@@ -878,14 +878,53 @@ class RunnerAudioRenderSupport:
         audio_segments = outputs.get("audio_segments") or {}
         subtitles = outputs.get("subtitles") or {}
 
-        image_asset_list = image_assets.get("assets") or []
+        raw_asset_list = image_assets.get("assets") or []
         audio_item_list = audio_segments.get("items") or []
+
+        # Partition assets. Failed placeholders (from B1) have
+        # status='failed' and no relative_path — they must never reach
+        # ffmpeg or it crashes on the missing file.
+        usable_asset_list: List[Dict[str, Any]] = []
+        failed_scene_ids: List[str] = []
+        for asset in raw_asset_list:
+            if not isinstance(asset, dict):
+                continue
+            status = str(asset.get("status") or "").strip().lower()
+            if status == "failed" or not asset.get("relative_path"):
+                scene_id = str(asset.get("scene_id") or "").strip()
+                if scene_id:
+                    failed_scene_ids.append(scene_id)
+                continue
+            usable_asset_list.append(asset)
+
+        # Render gate: if ANY scene failed, refuse to produce a final
+        # video. The previous "render with what we have and mark
+        # degraded" approach silently shipped incomplete videos and
+        # made the review UI think the run was done (videoGenerated =
+        # true → per-scene retry button hidden → user trapped). The
+        # correct invariant is `final_video.public_url exists ⟺ every
+        # scene succeeded`; until the user retries the failed scenes,
+        # there is no final video at all. The blocked status surfaces
+        # missing_scene_ids so the UI can show actionable error copy
+        # ("X 个场景生成失败，请重试后再渲染") instead of a fake "done"
+        # state.
+        if failed_scene_ids:
+            return {
+                "enabled": False,
+                "status": "blocked",
+                "reason": "missing_images",
+                "missing_scene_ids": failed_scene_ids,
+                "rendered_scene_count": 0,
+            }
+
+        image_asset_list = usable_asset_list
 
         if not image_asset_list:
             return {
                 "enabled": False,
                 "status": "skipped",
                 "reason": "missing image_assets",
+                "missing_scene_ids": failed_scene_ids,
             }
 
         # ========= 计算总时长 =========
@@ -909,7 +948,11 @@ class RunnerAudioRenderSupport:
         video_run_dir = self._runner._ensure_video_run_dir(ctx.run_id)
 
         # ========= 生成 base video =========
-        concat_file = self.build_video_concat_file(ctx, image_assets, audio_segments)
+        # Pass a filtered image_assets dict so the concat builder never
+        # sees failed placeholders (their relative_path is None and
+        # would otherwise crash ffmpeg).
+        usable_image_assets = {**image_assets, "assets": image_asset_list}
+        concat_file = self.build_video_concat_file(ctx, usable_image_assets, audio_segments)
 
         base_video_path = video_run_dir / "base_video.mp4"
 
@@ -1206,9 +1249,14 @@ class RunnerAudioRenderSupport:
         final_video_duration_sec = _ffprobe_duration_sec(final_video_path)
 
         # ========= 统一 return =========
+        # The render gate above guarantees we only reach here when
+        # every scene succeeded, so status is unambiguously
+        # 'generated'. rendered_scene_count is still useful as
+        # downstream telemetry / sanity check.
         return {
             "enabled": True,
             "status": "generated",
+            "rendered_scene_count": len(image_asset_list),
             "run_id": ctx.run_id,
             "file_name": "final.mp4",
             "relative_path": f"assets/mock/video/{ctx.run_id}/final.mp4",

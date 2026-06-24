@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 class RunnerImageSelectionSupport:
@@ -13,10 +13,25 @@ class RunnerImageSelectionSupport:
         run_id: str,
         image_review: Dict[str, Any],
         provider: str,
+        storyboard_scenes: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
+        """Synthesize image_assets from the user's review selections.
+
+        When ``storyboard_scenes`` is provided, any scene that has no
+        successful selected asset is emitted as an explicit
+        ``status='failed'`` placeholder so ``len(assets) == scene_count``
+        is preserved on disk. Without this, scenes whose per-scene
+        refresh API call failed (timeout / 5xx / image provider error)
+        were silently dropped from the persisted outputs — downstream
+        consumers (frontend placeholder builder, render gate) then
+        couldn't tell pending from permanently-failed scenes, and the
+        UI showed "等待生成" for scenes that would never resolve.
+        """
         selected_assets = image_review.get("selected_assets") or []
 
         merged_assets: List[Dict[str, Any]] = []
+        completed_scene_ids: set[str] = set()
+
         if isinstance(selected_assets, list):
             for item in selected_assets:
                 if not isinstance(item, dict):
@@ -64,6 +79,44 @@ class RunnerImageSelectionSupport:
                     }
                 )
 
+                scene_id = str(item.get("scene_id") or "").strip()
+                if scene_id:
+                    completed_scene_ids.add(scene_id)
+
+        # Failed-scene placeholders. Only emitted when the caller passes
+        # the full storyboard.scenes list — older callers (no scenes
+        # arg) keep the legacy behavior so this refactor is safe to land
+        # incrementally.
+        failed_scene_ids: List[str] = []
+        if isinstance(storyboard_scenes, list):
+            for scene in storyboard_scenes:
+                if not isinstance(scene, dict):
+                    continue
+                scene_id = str(scene.get("scene_id") or "").strip()
+                if not scene_id or scene_id in completed_scene_ids:
+                    continue
+                scene_title = str(scene.get("scene_title") or scene_id).strip()
+                merged_assets.append(
+                    {
+                        "scene_id": scene_id,
+                        "scene_title": scene_title,
+                        "status": "failed",
+                        "error_message": (
+                            "image generation failed and was not retried"
+                        ),
+                        "file_name": None,
+                        "relative_path": None,
+                        "public_url": None,
+                        "mime_type": None,
+                        "selected_asset_ref": {},
+                        "candidate_asset_refs": [],
+                        "reference_images": [],
+                    }
+                )
+                failed_scene_ids.append(scene_id)
+
+        generated_count = len(merged_assets) - len(failed_scene_ids)
+
         return {
             "enabled": True,
             "run_id": run_id,
@@ -73,5 +126,8 @@ class RunnerImageSelectionSupport:
                 "reference_image_mode": "metadata_only",
             },
             "asset_count": len(merged_assets),
+            "generated_count": generated_count,
+            "failed_count": len(failed_scene_ids),
+            "failed_scene_ids": failed_scene_ids,
             "assets": merged_assets,
         }

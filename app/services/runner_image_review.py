@@ -371,6 +371,7 @@ class RunnerImageReviewSupport:
             run_id=run_id,
             image_review=updated_image_review,
             provider=str(runner._image_provider_name()),
+            storyboard_scenes=storyboard_scenes,
         )
 
         outputs = {
@@ -515,6 +516,7 @@ class RunnerImageReviewSupport:
             provider=str(
                 single_scene_assets.get("provider") or runner._image_provider_name()
             ),
+            storyboard_scenes=storyboard_scenes,
         )
 
         video_prompts = runner._run_video_prompts(ctx, outputs)
