@@ -2525,8 +2525,9 @@ async function refreshImageReviewScene(
 
   if (!response.ok) {
     let message = ''
+    let errorBody: any = null
     try {
-      const errorBody = await response.json()
+      errorBody = await response.json()
       console.warn('[image-review] refresh-scene failed', sceneId, response.status, errorBody)
       message = formatImageReviewUserError(sceneId, response.status, errorBody)
     } catch {
@@ -2536,6 +2537,40 @@ async function refreshImageReviewScene(
         response.status >= 500
           ? `${sceneId} 候选图生成失败：图片服务暂时不可用，请稍后重试。`
           : `${sceneId} 候选图生成失败：请稍后重试。`
+    }
+
+    // On 502 the backend has already persisted the failure into
+    // outputs.json (main.py fallback) and embeds the rebuilt
+    // image_assets / image_review in the error detail. Merge them into
+    // the in-memory workflow response so the failure-aware UI (top bar
+    // failure label, hidden 生成视频 button, FinalVideoPanel failure
+    // branch) all reflect the new state immediately — without needing
+    // a page reload to re-fetch outputs.json.
+    if (errorBody && currentWorkflowResponse.value) {
+      const detail: Record<string, unknown> | undefined =
+        errorBody.detail && typeof errorBody.detail === 'object'
+          ? (errorBody.detail as Record<string, unknown>)
+          : (errorBody as Record<string, unknown>)
+      const detailImageAssets = detail?.image_assets
+      const detailImageReview = detail?.image_review
+      if (detailImageAssets || detailImageReview) {
+        const priorOutputs = (currentWorkflowResponse.value.outputs || {}) as Record<
+          string,
+          unknown
+        >
+        // Drop stale final_video here too — same reason as the success
+        // path below: a previously-rendered video no longer matches the
+        // image set after a failed retry of one of its scenes.
+        const { final_video: _staleVideo, ...priorOutputsSansVideo } = priorOutputs
+        void _staleVideo
+        const mergedOutputs: Record<string, unknown> = { ...priorOutputsSansVideo }
+        if (detailImageAssets) mergedOutputs.image_assets = detailImageAssets
+        if (detailImageReview) mergedOutputs.image_review = detailImageReview
+        applyWorkflowResponse({
+          ...currentWorkflowResponse.value,
+          outputs: mergedOutputs,
+        })
+      }
     }
 
     throw new Error(message)

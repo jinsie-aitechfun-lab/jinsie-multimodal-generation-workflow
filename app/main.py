@@ -487,29 +487,68 @@ def refresh_image_review_scene(req: ImageReviewRefreshSceneRequest):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         print("[image-review] refresh-scene runtime error", repr(e))
-        # Persist the failure into image_assets BEFORE re-raising so the
-        # caller can rely on outputs.json reflecting all terminal failures
-        # even if this call is the last in a bulk-refresh loop (no
-        # follow-up API call would otherwise commit this scene's failure).
+        # On terminal failure we need to write outputs.json such that the
+        # FE can see this scene as failed even if it had a *prior*
+        # successful selection (i.e. user retried an already-generated
+        # scene and the retry blew up). Steps:
+        #   1. drop the current scene from image_review.selected_assets
+        #      so the helper doesn't emit a stale `generated` entry for
+        #      it (which would mask the failure)
+        #   2. add the current scene to known_failed_scene_ids so the
+        #      helper emits a `failed` placeholder
+        #   3. patch BOTH image_assets and (if modified) image_review to
+        #      disk so a page reload sees the same state
+        #   4. embed the rebuilt assets+review in the 502 detail so the
+        #      FE can update its in-memory state without a reload
+        rebuilt_image_assets = None
+        rebuilt_image_review: dict | None = None
         try:
             failed_ids = list(req.known_failed_scene_ids or [])
             current_scene = str(req.scene_id or "").strip()
             if current_scene and current_scene not in failed_ids:
                 failed_ids.append(current_scene)
+
+            review_for_fallback: dict = dict(req.image_review or {})
+            prior_selected = review_for_fallback.get("selected_assets") or []
+            review_changed = False
+            if isinstance(prior_selected, list) and current_scene:
+                kept = [
+                    s for s in prior_selected
+                    if not (
+                        isinstance(s, dict)
+                        and str(s.get("scene_id") or "").strip() == current_scene
+                    )
+                ]
+                if len(kept) != len(prior_selected):
+                    review_for_fallback["selected_assets"] = kept
+                    review_for_fallback["selected_count"] = len(kept)
+                    review_changed = True
+
             storyboard_scenes = (req.storyboard or {}).get("scenes") or []
-            rebuilt = _runner.build_image_assets_from_selected_assets(
+            rebuilt_image_assets = _runner.build_image_assets_from_selected_assets(
                 run_id=req.run_id,
-                image_review=req.image_review or {},
+                image_review=review_for_fallback,
                 provider=str(_runner._image_provider_name()),
                 storyboard_scenes=storyboard_scenes,
                 known_failed_scene_ids=failed_ids,
             )
-            _patch_workflow_outputs(req.workflow_id, {"image_assets": rebuilt})
+
+            patch: dict = {"image_assets": rebuilt_image_assets}
+            if review_changed:
+                rebuilt_image_review = review_for_fallback
+                patch["image_review"] = review_for_fallback
+            _patch_workflow_outputs(req.workflow_id, patch)
         except Exception as persist_err:
             print("[image-review] failed to persist failure", repr(persist_err))
+
+        detail = _refresh_scene_error_detail(req, e)
+        if rebuilt_image_assets is not None:
+            detail["image_assets"] = rebuilt_image_assets
+        if rebuilt_image_review is not None:
+            detail["image_review"] = rebuilt_image_review
         raise HTTPException(
             status_code=502,
-            detail=_refresh_scene_error_detail(req, e),
+            detail=detail,
         ) from e
 
 
