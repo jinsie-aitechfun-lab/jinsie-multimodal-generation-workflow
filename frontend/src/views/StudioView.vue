@@ -839,19 +839,33 @@ function syncDevModeToUrl(enabled: boolean) {
 const devModeToast = ref('')
 let devModeToastTimer: ReturnType<typeof setTimeout> | null = null
 
-// Generic non-blocking notice toast (mirrors devModeToast). Used for
-// outcomes that the user should be informed of but that don't change
-// the UI state machine — e.g. 重新生成 failure where the prior image
-// is still valid and the workflow is unchanged.
-const inlineNotice = ref('')
+// Generic non-blocking notice toast (mirrors devModeToast pattern but
+// styled distinctly). Used for outcomes that should be highly visible
+// but don't change the UI state machine — e.g. 重新生成 failure where
+// the prior image is still valid and the workflow is unchanged.
+//
+// Position is TOP-CENTER (not bottom-right) so it sits in the user's
+// active reading zone rather than under floating action buttons. The
+// `tone` field tints the border + leading icon — 'warn' covers
+// soft-error cases like "retry failed but state preserved". Duration
+// default is generous (8s) and the user can dismiss any time by
+// clicking the toast.
+const inlineNotice = ref<{ text: string; tone: 'info' | 'warn' } | null>(null)
 let inlineNoticeTimer: ReturnType<typeof setTimeout> | null = null
-function showInlineNotice(text: string, durationMs = 3500) {
-  inlineNotice.value = text
+function showInlineNotice(text: string, tone: 'info' | 'warn' = 'info', durationMs = 8000) {
+  inlineNotice.value = { text, tone }
   if (inlineNoticeTimer) clearTimeout(inlineNoticeTimer)
   inlineNoticeTimer = setTimeout(() => {
-    inlineNotice.value = ''
+    inlineNotice.value = null
     inlineNoticeTimer = null
   }, durationMs)
+}
+function dismissInlineNotice() {
+  inlineNotice.value = null
+  if (inlineNoticeTimer) {
+    clearTimeout(inlineNoticeTimer)
+    inlineNoticeTimer = null
+  }
 }
 
 function toggleDevMode() {
@@ -2724,7 +2738,10 @@ async function retryImageReviewScene(sceneId: string) {
       // placeholder back to 'done' so the card returns to its prior
       // visual, and surface the failure via a non-blocking toast.
       markPlaceholderState(sceneId, 'done')
-      showInlineNotice(`${sceneId} 重新生成失败，已保留原图。请稍后再试。`)
+      showInlineNotice(
+        `${sceneId} 重新生成失败，已保留原图。${message}`,
+        'warn',
+      )
     } else {
       markPlaceholderState(sceneId, 'failed', message)
       errorMessage.value = message
@@ -4014,14 +4031,29 @@ async function runWorkflow() {
     </Transition>
   </Teleport>
 
-  <!-- Generic non-blocking notice toast — bottom-right so it doesn't
-       collide with the dev-mode toast (top-left). Used for outcomes
-       that the user should know about but that don't change the UI
-       state machine (e.g. 重新生成 failed but original image preserved). -->
+  <!-- Generic non-blocking notice toast — top-center, prominent, click
+       to dismiss. Used for outcomes that the user should clearly know
+       about but that don't change the UI state machine (e.g. 重新生成
+       failed but original image preserved). -->
   <Teleport to="body">
     <Transition name="confirm-fade">
-      <div v-if="inlineNotice" class="inline-notice" role="status">
-        {{ inlineNotice }}
+      <div
+        v-if="inlineNotice"
+        class="inline-notice"
+        :class="`inline-notice--${inlineNotice.tone}`"
+        role="alert"
+        @click="dismissInlineNotice"
+      >
+        <span class="inline-notice__icon" aria-hidden="true">
+          {{ inlineNotice.tone === 'warn' ? '⚠' : 'ℹ' }}
+        </span>
+        <span class="inline-notice__text">{{ inlineNotice.text }}</span>
+        <button
+          type="button"
+          class="inline-notice__close"
+          aria-label="关闭提示"
+          @click.stop="dismissInlineNotice"
+        >×</button>
       </div>
     </Transition>
   </Teleport>
@@ -5144,31 +5176,90 @@ details.summary-item[open] > summary .summary-chevron { transform: rotate(90deg)
   .dev-mode-toast { left: 76px; }
 }
 
-/* Generic notice toast — mirrors .dev-mode-toast styling but anchored
-   bottom-right so the two never overlap, and uses a softer (non-gold)
-   border so users don't conflate it with the dev-mode indicator. */
+/* Generic notice toast — top-center, prominent, click to dismiss.
+   Distinct shape from dev-mode-toast (which is a tiny corner pill) so
+   the user reads this as a real notification rather than a passive
+   status chip. `tone` variants tint the border + leading icon. */
 .inline-notice {
   position: fixed;
-  bottom: 24px;
-  right: 24px;
-  z-index: 1400;
-  padding: 9px 14px;
-  border-radius: 8px;
-  background: rgba(20, 16, 8, 0.94);
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1500;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px 12px 16px;
+  border-radius: 12px;
+  background: rgba(18, 14, 8, 0.96);
   color: var(--text-primary);
   border: 1px solid color-mix(in srgb, var(--text-secondary) 30%, transparent);
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   font-weight: 500;
   letter-spacing: 0.01em;
-  line-height: 1.4;
-  max-width: 360px;
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.42);
-  pointer-events: none;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  line-height: 1.5;
+  max-width: min(560px, calc(100vw - 32px));
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.50),
+              0 4px 12px rgba(0, 0, 0, 0.30);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  cursor: pointer;
+}
+.inline-notice--info {
+  border-color: color-mix(in srgb, var(--arc-300) 50%, transparent);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.50),
+              0 0 0 1px color-mix(in srgb, var(--arc-300) 20%, transparent);
+}
+.inline-notice--warn {
+  border-color: color-mix(in srgb, #f59e0b 65%, transparent);
+  background: rgba(28, 18, 8, 0.96);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.55),
+              0 0 0 1px color-mix(in srgb, #f59e0b 30%, transparent);
+}
+.inline-notice__icon {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+.inline-notice--info .inline-notice__icon {
+  color: var(--arc-200);
+  background: color-mix(in srgb, var(--arc-300) 18%, transparent);
+}
+.inline-notice--warn .inline-notice__icon {
+  color: #fbbf24;
+  background: color-mix(in srgb, #f59e0b 20%, transparent);
+}
+.inline-notice__text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.inline-notice__close {
+  flex: 0 0 auto;
+  appearance: none;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.25rem;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 0 4px;
+  margin-left: 4px;
+  border-radius: 4px;
+  line-height: 1;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.inline-notice__close:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
 }
 @media (max-width: 720px) {
-  .inline-notice { right: 16px; bottom: 16px; max-width: calc(100vw - 32px); }
+  .inline-notice { top: 64px; padding: 10px 12px; font-size: 0.8125rem; }
 }
 
 .confirm-overlay {
