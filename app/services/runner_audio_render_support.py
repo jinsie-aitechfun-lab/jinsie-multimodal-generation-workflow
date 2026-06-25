@@ -29,27 +29,21 @@ class RunnerAudioRenderSupport:
         self._runner = runner
 
     def _effective_voice_mode(self, ctx: Any) -> str:
-        voice_mode = self._runner._normalized_voice_mode(ctx.input.voice_mode)
-        if voice_mode != "single":
-            return voice_mode
-
-        has_character_input = any(
-            bool(str(getattr(ctx.input, field, "") or "").strip())
-            for field in (
-                "main_character",
-                "main_character_display",
-                "secondary_character",
-                "secondary_character_display",
-            )
-        )
-        has_character_profiles = bool(
-            getattr(ctx.input, "character_speaker_profiles", {}) or {}
-        )
-
-        if has_character_input or has_character_profiles:
-            return "character"
-
-        return voice_mode
+        # Strictly honor the UI-selected voice_mode. An earlier revision
+        # auto-upgraded 'single' to 'character' when any character input
+        # (main_character_display / main_character / secondary_*) was
+        # present, on the theory that the user "forgot" to switch modes.
+        # That coupling broke packages where character identity is set
+        # for *image-generation* lock (primaryCharacterDisplayName) but
+        # the user genuinely wants single-narrator audio — Studio
+        # showed "单人旁白" while audio rendered 童音+女声 because the
+        # upgrade silently rerouted dialogue through character speakers.
+        #
+        # voice_mode and structured-character info are orthogonal axes:
+        #   - structured characters → cross-scene visual identity lock
+        #   - voice_mode → how many voices in audio output
+        # We no longer infer one from the other.
+        return self._runner._normalized_voice_mode(ctx.input.voice_mode)
 
     def run_dialogue_script(self, ctx: Any, outputs: Dict[str, Any]) -> Dict[str, Any]:
         sentence_shots = outputs.get("sentence_shots") or {}
