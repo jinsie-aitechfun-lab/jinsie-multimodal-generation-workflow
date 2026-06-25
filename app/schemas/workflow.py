@@ -278,6 +278,13 @@ class ImageReviewRefreshSceneRequest(BaseModel):
     # (default), a fresh time-based seed_jitter is mixed in so the
     # output is a visibly different roll.
     preserve_seed: bool = Field(default=False)
+    # IDs of scenes whose image generation has already been attempted
+    # and definitively failed (all provider+quality retries exhausted)
+    # during the caller's current run. Used by the image_assets writer
+    # to emit explicit `status='failed'` placeholders only for these
+    # scenes — not for scenes that just happen to be missing from
+    # selected_assets because they're still queued.
+    known_failed_scene_ids: List[str] = Field(default_factory=list)
 
 
 class ImageReviewRefreshSceneResponse(BaseModel):

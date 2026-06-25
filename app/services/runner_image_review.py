@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 class RunnerImageReviewSupport:
@@ -412,6 +412,7 @@ class RunnerImageReviewSupport:
         image_prompts: Dict[str, Any] | None = None,
         video_provider: str = "mock",
         preserve_seed: bool = False,
+        known_failed_scene_ids: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         runner = self._runner
 
@@ -517,6 +518,7 @@ class RunnerImageReviewSupport:
                 single_scene_assets.get("provider") or runner._image_provider_name()
             ),
             storyboard_scenes=storyboard_scenes,
+            known_failed_scene_ids=known_failed_scene_ids,
         )
 
         video_prompts = runner._run_video_prompts(ctx, outputs)

@@ -14,18 +14,31 @@ class RunnerImageSelectionSupport:
         image_review: Dict[str, Any],
         provider: str,
         storyboard_scenes: Optional[List[Dict[str, Any]]] = None,
+        known_failed_scene_ids: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Synthesize image_assets from the user's review selections.
 
-        When ``storyboard_scenes`` is provided, any scene that has no
-        successful selected asset is emitted as an explicit
-        ``status='failed'`` placeholder so ``len(assets) == scene_count``
-        is preserved on disk. Without this, scenes whose per-scene
-        refresh API call failed (timeout / 5xx / image provider error)
-        were silently dropped from the persisted outputs — downstream
-        consumers (frontend placeholder builder, render gate) then
-        couldn't tell pending from permanently-failed scenes, and the
-        UI showed "等待生成" for scenes that would never resolve.
+        Failed-scene placeholders are emitted ONLY for scenes whose IDs
+        are explicitly listed in ``known_failed_scene_ids``. Earlier
+        revisions inferred "failed" from "absence in selected_assets",
+        but during bulk refresh that wrongly marked scenes still queued
+        for processing as failed — counts on the FE diverged from the
+        FE's own placeholder state, and the user briefly saw red 失败
+        cards for scenes that would generate successfully a moment
+        later. The caller is now responsible for tracking which scenes
+        truly failed (after the provider+quality retry layers inside
+        one /v1/image-review/refresh-scene call exhausted) and passing
+        that set in.
+
+        Not-yet-attempted scenes intentionally do NOT appear in the
+        output array. The FE's placeholder builder treats missing
+        scenes as 'waiting' (the workflow is still running) unless the
+        workflow has terminated, in which case they degrade to failed
+        via the legacy-terminal heuristic.
+
+        ``storyboard_scenes`` is still used to look up scene titles for
+        the failed-placeholder records; without it the placeholder
+        falls back to scene_id as its title.
         """
         selected_assets = image_review.get("selected_assets") or []
 
@@ -83,18 +96,31 @@ class RunnerImageSelectionSupport:
                 if scene_id:
                     completed_scene_ids.add(scene_id)
 
-        # Failed-scene placeholders. Only emitted when the caller passes
-        # the full storyboard.scenes list — older callers (no scenes
-        # arg) keep the legacy behavior so this refactor is safe to land
-        # incrementally.
+        # Failed-scene placeholders. Only emitted for scenes the caller
+        # has *explicitly* told us failed. Scenes absent from both
+        # ``selected_assets`` AND ``known_failed_scene_ids`` are treated
+        # as not-yet-attempted and intentionally omitted from the output.
         failed_scene_ids: List[str] = []
+        scenes_by_id: Dict[str, Dict[str, Any]] = {}
         if isinstance(storyboard_scenes, list):
             for scene in storyboard_scenes:
                 if not isinstance(scene, dict):
                     continue
-                scene_id = str(scene.get("scene_id") or "").strip()
-                if not scene_id or scene_id in completed_scene_ids:
+                sid = str(scene.get("scene_id") or "").strip()
+                if sid:
+                    scenes_by_id[sid] = scene
+
+        if known_failed_scene_ids:
+            for raw_id in known_failed_scene_ids:
+                scene_id = str(raw_id or "").strip()
+                if not scene_id:
                     continue
+                if scene_id in completed_scene_ids:
+                    # Caller marked it failed earlier but it has since
+                    # succeeded (e.g. retry-then-success) — selected_assets
+                    # wins, no failure placeholder.
+                    continue
+                scene = scenes_by_id.get(scene_id, {})
                 scene_title = str(scene.get("scene_title") or scene_id).strip()
                 merged_assets.append(
                     {
@@ -102,7 +128,7 @@ class RunnerImageSelectionSupport:
                         "scene_title": scene_title,
                         "status": "failed",
                         "error_message": (
-                            "image generation failed and was not retried"
+                            "image generation failed after all retries"
                         ),
                         "file_name": None,
                         "relative_path": None,

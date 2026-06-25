@@ -459,6 +459,7 @@ def refresh_image_review_scene(req: ImageReviewRefreshSceneRequest):
             image_prompts=req.image_prompts,
             video_provider=req.video_provider,
             preserve_seed=req.preserve_seed,
+            known_failed_scene_ids=list(req.known_failed_scene_ids or []),
         )
         print("[image-review] refresh-scene completed", req.run_id, req.scene_id)
 
@@ -486,6 +487,26 @@ def refresh_image_review_scene(req: ImageReviewRefreshSceneRequest):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         print("[image-review] refresh-scene runtime error", repr(e))
+        # Persist the failure into image_assets BEFORE re-raising so the
+        # caller can rely on outputs.json reflecting all terminal failures
+        # even if this call is the last in a bulk-refresh loop (no
+        # follow-up API call would otherwise commit this scene's failure).
+        try:
+            failed_ids = list(req.known_failed_scene_ids or [])
+            current_scene = str(req.scene_id or "").strip()
+            if current_scene and current_scene not in failed_ids:
+                failed_ids.append(current_scene)
+            storyboard_scenes = (req.storyboard or {}).get("scenes") or []
+            rebuilt = _runner.build_image_assets_from_selected_assets(
+                run_id=req.run_id,
+                image_review=req.image_review or {},
+                provider=str(_runner._image_provider_name()),
+                storyboard_scenes=storyboard_scenes,
+                known_failed_scene_ids=failed_ids,
+            )
+            _patch_workflow_outputs(req.workflow_id, {"image_assets": rebuilt})
+        except Exception as persist_err:
+            print("[image-review] failed to persist failure", repr(persist_err))
         raise HTTPException(
             status_code=502,
             detail=_refresh_scene_error_detail(req, e),

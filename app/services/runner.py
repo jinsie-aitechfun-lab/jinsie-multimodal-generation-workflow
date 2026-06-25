@@ -241,12 +241,14 @@ class WorkflowRunner:
         image_review: Dict[str, Any],
         provider: str,
         storyboard_scenes: Optional[List[Dict[str, Any]]] = None,
+        known_failed_scene_ids: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         return self._image_selection_support.build_image_assets_from_selected_assets(
             run_id=run_id,
             image_review=image_review,
             provider=provider,
             storyboard_scenes=storyboard_scenes,
+            known_failed_scene_ids=known_failed_scene_ids,
         )
 
     def get_real_kling_samples_manifest(self) -> Dict[str, Any]:

@@ -697,6 +697,31 @@ const isWorkflowReadyForRender = computed(() => {
   )
 })
 
+// Label for the settled-failure top progress bar — "候选图生成失败 5/6".
+// Reads image_assets.generated_count / failed_count when present (B1
+// writes both), falls back to scanning the assets array. Distinct from
+// reviewRefreshProgress.text (which is only meaningful during an
+// in-flight refresh loop).
+const settledFailureLabel = computed(() => {
+  const imageAssets = currentWorkflowResponse.value?.outputs?.image_assets as
+    | Record<string, unknown>
+    | undefined
+  const storyboard = currentWorkflowResponse.value?.outputs?.storyboard as
+    | Record<string, unknown>
+    | undefined
+  const scenes = Array.isArray(storyboard?.scenes) ? storyboard.scenes : []
+  const total = scenes.length
+  const assets = Array.isArray(imageAssets?.assets) ? imageAssets.assets : []
+  const generatedRaw = imageAssets?.generated_count
+  const generated =
+    typeof generatedRaw === 'number'
+      ? generatedRaw
+      : assets.filter(
+          (a: any) => typeof a?.status === 'string' && a.status.toLowerCase() !== 'failed',
+        ).length
+  return `候选图生成失败（${generated}/${total || '?'}）— 在「画面审核」重试`
+})
+
 // Exposed for the manual-mode hint below (and any other consumer that
 // needs to distinguish "still generating" from "stopped with failures").
 const hasImageFailures = computed(() => {
@@ -2425,7 +2450,18 @@ async function renderFinalVideoIfReady(baseResponse: WorkflowRunResponse) {
   }
 }
 
-async function refreshImageReviewScene(sceneId: string, signal?: AbortSignal, qualityTierOverride?: string, preserveSeed: boolean = false) {
+async function refreshImageReviewScene(
+  sceneId: string,
+  signal?: AbortSignal,
+  qualityTierOverride?: string,
+  preserveSeed: boolean = false,
+  // IDs of scenes that have *terminally* failed during the caller's
+  // current activity (bulk refresh loop OR all previously-recorded
+  // failures from outputs.json on a single-scene retry). Forwarded
+  // to the backend so image_assets only writes failed placeholders
+  // for these — not for scenes still queued for processing.
+  knownFailedSceneIds?: string[],
+) {
   if (!currentWorkflowResponse.value || !currentWorkflowPayload.value) {
     return
   }
@@ -2466,6 +2502,7 @@ async function refreshImageReviewScene(sceneId: string, signal?: AbortSignal, qu
         ? currentWorkflowPayload.value.input.video_provider
         : workflowForm.value.videoProvider,
     preserve_seed: preserveSeed,
+    known_failed_scene_ids: knownFailedSceneIds ?? [],
   }
 
   let response: Response
@@ -2577,8 +2614,30 @@ async function retryImageReviewScene(sceneId: string) {
   // applyWorkflowResponse on render completion.
   finalVideoUrl.value = ''
 
+  // Carry forward the prior failed-scene list so the backend keeps
+  // those marked as failed during this retry's image_assets rebuild.
+  // EXCLUDE the current scene — if its retry succeeds, the backend's
+  // selected_assets check naturally drops it from failures anyway, but
+  // sending it would also work; if it fails again, main.py's failure
+  // handler will add it back.
+  const priorImageAssets = currentWorkflowResponse.value?.outputs?.image_assets as
+    | Record<string, unknown>
+    | undefined
+  const priorFailedIds = priorImageAssets?.failed_scene_ids
+  const knownFailed: string[] = Array.isArray(priorFailedIds)
+    ? (priorFailedIds as unknown[])
+        .map((id) => String(id || '').trim())
+        .filter((id) => Boolean(id) && id !== sceneId)
+    : []
+
   try {
-    await refreshImageReviewScene(sceneId, imageReviewRefreshAbortController.signal)
+    await refreshImageReviewScene(
+      sceneId,
+      imageReviewRefreshAbortController.signal,
+      undefined,
+      false,
+      knownFailed,
+    )
     if (workflowForm.value.renderMode === 'auto' && currentWorkflowResponse.value) {
       void renderFinalVideoIfReady(currentWorkflowResponse.value)
     }
@@ -2855,6 +2914,24 @@ async function refreshImageReview() {
   const failures: string[] = []
   const refreshTotal = sceneRefreshQueue.value.length
 
+  // Failed scene_ids accumulated during *this* loop. Forwarded to the
+  // backend on each refresh-scene call so image_assets only writes
+  // 'failed' placeholders for scenes that genuinely terminally failed
+  // (not for scenes still queued for processing). Seeded from the
+  // current outputs in case a prior partial-failure run left some
+  // failed scenes that we're resuming over.
+  const failedSceneIds = new Set<string>()
+  const priorImageAssets = currentWorkflowResponse.value?.outputs?.image_assets as
+    | Record<string, unknown>
+    | undefined
+  const priorFailedIds = priorImageAssets?.failed_scene_ids
+  if (Array.isArray(priorFailedIds)) {
+    for (const id of priorFailedIds) {
+      const sid = String(id || '').trim()
+      if (sid) failedSceneIds.add(sid)
+    }
+  }
+
   try {
     for (const sceneId of sceneRefreshQueue.value) {
       if (imageReviewRefreshCancelled.value) {
@@ -2863,7 +2940,17 @@ async function refreshImageReview() {
 
       imageReviewRefreshAbortController = new AbortController()
       try {
-        await refreshImageReviewScene(sceneId, imageReviewRefreshAbortController.signal)
+        await refreshImageReviewScene(
+          sceneId,
+          imageReviewRefreshAbortController.signal,
+          undefined,
+          false,
+          Array.from(failedSceneIds),
+        )
+        // Success path — if this scene was previously failed (resumed
+        // partial run), drop it from the failed set so subsequent
+        // calls don't re-mark it.
+        failedSceneIds.delete(sceneId)
       } catch (error) {
         if (
           imageReviewRefreshCancelled.value ||
@@ -2875,6 +2962,7 @@ async function refreshImageReview() {
 
         const message = error instanceof Error ? error.message : '候选图分场景刷新失败'
         failures.push(message)
+        failedSceneIds.add(sceneId)
         markPlaceholderState(sceneId, 'failed', message)
       } finally {
         imageReviewRefreshAbortController = null
@@ -3361,7 +3449,8 @@ async function runWorkflow() {
           refreshingImageReview ||
           awaitingManualRender ||
           finalVideoRenderInFlight ||
-          Boolean(sceneRefreshingId)
+          Boolean(sceneRefreshingId) ||
+          hasImageFailures
         "
         :percent="
           singleSceneRetryActive
@@ -3370,7 +3459,9 @@ async function runWorkflow() {
               ? 92
               : awaitingManualRender
                 ? 85
-                : (workflowStatusProgress ?? (refreshingImageReview ? reviewRefreshProgress.percent : 0))
+                : hasImageFailures
+                  ? 70
+                  : (workflowStatusProgress ?? (refreshingImageReview ? reviewRefreshProgress.percent : 0))
         "
         :label="
           singleSceneRetryActive
@@ -3379,9 +3470,11 @@ async function runWorkflow() {
               ? '正在合成视频（音频、字幕、画面拼接中）'
               : awaitingManualRender
                 ? '候选图已就绪，等待你点击「生成视频」'
-                : (workflowIsProcessing ? workflowRunStatusMessage : reviewRefreshProgress.text)
+                : hasImageFailures
+                  ? settledFailureLabel
+                  : (workflowIsProcessing ? workflowRunStatusMessage : reviewRefreshProgress.text)
         "
-        :cancellable="phaseCancellable && !awaitingManualRender && !singleSceneRetryActive"
+        :cancellable="phaseCancellable && !awaitingManualRender && !singleSceneRetryActive && !hasImageFailures"
         :cancel-requested="cancelRequestedAny"
         @cancel="cancelActivePhase"
       />
