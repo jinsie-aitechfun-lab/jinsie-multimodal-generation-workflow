@@ -839,6 +839,21 @@ function syncDevModeToUrl(enabled: boolean) {
 const devModeToast = ref('')
 let devModeToastTimer: ReturnType<typeof setTimeout> | null = null
 
+// Generic non-blocking notice toast (mirrors devModeToast). Used for
+// outcomes that the user should be informed of but that don't change
+// the UI state machine — e.g. 重新生成 failure where the prior image
+// is still valid and the workflow is unchanged.
+const inlineNotice = ref('')
+let inlineNoticeTimer: ReturnType<typeof setTimeout> | null = null
+function showInlineNotice(text: string, durationMs = 3500) {
+  inlineNotice.value = text
+  if (inlineNoticeTimer) clearTimeout(inlineNoticeTimer)
+  inlineNoticeTimer = setTimeout(() => {
+    inlineNotice.value = ''
+    inlineNoticeTimer = null
+  }, durationMs)
+}
+
 function toggleDevMode() {
   devMode.value = !devMode.value
   devModeToast.value = devMode.value ? 'Dev mode 已开启' : 'Dev mode 已关闭'
@@ -867,6 +882,10 @@ onBeforeUnmount(() => {
   if (devModeToastTimer) {
     clearTimeout(devModeToastTimer)
     devModeToastTimer = null
+  }
+  if (inlineNoticeTimer) {
+    clearTimeout(inlineNoticeTimer)
+    inlineNoticeTimer = null
   }
 })
 
@@ -2629,25 +2648,40 @@ async function retryImageReviewScene(sceneId: string) {
   errorMessage.value = ''
   imageReviewRefreshAbortController = new AbortController()
 
-  // Retrying a failed scene invalidates the existing final video — it
-  // was rendered without this scene (or with a stale version of it).
-  // Clearing finalVideoUrl does three things at once:
-  //   1. FinalVideoPanel falls through to the placeholder branch and
-  //      picks up the existing "正在重新生成候选图" copy + animation,
-  //      so the user no longer sees a frozen old video paired with
-  //      "等待候选图生成完成…".
-  //   2. renderFinalVideoIfReady's `if (finalVideoUrl.value) return`
-  //      guard no longer short-circuits, so a successful retry in
-  //      auto mode immediately kicks off a re-render with the now-
-  //      complete image set.
-  //   3. The 重新生成 (per-scene) button on done cards reappears
-  //      because its `!videoGenerated` guard flips back to truthy —
-  //      the user can keep fixing other scenes too.
-  // localStorage's STORAGE_KEY_VIDEO_URL is intentionally NOT removed
-  // here — that key feeds the history-video list, which should keep
-  // the prior video accessible until a new one writes back via
-  // applyWorkflowResponse on render completion.
-  finalVideoUrl.value = ''
+  // ── Intent detection ────────────────────────────────────────────
+  // Two callers, two semantics:
+  //   • 重试该场景 (failed-card button)  → scene has NO valid image;
+  //     failure here is bad, must propagate through the failure UI.
+  //   • 重新生成 (done-card ↻ button)   → scene already has a valid
+  //     image (still in selected_assets); failure here is harmless,
+  //     old image preserved, state unchanged.
+  // Discriminator: presence in image_review.selected_assets.
+  const priorOutputsSnapshot = currentWorkflowResponse.value?.outputs || {}
+  const priorReview = priorOutputsSnapshot.image_review as
+    | Record<string, unknown>
+    | undefined
+  const priorSelected = Array.isArray(priorReview?.selected_assets)
+    ? priorReview.selected_assets
+    : []
+  const hadPriorSuccess = priorSelected.some(
+    (s: any) =>
+      s && typeof s === 'object' && String(s.scene_id || '').trim() === sceneId,
+  )
+
+  // ── finalVideoUrl handling ──────────────────────────────────────
+  // Clear ONLY in the 重试该场景 case. The 重新生成 button only shows
+  // when no video exists yet (so finalVideoUrl is already empty), but
+  // making the conditional explicit prevents a future state shift from
+  // accidentally wiping a valid video. Original side-effects of the
+  // clear were:
+  //   1. FinalVideoPanel falls through to placeholder + animation
+  //   2. renderFinalVideoIfReady's URL guard no longer short-circuits
+  //   3. per-scene 重新生成 button reappears
+  // All three only matter when the workflow was previously blocked by
+  // a missing scene — i.e. !hadPriorSuccess.
+  if (!hadPriorSuccess) {
+    finalVideoUrl.value = ''
+  }
 
   // Carry forward the prior failed-scene list so the backend keeps
   // those marked as failed during this retry's image_assets rebuild.
@@ -2655,7 +2689,7 @@ async function retryImageReviewScene(sceneId: string) {
   // selected_assets check naturally drops it from failures anyway, but
   // sending it would also work; if it fails again, main.py's failure
   // handler will add it back.
-  const priorImageAssets = currentWorkflowResponse.value?.outputs?.image_assets as
+  const priorImageAssets = priorOutputsSnapshot.image_assets as
     | Record<string, unknown>
     | undefined
   const priorFailedIds = priorImageAssets?.failed_scene_ids
@@ -2683,8 +2717,18 @@ async function retryImageReviewScene(sceneId: string) {
     }
 
     const message = error instanceof Error ? error.message : '候选图场景重试失败'
-    markPlaceholderState(sceneId, 'failed', message)
-    errorMessage.value = message
+    if (hadPriorSuccess) {
+      // 重新生成 failed: original image still in selected_assets, all
+      // pipeline state is intact (assetsReady stays true, 生成视频 button
+      // stays visible, no failure cascade). Revert the 'refreshing'
+      // placeholder back to 'done' so the card returns to its prior
+      // visual, and surface the failure via a non-blocking toast.
+      markPlaceholderState(sceneId, 'done')
+      showInlineNotice(`${sceneId} 重新生成失败，已保留原图。请稍后再试。`)
+    } else {
+      markPlaceholderState(sceneId, 'failed', message)
+      errorMessage.value = message
+    }
   } finally {
     sceneRefreshingId.value = ''
     imageReviewRefreshAbortController = null
@@ -3969,6 +4013,18 @@ async function runWorkflow() {
       </div>
     </Transition>
   </Teleport>
+
+  <!-- Generic non-blocking notice toast — bottom-right so it doesn't
+       collide with the dev-mode toast (top-left). Used for outcomes
+       that the user should know about but that don't change the UI
+       state machine (e.g. 重新生成 failed but original image preserved). -->
+  <Teleport to="body">
+    <Transition name="confirm-fade">
+      <div v-if="inlineNotice" class="inline-notice" role="status">
+        {{ inlineNotice }}
+      </div>
+    </Transition>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -5086,6 +5142,33 @@ details.summary-item[open] > summary .summary-chevron { transform: rotate(90deg)
 }
 @media (max-width: 720px) {
   .dev-mode-toast { left: 76px; }
+}
+
+/* Generic notice toast — mirrors .dev-mode-toast styling but anchored
+   bottom-right so the two never overlap, and uses a softer (non-gold)
+   border so users don't conflate it with the dev-mode indicator. */
+.inline-notice {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 1400;
+  padding: 9px 14px;
+  border-radius: 8px;
+  background: rgba(20, 16, 8, 0.94);
+  color: var(--text-primary);
+  border: 1px solid color-mix(in srgb, var(--text-secondary) 30%, transparent);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 1.4;
+  max-width: 360px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.42);
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+@media (max-width: 720px) {
+  .inline-notice { right: 16px; bottom: 16px; max-width: calc(100vw - 32px); }
 }
 
 .confirm-overlay {
