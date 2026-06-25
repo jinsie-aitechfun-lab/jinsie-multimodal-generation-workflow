@@ -302,6 +302,20 @@ const progressLabel = computed(() => {
   if (props.finalVideoUrl) return '已生成'
   if (props.renderInFlight || finalStatus.value === 'rendering') return '视频渲染中'
   if (!sceneCount.value) return '等待 Storyboard'
+  // Per-scene retry — applies whether or not assetsReady is true:
+  //   - assetsReady=false (重试该场景 on a failed scene): retry to repair
+  //   - assetsReady=true  (重新生成 on a done scene): retry to swap a
+  //     candidate while the workflow is otherwise settled
+  // Both want the label to reflect the active retry, not the surrounding
+  // settled state. Counts are dropped because they don't move during a
+  // single-scene retry (stays e.g. 5/6 throughout) and would just add
+  // noise — the scene title alone tells the user what's in flight.
+  if (props.sceneRefreshingId && !props.refreshingImages) {
+    const sceneSuffix = currentRefreshingSceneTitle.value
+      ? ` · ${currentRefreshingSceneTitle.value}`
+      : ''
+    return `正在重新生成${sceneSuffix}`
+  }
   if (!assetsReady.value) {
     if (props.refreshingImages) {
       const sceneSuffix = currentRefreshingSceneTitle.value
@@ -310,14 +324,6 @@ const progressLabel = computed(() => {
       // Exclude failed placeholders from the count — a partial bulk
       // refresh after a prior failure would otherwise show e.g. 12/12.
       return `候选图生成中（${generatedAssetCount.value}/${sceneCount.value}${sceneSuffix}）`
-    }
-    // Per-scene retry triggered from a failed-scene card. Label matches
-    // the title ("正在重新生成候选图") and counts only successful assets.
-    if (props.sceneRefreshingId) {
-      const sceneSuffix = currentRefreshingSceneTitle.value
-        ? ` · ${currentRefreshingSceneTitle.value}`
-        : ''
-      return `正在重新生成（${generatedAssetCount.value}/${sceneCount.value}${sceneSuffix}）`
     }
     if (generatedAssetCount.value > 0) return `候选图已暂停（${generatedAssetCount.value}/${sceneCount.value}）`
     return `候选图待生成（0/${sceneCount.value}）`
