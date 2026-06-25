@@ -1485,6 +1485,7 @@ class WorkflowRunner:
         image_prompts: Optional[Dict[str, Any]] = None,
         video_provider: str = "mock",
         preserve_seed: bool = False,
+        known_failed_scene_ids: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         return self._image_review.refresh_image_review_scene(
             workflow_id=workflow_id,
@@ -1498,6 +1499,7 @@ class WorkflowRunner:
             image_prompts=image_prompts,
             video_provider=video_provider,
             preserve_seed=preserve_seed,
+            known_failed_scene_ids=known_failed_scene_ids,
         )
 
     def refresh_image_review(
