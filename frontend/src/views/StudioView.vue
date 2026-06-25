@@ -697,6 +697,31 @@ const isWorkflowReadyForRender = computed(() => {
   )
 })
 
+// Label for the settled-failure top progress bar — "候选图生成失败 5/6".
+// Reads image_assets.generated_count / failed_count when present (B1
+// writes both), falls back to scanning the assets array. Distinct from
+// reviewRefreshProgress.text (which is only meaningful during an
+// in-flight refresh loop).
+const settledFailureLabel = computed(() => {
+  const imageAssets = currentWorkflowResponse.value?.outputs?.image_assets as
+    | Record<string, unknown>
+    | undefined
+  const storyboard = currentWorkflowResponse.value?.outputs?.storyboard as
+    | Record<string, unknown>
+    | undefined
+  const scenes = Array.isArray(storyboard?.scenes) ? storyboard.scenes : []
+  const total = scenes.length
+  const assets = Array.isArray(imageAssets?.assets) ? imageAssets.assets : []
+  const generatedRaw = imageAssets?.generated_count
+  const generated =
+    typeof generatedRaw === 'number'
+      ? generatedRaw
+      : assets.filter(
+          (a: any) => typeof a?.status === 'string' && a.status.toLowerCase() !== 'failed',
+        ).length
+  return `候选图生成失败（${generated}/${total || '?'}）— 在「画面审核」重试`
+})
+
 // Exposed for the manual-mode hint below (and any other consumer that
 // needs to distinguish "still generating" from "stopped with failures").
 const hasImageFailures = computed(() => {
@@ -814,6 +839,35 @@ function syncDevModeToUrl(enabled: boolean) {
 const devModeToast = ref('')
 let devModeToastTimer: ReturnType<typeof setTimeout> | null = null
 
+// Generic non-blocking notice toast (mirrors devModeToast pattern but
+// styled distinctly). Used for outcomes that should be highly visible
+// but don't change the UI state machine — e.g. 重新生成 failure where
+// the prior image is still valid and the workflow is unchanged.
+//
+// Position is TOP-CENTER (not bottom-right) so it sits in the user's
+// active reading zone rather than under floating action buttons. The
+// `tone` field tints the border + leading icon — 'warn' covers
+// soft-error cases like "retry failed but state preserved". Duration
+// default is generous (8s) and the user can dismiss any time by
+// clicking the toast.
+const inlineNotice = ref<{ text: string; tone: 'info' | 'warn' } | null>(null)
+let inlineNoticeTimer: ReturnType<typeof setTimeout> | null = null
+function showInlineNotice(text: string, tone: 'info' | 'warn' = 'info', durationMs = 8000) {
+  inlineNotice.value = { text, tone }
+  if (inlineNoticeTimer) clearTimeout(inlineNoticeTimer)
+  inlineNoticeTimer = setTimeout(() => {
+    inlineNotice.value = null
+    inlineNoticeTimer = null
+  }, durationMs)
+}
+function dismissInlineNotice() {
+  inlineNotice.value = null
+  if (inlineNoticeTimer) {
+    clearTimeout(inlineNoticeTimer)
+    inlineNoticeTimer = null
+  }
+}
+
 function toggleDevMode() {
   devMode.value = !devMode.value
   devModeToast.value = devMode.value ? 'Dev mode 已开启' : 'Dev mode 已关闭'
@@ -842,6 +896,10 @@ onBeforeUnmount(() => {
   if (devModeToastTimer) {
     clearTimeout(devModeToastTimer)
     devModeToastTimer = null
+  }
+  if (inlineNoticeTimer) {
+    clearTimeout(inlineNoticeTimer)
+    inlineNoticeTimer = null
   }
 })
 
@@ -2425,7 +2483,18 @@ async function renderFinalVideoIfReady(baseResponse: WorkflowRunResponse) {
   }
 }
 
-async function refreshImageReviewScene(sceneId: string, signal?: AbortSignal, qualityTierOverride?: string, preserveSeed: boolean = false) {
+async function refreshImageReviewScene(
+  sceneId: string,
+  signal?: AbortSignal,
+  qualityTierOverride?: string,
+  preserveSeed: boolean = false,
+  // IDs of scenes that have *terminally* failed during the caller's
+  // current activity (bulk refresh loop OR all previously-recorded
+  // failures from outputs.json on a single-scene retry). Forwarded
+  // to the backend so image_assets only writes failed placeholders
+  // for these — not for scenes still queued for processing.
+  knownFailedSceneIds?: string[],
+) {
   if (!currentWorkflowResponse.value || !currentWorkflowPayload.value) {
     return
   }
@@ -2466,6 +2535,7 @@ async function refreshImageReviewScene(sceneId: string, signal?: AbortSignal, qu
         ? currentWorkflowPayload.value.input.video_provider
         : workflowForm.value.videoProvider,
     preserve_seed: preserveSeed,
+    known_failed_scene_ids: knownFailedSceneIds ?? [],
   }
 
   let response: Response
@@ -2488,8 +2558,9 @@ async function refreshImageReviewScene(sceneId: string, signal?: AbortSignal, qu
 
   if (!response.ok) {
     let message = ''
+    let errorBody: any = null
     try {
-      const errorBody = await response.json()
+      errorBody = await response.json()
       console.warn('[image-review] refresh-scene failed', sceneId, response.status, errorBody)
       message = formatImageReviewUserError(sceneId, response.status, errorBody)
     } catch {
@@ -2499,6 +2570,40 @@ async function refreshImageReviewScene(sceneId: string, signal?: AbortSignal, qu
         response.status >= 500
           ? `${sceneId} 候选图生成失败：图片服务暂时不可用，请稍后重试。`
           : `${sceneId} 候选图生成失败：请稍后重试。`
+    }
+
+    // On 502 the backend has already persisted the failure into
+    // outputs.json (main.py fallback) and embeds the rebuilt
+    // image_assets / image_review in the error detail. Merge them into
+    // the in-memory workflow response so the failure-aware UI (top bar
+    // failure label, hidden 生成视频 button, FinalVideoPanel failure
+    // branch) all reflect the new state immediately — without needing
+    // a page reload to re-fetch outputs.json.
+    if (errorBody && currentWorkflowResponse.value) {
+      const detail: Record<string, unknown> | undefined =
+        errorBody.detail && typeof errorBody.detail === 'object'
+          ? (errorBody.detail as Record<string, unknown>)
+          : (errorBody as Record<string, unknown>)
+      const detailImageAssets = detail?.image_assets
+      const detailImageReview = detail?.image_review
+      if (detailImageAssets || detailImageReview) {
+        const priorOutputs = (currentWorkflowResponse.value.outputs || {}) as Record<
+          string,
+          unknown
+        >
+        // Drop stale final_video here too — same reason as the success
+        // path below: a previously-rendered video no longer matches the
+        // image set after a failed retry of one of its scenes.
+        const { final_video: _staleVideo, ...priorOutputsSansVideo } = priorOutputs
+        void _staleVideo
+        const mergedOutputs: Record<string, unknown> = { ...priorOutputsSansVideo }
+        if (detailImageAssets) mergedOutputs.image_assets = detailImageAssets
+        if (detailImageReview) mergedOutputs.image_review = detailImageReview
+        applyWorkflowResponse({
+          ...currentWorkflowResponse.value,
+          outputs: mergedOutputs,
+        })
+      }
     }
 
     throw new Error(message)
@@ -2557,28 +2662,65 @@ async function retryImageReviewScene(sceneId: string) {
   errorMessage.value = ''
   imageReviewRefreshAbortController = new AbortController()
 
-  // Retrying a failed scene invalidates the existing final video — it
-  // was rendered without this scene (or with a stale version of it).
-  // Clearing finalVideoUrl does three things at once:
-  //   1. FinalVideoPanel falls through to the placeholder branch and
-  //      picks up the existing "正在重新生成候选图" copy + animation,
-  //      so the user no longer sees a frozen old video paired with
-  //      "等待候选图生成完成…".
-  //   2. renderFinalVideoIfReady's `if (finalVideoUrl.value) return`
-  //      guard no longer short-circuits, so a successful retry in
-  //      auto mode immediately kicks off a re-render with the now-
-  //      complete image set.
-  //   3. The 重新生成 (per-scene) button on done cards reappears
-  //      because its `!videoGenerated` guard flips back to truthy —
-  //      the user can keep fixing other scenes too.
-  // localStorage's STORAGE_KEY_VIDEO_URL is intentionally NOT removed
-  // here — that key feeds the history-video list, which should keep
-  // the prior video accessible until a new one writes back via
-  // applyWorkflowResponse on render completion.
-  finalVideoUrl.value = ''
+  // ── Intent detection ────────────────────────────────────────────
+  // Two callers, two semantics:
+  //   • 重试该场景 (failed-card button)  → scene has NO valid image;
+  //     failure here is bad, must propagate through the failure UI.
+  //   • 重新生成 (done-card ↻ button)   → scene already has a valid
+  //     image (still in selected_assets); failure here is harmless,
+  //     old image preserved, state unchanged.
+  // Discriminator: presence in image_review.selected_assets.
+  const priorOutputsSnapshot = currentWorkflowResponse.value?.outputs || {}
+  const priorReview = priorOutputsSnapshot.image_review as
+    | Record<string, unknown>
+    | undefined
+  const priorSelected = Array.isArray(priorReview?.selected_assets)
+    ? priorReview.selected_assets
+    : []
+  const hadPriorSuccess = priorSelected.some(
+    (s: any) =>
+      s && typeof s === 'object' && String(s.scene_id || '').trim() === sceneId,
+  )
+
+  // ── finalVideoUrl handling ──────────────────────────────────────
+  // Clear ONLY in the 重试该场景 case. The 重新生成 button only shows
+  // when no video exists yet (so finalVideoUrl is already empty), but
+  // making the conditional explicit prevents a future state shift from
+  // accidentally wiping a valid video. Original side-effects of the
+  // clear were:
+  //   1. FinalVideoPanel falls through to placeholder + animation
+  //   2. renderFinalVideoIfReady's URL guard no longer short-circuits
+  //   3. per-scene 重新生成 button reappears
+  // All three only matter when the workflow was previously blocked by
+  // a missing scene — i.e. !hadPriorSuccess.
+  if (!hadPriorSuccess) {
+    finalVideoUrl.value = ''
+  }
+
+  // Carry forward the prior failed-scene list so the backend keeps
+  // those marked as failed during this retry's image_assets rebuild.
+  // EXCLUDE the current scene — if its retry succeeds, the backend's
+  // selected_assets check naturally drops it from failures anyway, but
+  // sending it would also work; if it fails again, main.py's failure
+  // handler will add it back.
+  const priorImageAssets = priorOutputsSnapshot.image_assets as
+    | Record<string, unknown>
+    | undefined
+  const priorFailedIds = priorImageAssets?.failed_scene_ids
+  const knownFailed: string[] = Array.isArray(priorFailedIds)
+    ? (priorFailedIds as unknown[])
+        .map((id) => String(id || '').trim())
+        .filter((id) => Boolean(id) && id !== sceneId)
+    : []
 
   try {
-    await refreshImageReviewScene(sceneId, imageReviewRefreshAbortController.signal)
+    await refreshImageReviewScene(
+      sceneId,
+      imageReviewRefreshAbortController.signal,
+      undefined,
+      false,
+      knownFailed,
+    )
     if (workflowForm.value.renderMode === 'auto' && currentWorkflowResponse.value) {
       void renderFinalVideoIfReady(currentWorkflowResponse.value)
     }
@@ -2589,8 +2731,21 @@ async function retryImageReviewScene(sceneId: string) {
     }
 
     const message = error instanceof Error ? error.message : '候选图场景重试失败'
-    markPlaceholderState(sceneId, 'failed', message)
-    errorMessage.value = message
+    if (hadPriorSuccess) {
+      // 重新生成 failed: original image still in selected_assets, all
+      // pipeline state is intact (assetsReady stays true, 生成视频 button
+      // stays visible, no failure cascade). Revert the 'refreshing'
+      // placeholder back to 'done' so the card returns to its prior
+      // visual, and surface the failure via a non-blocking toast.
+      markPlaceholderState(sceneId, 'done')
+      showInlineNotice(
+        `${sceneId} 重新生成失败，已保留原图。${message}`,
+        'warn',
+      )
+    } else {
+      markPlaceholderState(sceneId, 'failed', message)
+      errorMessage.value = message
+    }
   } finally {
     sceneRefreshingId.value = ''
     imageReviewRefreshAbortController = null
@@ -2855,6 +3010,24 @@ async function refreshImageReview() {
   const failures: string[] = []
   const refreshTotal = sceneRefreshQueue.value.length
 
+  // Failed scene_ids accumulated during *this* loop. Forwarded to the
+  // backend on each refresh-scene call so image_assets only writes
+  // 'failed' placeholders for scenes that genuinely terminally failed
+  // (not for scenes still queued for processing). Seeded from the
+  // current outputs in case a prior partial-failure run left some
+  // failed scenes that we're resuming over.
+  const failedSceneIds = new Set<string>()
+  const priorImageAssets = currentWorkflowResponse.value?.outputs?.image_assets as
+    | Record<string, unknown>
+    | undefined
+  const priorFailedIds = priorImageAssets?.failed_scene_ids
+  if (Array.isArray(priorFailedIds)) {
+    for (const id of priorFailedIds) {
+      const sid = String(id || '').trim()
+      if (sid) failedSceneIds.add(sid)
+    }
+  }
+
   try {
     for (const sceneId of sceneRefreshQueue.value) {
       if (imageReviewRefreshCancelled.value) {
@@ -2863,7 +3036,17 @@ async function refreshImageReview() {
 
       imageReviewRefreshAbortController = new AbortController()
       try {
-        await refreshImageReviewScene(sceneId, imageReviewRefreshAbortController.signal)
+        await refreshImageReviewScene(
+          sceneId,
+          imageReviewRefreshAbortController.signal,
+          undefined,
+          false,
+          Array.from(failedSceneIds),
+        )
+        // Success path — if this scene was previously failed (resumed
+        // partial run), drop it from the failed set so subsequent
+        // calls don't re-mark it.
+        failedSceneIds.delete(sceneId)
       } catch (error) {
         if (
           imageReviewRefreshCancelled.value ||
@@ -2875,6 +3058,7 @@ async function refreshImageReview() {
 
         const message = error instanceof Error ? error.message : '候选图分场景刷新失败'
         failures.push(message)
+        failedSceneIds.add(sceneId)
         markPlaceholderState(sceneId, 'failed', message)
       } finally {
         imageReviewRefreshAbortController = null
@@ -3361,7 +3545,8 @@ async function runWorkflow() {
           refreshingImageReview ||
           awaitingManualRender ||
           finalVideoRenderInFlight ||
-          Boolean(sceneRefreshingId)
+          Boolean(sceneRefreshingId) ||
+          hasImageFailures
         "
         :percent="
           singleSceneRetryActive
@@ -3370,7 +3555,9 @@ async function runWorkflow() {
               ? 92
               : awaitingManualRender
                 ? 85
-                : (workflowStatusProgress ?? (refreshingImageReview ? reviewRefreshProgress.percent : 0))
+                : hasImageFailures
+                  ? 70
+                  : (workflowStatusProgress ?? (refreshingImageReview ? reviewRefreshProgress.percent : 0))
         "
         :label="
           singleSceneRetryActive
@@ -3379,9 +3566,11 @@ async function runWorkflow() {
               ? '正在合成视频（音频、字幕、画面拼接中）'
               : awaitingManualRender
                 ? '候选图已就绪，等待你点击「生成视频」'
-                : (workflowIsProcessing ? workflowRunStatusMessage : reviewRefreshProgress.text)
+                : hasImageFailures
+                  ? settledFailureLabel
+                  : (workflowIsProcessing ? workflowRunStatusMessage : reviewRefreshProgress.text)
         "
-        :cancellable="phaseCancellable && !awaitingManualRender && !singleSceneRetryActive"
+        :cancellable="phaseCancellable && !awaitingManualRender && !singleSceneRetryActive && !hasImageFailures"
         :cancel-requested="cancelRequestedAny"
         @cancel="cancelActivePhase"
       />
@@ -3838,6 +4027,33 @@ async function runWorkflow() {
     <Transition name="confirm-fade">
       <div v-if="devModeToast" class="dev-mode-toast" role="status">
         {{ devModeToast }}
+      </div>
+    </Transition>
+  </Teleport>
+
+  <!-- Generic non-blocking notice toast — top-center, prominent, click
+       to dismiss. Used for outcomes that the user should clearly know
+       about but that don't change the UI state machine (e.g. 重新生成
+       failed but original image preserved). -->
+  <Teleport to="body">
+    <Transition name="confirm-fade">
+      <div
+        v-if="inlineNotice"
+        class="inline-notice"
+        :class="`inline-notice--${inlineNotice.tone}`"
+        role="alert"
+        @click="dismissInlineNotice"
+      >
+        <span class="inline-notice__icon" aria-hidden="true">
+          {{ inlineNotice.tone === 'warn' ? '⚠' : 'ℹ' }}
+        </span>
+        <span class="inline-notice__text">{{ inlineNotice.text }}</span>
+        <button
+          type="button"
+          class="inline-notice__close"
+          aria-label="关闭提示"
+          @click.stop="dismissInlineNotice"
+        >×</button>
       </div>
     </Transition>
   </Teleport>
@@ -4958,6 +5174,92 @@ details.summary-item[open] > summary .summary-chevron { transform: rotate(90deg)
 }
 @media (max-width: 720px) {
   .dev-mode-toast { left: 76px; }
+}
+
+/* Generic notice toast — top-center, prominent, click to dismiss.
+   Distinct shape from dev-mode-toast (which is a tiny corner pill) so
+   the user reads this as a real notification rather than a passive
+   status chip. `tone` variants tint the border + leading icon. */
+.inline-notice {
+  position: fixed;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1500;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px 12px 16px;
+  border-radius: 12px;
+  background: rgba(18, 14, 8, 0.96);
+  color: var(--text-primary);
+  border: 1px solid color-mix(in srgb, var(--text-secondary) 30%, transparent);
+  font-size: 0.875rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 1.5;
+  max-width: min(560px, calc(100vw - 32px));
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.50),
+              0 4px 12px rgba(0, 0, 0, 0.30);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  cursor: pointer;
+}
+.inline-notice--info {
+  border-color: color-mix(in srgb, var(--arc-300) 50%, transparent);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.50),
+              0 0 0 1px color-mix(in srgb, var(--arc-300) 20%, transparent);
+}
+.inline-notice--warn {
+  border-color: color-mix(in srgb, #f59e0b 65%, transparent);
+  background: rgba(28, 18, 8, 0.96);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.55),
+              0 0 0 1px color-mix(in srgb, #f59e0b 30%, transparent);
+}
+.inline-notice__icon {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+.inline-notice--info .inline-notice__icon {
+  color: var(--arc-200);
+  background: color-mix(in srgb, var(--arc-300) 18%, transparent);
+}
+.inline-notice--warn .inline-notice__icon {
+  color: #fbbf24;
+  background: color-mix(in srgb, #f59e0b 20%, transparent);
+}
+.inline-notice__text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.inline-notice__close {
+  flex: 0 0 auto;
+  appearance: none;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.25rem;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 0 4px;
+  margin-left: 4px;
+  border-radius: 4px;
+  line-height: 1;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.inline-notice__close:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+}
+@media (max-width: 720px) {
+  .inline-notice { top: 64px; padding: 10px 12px; font-size: 0.8125rem; }
 }
 
 .confirm-overlay {

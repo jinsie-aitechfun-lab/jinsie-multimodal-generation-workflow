@@ -47,13 +47,25 @@
               <span>{{ progressPct }}%</span>
               <span class="ph-dot">·</span>
             </template>
-            <span>{{ progressLabel }}</span>
+            <!-- During any in-flight phase, use InlineStatusPulse so the
+                 label gets the same left-pulse + trailing 3-dot ellipsis
+                 animation as the top global progress bar. Outside in-flight
+                 (e.g. settled-failure, 等待用户触发渲染), render the plain
+                 label so we don't imply ongoing work. -->
+            <InlineStatusPulse
+              v-if="isAnyLoading"
+              :text="progressLabel"
+              variant="running"
+            />
+            <span v-else>{{ progressLabel }}</span>
           </div>
         </div>
-        <!-- Global bar is active → just a pulsing status chip -->
+        <!-- Global bar is active → pulsing status chip. Uses the same
+             InlineStatusPulse component the top bar uses, so the chip
+             carries the same left pulse dot + trailing 3-dot ellipsis
+             animation. -->
         <div v-else class="ph-status-chip">
-          <span class="ph-status-dot"/>
-          {{ progressLabel }}
+          <InlineStatusPulse :text="progressLabel" variant="running" />
         </div>
 
         <!-- Manual-mode render CTA. Shows in the BODY of the placeholder
@@ -93,6 +105,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import GenerationLoadingAnimation from './studio/GenerationLoadingAnimation.vue'
+import InlineStatusPulse from './studio/InlineStatusPulse.vue'
 
 type UnknownRecord = Record<string, unknown>
 
@@ -289,6 +302,20 @@ const progressLabel = computed(() => {
   if (props.finalVideoUrl) return '已生成'
   if (props.renderInFlight || finalStatus.value === 'rendering') return '视频渲染中'
   if (!sceneCount.value) return '等待 Storyboard'
+  // Per-scene retry — applies whether or not assetsReady is true:
+  //   - assetsReady=false (重试该场景 on a failed scene): retry to repair
+  //   - assetsReady=true  (重新生成 on a done scene): retry to swap a
+  //     candidate while the workflow is otherwise settled
+  // Both want the label to reflect the active retry, not the surrounding
+  // settled state. Counts are dropped because they don't move during a
+  // single-scene retry (stays e.g. 5/6 throughout) and would just add
+  // noise — the scene title alone tells the user what's in flight.
+  if (props.sceneRefreshingId && !props.refreshingImages) {
+    const sceneSuffix = currentRefreshingSceneTitle.value
+      ? ` · ${currentRefreshingSceneTitle.value}`
+      : ''
+    return `正在重新生成${sceneSuffix}`
+  }
   if (!assetsReady.value) {
     if (props.refreshingImages) {
       const sceneSuffix = currentRefreshingSceneTitle.value
@@ -297,14 +324,6 @@ const progressLabel = computed(() => {
       // Exclude failed placeholders from the count — a partial bulk
       // refresh after a prior failure would otherwise show e.g. 12/12.
       return `候选图生成中（${generatedAssetCount.value}/${sceneCount.value}${sceneSuffix}）`
-    }
-    // Per-scene retry triggered from a failed-scene card. Label matches
-    // the title ("正在重新生成候选图") and counts only successful assets.
-    if (props.sceneRefreshingId) {
-      const sceneSuffix = currentRefreshingSceneTitle.value
-        ? ` · ${currentRefreshingSceneTitle.value}`
-        : ''
-      return `正在重新生成（${generatedAssetCount.value}/${sceneCount.value}${sceneSuffix}）`
     }
     if (generatedAssetCount.value > 0) return `候选图已暂停（${generatedAssetCount.value}/${sceneCount.value}）`
     return `候选图待生成（0/${sceneCount.value}）`
@@ -597,32 +616,19 @@ const placeholderDesc = computed(() => {
 }
 .ph-render-cta:active { transform: translateY(0); }
 
-/* Minimal status chip shown when global bar is covering the progress */
+/* Status chip shown when global bar is covering the progress. The
+   left pulse dot + trailing 3-dot ellipsis come from the embedded
+   InlineStatusPulse component, so the chip only owns the pill
+   container styling here. */
 .ph-status-chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
   padding: 5px 12px;
   border-radius: 999px;
   border: 1px solid rgba(245,158,11,0.20);
   background: rgba(245,158,11,0.07);
   font-size: 12px;
-  color: var(--text-muted);
   margin: 0 auto;
-}
-
-.ph-status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--arc-400);
-  box-shadow: 0 0 6px rgba(245,158,11,0.70);
-  animation: dotPulse 1.4s ease-in-out infinite;
-}
-
-@keyframes dotPulse {
-  0%,100% { opacity: 1; transform: scale(1); }
-  50%      { opacity: 0.5; transform: scale(0.75); }
 }
 
 .render-button {

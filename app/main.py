@@ -459,6 +459,7 @@ def refresh_image_review_scene(req: ImageReviewRefreshSceneRequest):
             image_prompts=req.image_prompts,
             video_provider=req.video_provider,
             preserve_seed=req.preserve_seed,
+            known_failed_scene_ids=list(req.known_failed_scene_ids or []),
         )
         print("[image-review] refresh-scene completed", req.run_id, req.scene_id)
 
@@ -486,9 +487,66 @@ def refresh_image_review_scene(req: ImageReviewRefreshSceneRequest):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         print("[image-review] refresh-scene runtime error", repr(e))
+        # Two failure semantics, discriminated by whether the current
+        # scene was already in image_review.selected_assets:
+        #
+        #   had_prior_success=True (重新生成 case):
+        #     The scene already had a valid generated image. The retry
+        #     blew up but the workflow state is *unchanged* — old
+        #     selection still wins. Do NOT strip selected_assets, do
+        #     NOT mark the scene failed, do NOT patch outputs.json.
+        #     The FE shows a non-blocking toast and the pipeline keeps
+        #     its assets-ready state.
+        #
+        #   had_prior_success=False (重试该场景 case):
+        #     The scene had no valid image. Persist this failure so the
+        #     FE's failure-aware UI engages:
+        #       1. add current scene to known_failed_scene_ids so the
+        #          helper emits a `failed` placeholder
+        #       2. patch image_assets to disk
+        #       3. embed rebuilt assets in the 502 detail so the FE
+        #          updates in-memory state without a reload
+        current_scene = str(req.scene_id or "").strip()
+        prior_selected_raw = (req.image_review or {}).get("selected_assets") or []
+        had_prior_success = bool(current_scene) and isinstance(
+            prior_selected_raw, list
+        ) and any(
+            isinstance(s, dict)
+            and str(s.get("scene_id") or "").strip() == current_scene
+            for s in prior_selected_raw
+        )
+
+        rebuilt_image_assets = None
+        if not had_prior_success:
+            try:
+                failed_ids = list(req.known_failed_scene_ids or [])
+                if current_scene and current_scene not in failed_ids:
+                    failed_ids.append(current_scene)
+                storyboard_scenes = (req.storyboard or {}).get("scenes") or []
+                rebuilt_image_assets = (
+                    _runner.build_image_assets_from_selected_assets(
+                        run_id=req.run_id,
+                        image_review=req.image_review or {},
+                        provider=str(_runner._image_provider_name()),
+                        storyboard_scenes=storyboard_scenes,
+                        known_failed_scene_ids=failed_ids,
+                    )
+                )
+                _patch_workflow_outputs(
+                    req.workflow_id, {"image_assets": rebuilt_image_assets}
+                )
+            except Exception as persist_err:
+                print(
+                    "[image-review] failed to persist failure",
+                    repr(persist_err),
+                )
+
+        detail = _refresh_scene_error_detail(req, e)
+        if rebuilt_image_assets is not None:
+            detail["image_assets"] = rebuilt_image_assets
         raise HTTPException(
             status_code=502,
-            detail=_refresh_scene_error_detail(req, e),
+            detail=detail,
         ) from e
 
 
