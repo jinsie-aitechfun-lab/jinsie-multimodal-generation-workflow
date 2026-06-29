@@ -433,6 +433,11 @@ const props = defineProps<{
   // step_summaries) and visually claims everything is done — directly
   // contradicting the FinalVideoPanel showing "场景图片生成失败".
   hasImageFailures?: boolean
+  // Set while a per-scene retry is in flight (regardless of whether
+  // hasImageFailures is true — retry is the *recovery* path, so it
+  // should show 'active' image-step state, not the halted failure
+  // chain. Takes priority over hasImageFailures in workflowChain.
+  sceneRefreshingId?: string
   statusLabel?: string
   completedSteps?: number
   totalSteps?: number
@@ -599,6 +604,14 @@ function buildChainWithActive(activeIdx: number) {
 }
 
 const workflowChain = computed<{ id: string; label: string; flowLabel: string; state: FlowState }[]>(() => {
+  // Per-scene retry in flight — takes priority over hasImageFailures
+  // because retry IS the recovery path. Image step is back to
+  // 'active' (pulsing) instead of the halted red 'failed' state.
+  // Downstream stays pending until retry resolves.
+  if (props.sceneRefreshingId) {
+    return buildChainWithActive(2)
+  }
+
   // Image failures halt the pipeline. Story / storyboard are done by
   // definition (image generation can't have failed without those
   // running first), images shows 'failed', downstream stays pending.
@@ -682,7 +695,8 @@ const workInProgress = computed(
     props.isProcessing ||
     props.renderInFlight ||
     props.refreshingImages ||
-    props.awaitingManualRender,
+    props.awaitingManualRender ||
+    props.sceneRefreshingId,
   ),
 )
 const doneCount = computed(
