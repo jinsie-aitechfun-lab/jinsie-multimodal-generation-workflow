@@ -2913,6 +2913,21 @@ function cancelDiscardDialog() {
   showDiscardConfirm.value = false
 }
 
+// Confirm-before-rerun guard: when the current workflow has unresolved
+// failed scenes (hasImageFailures), clicking "开始创作" would silently
+// throw away the partially-generated story / candidates / failure list.
+// The retry-failed-scene path in 画面审核 is the intended way to repair
+// the run; this dialog catches users who clicked 开始创作 thinking it
+// would fix the failure, and gives them an explicit choice.
+const showStartRunConfirm = ref(false)
+function cancelStartRunDialog() {
+  showStartRunConfirm.value = false
+}
+function confirmStartRunDiscardingFailures() {
+  showStartRunConfirm.value = false
+  void executeRunWorkflow()
+}
+
 function performDiscardCurrentDraft() {
   showDiscardConfirm.value = false
 
@@ -3228,7 +3243,20 @@ async function waitForAsyncWorkflowOutputs(
   )
 }
 
+// Public entry called by WorkflowRunPanel's "开始创作" button. Wraps
+// the real implementation in a confirm-before-discard guard for the
+// failure-recovery state — if image_assets has unresolved failures, a
+// new run would silently wipe the partial work and the user might
+// have meant to retry instead. Confirmation routes to executeRunWorkflow.
 async function runWorkflow() {
+  if (hasImageFailures.value) {
+    showStartRunConfirm.value = true
+    return
+  }
+  await executeRunWorkflow()
+}
+
+async function executeRunWorkflow() {
   // Defensive belt: abort any lingering image refresh from a previous
   // (cancelled but not discarded) run before we start a brand new one.
   // Without this, an orphan refresh promise could resolve mid-run and
@@ -3981,6 +4009,37 @@ async function runWorkflow() {
           <div class="confirm-actions">
             <button class="confirm-btn confirm-btn-ghost" @click="cancelDiscardDialog">取消</button>
             <button class="confirm-btn confirm-btn-primary" @click="performDiscardCurrentDraft">放弃</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <!-- Confirm dialog for "开始创作" when the current run has unresolved
+       image failures. Catches the easy misclick where the user thinks
+       开始创作 will repair the failure (it won't — the right path is
+       重试该场景 in 画面审核). Confirmed click routes to executeRunWorkflow
+       which actually discards the prior state and runs a new pipeline. -->
+  <Teleport to="body">
+    <Transition name="confirm-fade">
+      <div
+        v-if="showStartRunConfirm"
+        class="confirm-overlay"
+        role="dialog"
+        aria-modal="true"
+        @click.self="cancelStartRunDialog"
+      >
+        <div class="confirm-dialog">
+          <h3 class="confirm-title">开始新一轮创作？</h3>
+          <p class="confirm-message">
+            当前轮还有候选图失败未处理。开始新创作会丢弃当前的故事、分镜与候选图。<br>
+            想保留当前进度？请在「画面审核」点击对应场景的「重试该场景」。
+          </p>
+          <div class="confirm-actions">
+            <button class="confirm-btn confirm-btn-ghost" @click="cancelStartRunDialog">取消</button>
+            <button class="confirm-btn confirm-btn-primary" @click="confirmStartRunDiscardingFailures">
+              丢弃并新建
+            </button>
           </div>
         </div>
       </div>
