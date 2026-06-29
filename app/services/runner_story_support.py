@@ -209,6 +209,27 @@ class RunnerStorySupport:
             summary = summary or (
                 f"一个围绕“{topic}”展开的短篇故事，整体气质{tone_label}，适合做成{audience_label}向内容。"
             )
+        elif provider == "openai_compatible_llm" and not bool(
+            getattr(ctx.input, "dev_mode", False)
+        ):
+            # LLM was the configured story provider and all retries +
+            # repairs failed. Refuse to silently substitute a hard-coded
+            # template paragraph — that content is poor quality and
+            # users mistake it for real AI output, eroding trust in the
+            # product. Surface the failure so the workflow run errors
+            # cleanly and the FE can offer an explicit retry.
+            #
+            # Two escape hatches keep the template path reachable:
+            #   - STORY_PROVIDER=template: env-level opt-in test mode
+            #   - WorkflowInput.dev_mode=True: per-request dev override
+            #     set by the Studio FE when devMode is active, so the
+            #     downstream pipeline (storyboard / images / audio /
+            #     video) is still exercisable without a working LLM.
+            #     Dev sees `generation_source=template_fallback` in the
+            #     diagnostics panel — clear signal that this run's
+            #     story is synthetic.
+            reason = fallback_reason or "llm_unavailable"
+            raise RuntimeError(f"故事生成失败：{reason}")
         else:
             generation_source = "template_fallback"
             if not fallback_reason:

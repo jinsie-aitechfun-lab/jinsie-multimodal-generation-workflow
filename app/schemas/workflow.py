@@ -157,6 +157,18 @@ class WorkflowInput(BaseModel):
         description="Image quality tier: fast / quality / cinematic",
     )
 
+    dev_mode: bool = Field(
+        default=False,
+        description=(
+            "Set by the Studio FE when developer mode is active "
+            "(Cmd+Shift+D / ?dev=1). Currently used to opt back into "
+            "the story-step template fallback when LLM generation "
+            "fails — production runs raise, dev runs degrade so the "
+            "downstream pipeline (storyboard / images / audio / video) "
+            "can still be exercised without a working LLM endpoint."
+        ),
+    )
+
 
 class WorkflowRunRequest(BaseModel):
     workflow_id: str
