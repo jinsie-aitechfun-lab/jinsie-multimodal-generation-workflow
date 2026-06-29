@@ -3506,6 +3506,17 @@ async function executeRunWorkflow() {
     inputPayload.secondary_character_species = secondaryCharacterSpecies
   }
 
+  // Dev-mode opt-in: keeps the story-step template fallback reachable
+  // so the downstream pipeline (storyboard / images / audio / video)
+  // can still be exercised when the LLM endpoint is unreachable. In
+  // production runs (devMode=false) the backend raises and the FE
+  // shows the failure banner with a retry CTA. Dev-only runs still
+  // get a `generation_source=template_fallback` chip in the dev
+  // diagnostics panel so it's never confused with real AI output.
+  if (devMode.value) {
+    inputPayload.dev_mode = true
+  }
+
   const stepsSet = new Set(selectedSteps.value)
 
   if (form.subtitleEnabled) {
