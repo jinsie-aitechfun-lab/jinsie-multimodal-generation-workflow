@@ -3665,7 +3665,12 @@ async function executeRunWorkflow() {
         :refreshing-images="refreshingImageReview"
         :awaiting-manual-render="awaitingManualRender"
         :has-image-failures="hasImageFailures"
-        :status-label="workflowRunStatusMessage || (refreshingImageReview ? reviewRefreshProgress.text : '')"
+        :scene-refreshing-id="sceneRefreshingId"
+        :status-label="
+          singleSceneRetryActive
+            ? `正在重新生成 ${sceneRefreshingId}`
+            : (workflowRunStatusMessage || (refreshingImageReview ? reviewRefreshProgress.text : ''))
+        "
         :completed-steps="workflowStatusData?.completed_steps ?? 0"
         :total-steps="workflowStatusData?.total_steps ?? 0"
         :cancellable="phaseCancellable"
