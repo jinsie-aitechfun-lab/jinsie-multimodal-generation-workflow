@@ -2,6 +2,27 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─── Global focus styling ───────────────────────────────────────
+   Two-part rule that replaces the UA default blue focus ring:
+   1) Suppress the ring when focus came from a mouse click — :focus
+      fires but :focus-visible does not, so the negated selector
+      catches exactly that case. Solves "click a button, get an
+      ugly blue rectangle around it" without breaking accessibility.
+   2) Keyboard navigation (Tab / Shift+Tab / arrow keys) still
+      triggers :focus-visible, where we paint a gold ring matching
+      the theme accent. Keyboard users keep a visible focus
+      indicator — important for a11y and for interview reviewers
+      who tab-test product UIs.
+   ─────────────────────────────────────────────────────────────── */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+:focus-visible {
+  outline: 2px solid var(--arc-300, #fbbf24);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 /* ─── Design Tokens ───────────────────────────────────────────── */
 :root {
   /* ── 沉金暗调 · Black Gold ── */
