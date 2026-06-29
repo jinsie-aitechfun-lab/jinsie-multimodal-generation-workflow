@@ -209,6 +209,19 @@ class RunnerStorySupport:
             summary = summary or (
                 f"一个围绕“{topic}”展开的短篇故事，整体气质{tone_label}，适合做成{audience_label}向内容。"
             )
+        elif provider == "openai_compatible_llm":
+            # LLM was the configured story provider and all retries +
+            # repairs failed. Refuse to silently substitute a hard-coded
+            # template paragraph — that content is poor quality and
+            # users mistake it for real AI output, eroding trust in the
+            # product. Surface the failure so the workflow run errors
+            # cleanly and the FE can offer an explicit retry.
+            #
+            # Template-mode (STORY_PROVIDER=template) still uses the
+            # paragraph builder below — that path is an intentional
+            # opt-in test mode, not a fallback.
+            reason = fallback_reason or "llm_unavailable"
+            raise RuntimeError(f"故事生成失败：{reason}")
         else:
             generation_source = "template_fallback"
             if not fallback_reason:

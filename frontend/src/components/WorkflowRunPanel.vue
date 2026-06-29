@@ -569,7 +569,18 @@ function getTopicManualMismatchWarning(): string {
          Placed right after base config so users can start creating
          without scrolling through advanced settings. Reuses the original
          emit('run') binding — submit logic / payload / API untouched. -->
-    <p v-if="errorMessage" class="error">请求失败：{{ errorMessage }}</p>
+    <!-- Error banner: shows when the previous run threw (e.g. LLM
+         unreachable → story step raised). The 开始创作 button below
+         doubles as the retry affordance — clicking it re-submits the
+         same form, no extra UI needed. -->
+    <div v-if="errorMessage" class="run-error" role="alert">
+      <span class="run-error-icon" aria-hidden="true">⚠</span>
+      <div class="run-error-body">
+        <div class="run-error-title">本次创作失败</div>
+        <div class="run-error-detail">{{ errorMessage }}</div>
+        <div class="run-error-hint">点击下方「开始创作」可重试。</div>
+      </div>
+    </div>
     <div class="primaryCtaBar">
       <button
         class="btn primaryCtaBtn"
@@ -1598,6 +1609,56 @@ select.input {
   margin-top: 14px;
   color: #f87171;
   font-size: 0.875rem;
+}
+
+/* Failure banner — boxed, amber-bordered, gets a leading ⚠ icon so the
+   user can't miss it. Sits above the primary CTA which doubles as the
+   retry affordance (re-submits the same form). */
+.run-error {
+  margin-top: 14px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, #f59e0b 55%, transparent);
+  background: color-mix(in srgb, #f59e0b 8%, transparent);
+}
+.run-error-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: color-mix(in srgb, #f59e0b 22%, transparent);
+  color: #fbbf24;
+  font-size: 0.875rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.run-error-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.run-error-title {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: #fbbf24;
+  margin-bottom: 4px;
+}
+.run-error-detail {
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  line-height: 1.5;
+  word-break: break-word;
+}
+.run-error-hint {
+  margin-top: 6px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
 }
 
 /* ===== Render & Audio block ===== */
