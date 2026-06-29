@@ -697,6 +697,32 @@ const isWorkflowReadyForRender = computed(() => {
   )
 })
 
+// Image-pipeline percent shared by both the top progress bar and
+// FinalVideoPanel.progressPct so the two never disagree. Formula:
+// generated_count / scene_count × 85 (matches FinalVideoPanel's
+// `if (hasFailedAssets)` branch and its normal branch — both cap at
+// 85% reserving the last 15% for the render step). Used for the
+// single-scene-retry case and the settled-failure case in the top
+// bar; previously both were hardcoded (75 / 70) which drifted from
+// the FinalVideoPanel value as soon as generated/total ratio changed.
+const imagePipelinePercent = computed(() => {
+  const outputs = currentWorkflowResponse.value?.outputs || {}
+  const storyboard = outputs.storyboard as Record<string, unknown> | undefined
+  const imageAssets = outputs.image_assets as Record<string, unknown> | undefined
+  const scenes = Array.isArray(storyboard?.scenes) ? storyboard.scenes : []
+  const total = scenes.length
+  if (!total) return 0
+  const assets = Array.isArray(imageAssets?.assets) ? imageAssets.assets : []
+  const failedCountRaw = imageAssets?.failed_count
+  const failedCount = typeof failedCountRaw === 'number' ? failedCountRaw : 0
+  const generatedRaw = imageAssets?.generated_count
+  const generated =
+    typeof generatedRaw === 'number'
+      ? generatedRaw
+      : Math.max(0, assets.length - failedCount)
+  return Math.floor(Math.min(1, Math.max(0, generated / total)) * 85)
+})
+
 // Label for the settled-failure top progress bar — "候选图生成失败 5/6".
 // Reads image_assets.generated_count / failed_count when present (B1
 // writes both), falls back to scanning the assets array. Distinct from
@@ -3550,13 +3576,13 @@ async function runWorkflow() {
         "
         :percent="
           singleSceneRetryActive
-            ? 75
+            ? imagePipelinePercent
             : finalVideoRenderInFlight
               ? 92
               : awaitingManualRender
                 ? 85
                 : hasImageFailures
-                  ? 70
+                  ? imagePipelinePercent
                   : (workflowStatusProgress ?? (refreshingImageReview ? reviewRefreshProgress.percent : 0))
         "
         :label="
