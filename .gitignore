@@ -76,7 +76,7 @@ docs-private/
 Thumbs.db
 desktop.ini
 .cursorignore
-
+.claudeignore
 # =========================
 # Archived / sidelined scripts (kept locally for reference, not tracked)
 # =========================
@@ -87,3 +87,4 @@ scripts/_archive/
 # =========================
 assets/mock/
 frontend/public/showcase/*private*.mp4
+

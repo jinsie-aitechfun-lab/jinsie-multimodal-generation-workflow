@@ -10,6 +10,70 @@ except Exception:  # pragma: no cover
     _JIEBA_AVAILABLE = False
 
 
+# 量词前缀：一只 / 一辆 / 两头 / 三条 ...
+# 这些是角色描述里的计量词，本身不是角色名，抽取时必须跳过。
+_MEASURE_NUMERALS = "一二两三四五六七八九十半几多整"
+_MEASURE_UNITS = "只头匹条位名个群堆双对朵颗辆棵尾窝口峰羽支张片块"
+_LEADING_MEASURE_RE = re.compile(rf"^[{_MEASURE_NUMERALS}]+[{_MEASURE_UNITS}]")
+
+# 指令式开头动词（jieba 不可用时的 fallback）：用于识别 “讲一个…故事 / 写一段…”
+# 这类没有真实主角名的前缀，避免把 “讲一 / 写一” 当作主角名。
+_INSTRUCTION_LEAD_RE = re.compile(r"^(讲|写|说|编|做|生成|制作|创作|请|帮我|给我|来)")
+
+# 显式命名模式：主角是X / 主人公叫X / 名叫X。这是最可靠的角色名来源。
+_INTRO_NAME_RE = re.compile(
+    r"(?:主角|主人公|主人翁|主角儿)(?:是|叫做|叫|名叫|为)\s*([\u4e00-\u9fff]{2,5})"
+)
+_ALSO_NAME_RE = re.compile(r"(?:名叫|叫做)\s*([\u4e00-\u9fff]{2,5})")
+
+
+def _is_rejected_subject(word: str) -> bool:
+    """True 表示这个候选不是有效角色名，应当丢弃。"""
+    text = str(word or "").strip()
+    if not text:
+        return True
+    if _LEADING_MEASURE_RE.match(text):  # 一只 / 一辆 ...
+        return True
+    if len(text) <= 1:
+        return True
+    if text.endswith(("色", "毛色", "皮肤", "身体", "眼睛")):
+        return True
+    if _INSTRUCTION_LEAD_RE.match(text):
+        return True
+    return False
+
+
+def _looks_like_reduplicated_modifier(text: str) -> bool:
+    value = str(text or "").strip()
+    return (
+        len(value) == 4
+        and value[0] == value[1]
+        and value[2] == value[3]
+    )
+
+
+def _is_modifier_prefix(text: str) -> bool:
+    value = str(text or "").strip(" \t\n\r，。！？、,.!?：:；;“”\"'《》")
+    if not value:
+        return False
+    if value.endswith("的"):
+        return True
+    if value.endswith(("色", "毛色", "皮肤", "身体", "眼睛")):
+        return True
+    if len(value) <= 2:
+        return True
+    return _is_rejected_subject(value)
+
+
+def _strip_trailing_predicate_hint(text: str) -> str:
+    value = str(text or "").strip()
+    if len(value) > 2 and value[-1] in "着了过":
+        return value[:-2].strip()
+    if len(value) > 3:
+        return value[:-1].strip()
+    return value
+
+
 @dataclass
 class StorySubjectExtraction:
     primary_subject: str = ""
@@ -61,6 +125,8 @@ def normalize_story_topic(topic: str) -> str:
 def _clean_piece(value: str) -> str:
     text = str(value or "").strip(" \t\n\r，。！？、,.!?：:；;“”\"'《》")
     text = re.sub(r"^(和|跟|与|及|同|还有|以及)", "", text).strip()
+    # 去掉开头的量词，例如 “一只圆圆胖胖” → “圆圆胖胖”，避免把量词当角色名。
+    text = _LEADING_MEASURE_RE.sub("", text).strip()
     return text.strip(" \t\n\r，。！？、,.!?：:；;“”\"'《》")
 
 
@@ -140,7 +206,8 @@ def _cut_at_generic_syntax_boundary(value: str) -> str:
         if cut and cut != text:
             return cut
 
-    # fallback: 仅介词边界（jieba 不可用时）
+    # fallback: keep only function-word boundaries. Open-class verbs are
+    # handled by structural xiao-subject truncation below instead of lists.
     boundaries = ("去", "在", "被", "把", "给", "为", "从", "到", "向", "对", "用")
     best_pos: int | None = None
     for boundary in boundaries:
@@ -155,33 +222,37 @@ def _cut_at_generic_syntax_boundary(value: str) -> str:
 
 
 def _extract_open_xiao_subject(piece: str) -> str:
-    value = _clean_piece(piece)
-    if not value:
+    raw_value = _clean_piece(piece)
+    if not raw_value:
         return ""
 
-    value = _cut_at_generic_syntax_boundary(value)
-    if not value:
-        return ""
-
-    start = value.find("小")
+    start = raw_value.find("小")
     if start < 0:
         return ""
 
-    prefix = value[:start].strip()
-    candidate = value[start:].strip(" \t\n\r，。！？、,.!?：:；;“”\"'《》")
+    prefix = raw_value[:start].strip()
+    candidate_text = raw_value[start:].strip(" \t\n\r，。！？、,.!?：:；;“”\"'《》")
+
+    value = _cut_at_generic_syntax_boundary(candidate_text)
+    if not value:
+        return ""
+
+    candidate = value.strip(" \t\n\r，。！？、,.!?：:；;“”\"'《》")
 
     if not candidate.startswith("小"):
         return ""
 
-    if len(candidate) > 4:
+    if not _JIEBA_AVAILABLE and len(candidate) == 4 and candidate[2] != candidate[3]:
+        candidate = candidate[:2]
+    elif len(candidate) > 4:
         candidate = candidate[:3]
 
-    if prefix and (len(prefix) <= 2 or prefix.endswith("的")):
+    if prefix and not _is_modifier_prefix(prefix) and len(prefix) <= 2:
         combined = f"{prefix}{candidate}".strip()
-        if 2 < len(combined) <= 10:
+        if 2 < len(combined) <= 10 and not _is_rejected_subject(combined):
             return combined
 
-    return candidate
+    return "" if _is_rejected_subject(candidate) else candidate
 
 
 def _extract_open_leading_subject(piece: str) -> str:
@@ -195,7 +266,7 @@ def _extract_open_leading_subject(piece: str) -> str:
     # "讲一个节") and that fake "name" would flow downstream as the
     # protagonist, producing story text like "讲一继续认真尝试".
     # Short-circuit when jieba reports the very first token is a verb.
-    if _starts_with_verb(value):
+    if _starts_with_verb(value) or _INSTRUCTION_LEAD_RE.match(value):
         return ""
 
     value = _cut_at_generic_syntax_boundary(value)
@@ -214,6 +285,10 @@ def _extract_open_leading_subject(piece: str) -> str:
 
     candidate = match.group(1).strip(" \t\n\r，。！？、,.!?：:；;“”\"'《》")
     if not candidate:
+        return ""
+    if _is_rejected_subject(candidate):
+        return ""
+    if _looks_like_reduplicated_modifier(candidate):
         return ""
 
     if len(candidate) <= 2:
@@ -239,14 +314,9 @@ def _extract_subjects_from_piece(piece: str) -> list[str]:
     if first_xiao > 0:
         prefix = value[:first_xiao].strip(" \t\n\r，。！？、,.!?：:；;“”\"'《》")
 
-        # 修饰语前缀，例如“会飞的/蓝色/蓝色的”，不作为独立角色。
-        modifier_prefixes = ("红色", "蓝色", "绿色", "黄色", "白色", "黑色", "彩色", "会飞的", "会唱歌的")
-        is_modifier_prefix = prefix.endswith("的") or prefix in modifier_prefixes
-
-        if prefix and not is_modifier_prefix:
+        if prefix and not _is_modifier_prefix(prefix):
             # 例如“奥特曼打小怪兽”：小 之前是“奥特曼打”，去掉最后的谓词字。
-            if len(prefix) > 3:
-                prefix = prefix[:-1]
+            prefix = _strip_trailing_predicate_hint(prefix)
 
             leading = _extract_open_leading_subject(prefix)
             if leading:
@@ -263,23 +333,41 @@ def _extract_subjects_from_piece(piece: str) -> list[str]:
 
     deduped: list[str] = []
     for subject in subjects:
-        if subject and subject not in deduped:
+        if subject and not _is_rejected_subject(subject) and subject not in deduped:
             deduped.append(subject)
     return deduped
 
+
+def _extract_explicit_named_subjects(text: str) -> list[str]:
+    subjects: list[str] = []
+    for pattern in (_INTRO_NAME_RE, _ALSO_NAME_RE):
+        for match in pattern.finditer(text):
+            candidate = _clean_piece(match.group(1))
+            candidate = _cut_at_generic_syntax_boundary(candidate)
+            if candidate and not _is_rejected_subject(candidate) and candidate not in subjects:
+                subjects.append(candidate)
+    return subjects
+
 def extract_story_subjects(topic: str) -> StorySubjectExtraction:
     clean_topic = normalize_story_topic(topic)
+    explicit_subjects = _extract_explicit_named_subjects(clean_topic)
+    if explicit_subjects:
+        return StorySubjectExtraction(
+            primary_subject=explicit_subjects[0],
+            supporting_subjects=explicit_subjects[1:],
+        )
+
     pieces = re.split(r"(?:、|，|,|和|跟|与|及|同|还有|以及)", clean_topic)
 
     subjects: list[str] = []
     for piece in pieces:
         for subject in _extract_subjects_from_piece(piece):
-            if subject not in subjects:
+            if not _is_rejected_subject(subject) and subject not in subjects:
                 subjects.append(subject)
 
     if not subjects:
         for subject in _extract_subjects_from_piece(clean_topic):
-            if subject not in subjects:
+            if not _is_rejected_subject(subject) and subject not in subjects:
                 subjects.append(subject)
 
     if not subjects:
