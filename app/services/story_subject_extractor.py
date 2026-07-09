@@ -25,6 +25,10 @@ _INTRO_NAME_RE = re.compile(
     r"(?:主角|主人公|主人翁|主角儿)(?:是|叫做|叫|名叫|为)\s*([\u4e00-\u9fff]{2,5})"
 )
 _ALSO_NAME_RE = re.compile(r"(?:名叫|叫做)\s*([\u4e00-\u9fff]{2,5})")
+# 外观属性标记：不枚举颜色词，而是识别“颜色/身体部位/外观材质”
+# 这类描述性语素。用于过滤“柔和灰白毛色 / 蓝绿色花纹 / 银色鳞片”
+# 这样的片段，避免把开头的形容词误当角色名。
+_VISUAL_ATTRIBUTE_MARKER_RE = re.compile(r"[色毛皮纹斑点眼耳尾爪翅翼身腹背脸鼻嘴灯轮帽衣叶鳞鬃壳角]")
 
 
 def _is_rejected_subject(word: str) -> bool:
@@ -72,6 +76,15 @@ def _strip_trailing_predicate_hint(text: str) -> str:
     if len(value) > 3:
         return value[:-1].strip()
     return value
+
+
+def _looks_like_attribute_description(text: str) -> bool:
+    value = str(text or "").strip(" \t\n\r，。！？、,.!?：:；;“”\"'《》")
+    if not value:
+        return False
+    if "小" in value:
+        return False
+    return _VISUAL_ATTRIBUTE_MARKER_RE.search(value) is not None
 
 
 @dataclass
@@ -258,6 +271,9 @@ def _extract_open_xiao_subject(piece: str) -> str:
 def _extract_open_leading_subject(piece: str) -> str:
     value = _clean_piece(piece)
     if not value:
+        return ""
+
+    if _looks_like_attribute_description(value):
         return ""
 
     # BUG-001 fix. Instruction-style topics ("讲一个 X 的故事 / 写一段
