@@ -1653,21 +1653,24 @@ function starStyle(i: number) {
 @media (max-width: 960px) {
   .landing-hero {
     min-height: auto;
-    padding: 96px 24px 56px;
+    padding: 88px 24px 44px;
     overflow: visible;
   }
   .hero-grid {
     grid-template-columns: 1fr;
-    gap: 32px;
+    gap: 26px;
+    padding-top: 0;
   }
   .hero-left {
     text-align: center;
   }
   .hero-title {
     align-items: center;
+    font-size: clamp(2.15rem, 8vw, 3.2rem);
   }
   .hero-cta-row {
     justify-content: center;
+    flex-wrap: nowrap;
   }
   .hero-flow-bridge {
     display: none;
@@ -1686,18 +1689,73 @@ function starStyle(i: number) {
     top: auto; right: auto; bottom: auto;
     transform: none;
     width: 100%;
-    max-width: 720px;
+    max-width: 640px;
     height: auto;
     margin: 0 auto;
   }
   .hero-storybook-art {
-    max-height: 60vh;
+    max-height: 50vh;
+  }
+  .hero-subtitle,
+  .hero-subtitle-secondary {
+    margin-left: auto;
+    margin-right: auto;
   }
 }
 @media (max-width: 600px) {
-  .landing-hero { padding: 64px 20px 40px; }
+  .landing-hero { padding: 56px 16px 28px; }
+  .hero-badge {
+    margin-bottom: 24px;
+    gap: 10px;
+  }
+  .hero-badge-sub {
+    letter-spacing: 0.11em;
+  }
+  .hero-title {
+    margin-bottom: 14px;
+    font-size: clamp(2rem, 12vw, 2.65rem);
+  }
+  .hero-title-rest {
+    letter-spacing: 0.07em;
+  }
+  .hero-subtitle {
+    max-width: 340px;
+    margin-bottom: 26px;
+    font-size: 0.96rem;
+    line-height: 1.58;
+  }
+  .hero-subtitle-secondary {
+    max-width: 340px;
+    margin-top: -12px;
+    margin-bottom: 28px;
+    font-size: 0.75rem;
+    line-height: 1.7;
+    letter-spacing: 0.02em;
+  }
+  .hero-cta-row {
+    width: 100%;
+    max-width: 340px;
+    gap: 10px;
+  }
+  .hero-primary,
+  .hero-secondary {
+    flex: 1 1 0;
+    justify-content: center;
+    white-space: nowrap;
+  }
+  .hero-primary {
+    padding: 12px 14px;
+    font-size: 0.88rem;
+  }
+  .hero-secondary {
+    padding: 10px 12px;
+    font-size: 0.82rem;
+  }
+  .hero-visual {
+    max-width: 390px;
+  }
   .hero-storybook-art {
-    max-height: 48vh;
+    max-height: 38vh;
   }
 }
 
@@ -1722,6 +1780,10 @@ function starStyle(i: number) {
 }
 @media (max-width: 960px) {
   .landing-section { padding: 28px 24px 36px; }
+}
+@media (max-width: 600px) {
+  .landing-section { padding: 26px 16px 34px; }
+  .landing .section-title { margin-bottom: 24px; }
 }
 /* Section title block also gets a smaller bottom gap — reduces the empty
    space between the title and the rail/grid beneath. */
@@ -1841,6 +1903,34 @@ function starStyle(i: number) {
   list-style: none;
 }
 
+@media (max-width: 960px) {
+  .workflow-rail {
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 4px 4px 14px;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+  }
+  .workflow-rail::-webkit-scrollbar {
+    height: 4px;
+  }
+  .workflow-rail::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--arc-300) 28%, transparent);
+  }
+  .workflow-node {
+    flex: 0 0 136px;
+    max-width: 136px;
+    scroll-snap-align: start;
+  }
+  .workflow-link {
+    flex: 0 0 34px;
+    min-width: 34px;
+  }
+}
+
 /* ── Case Posters ──
    Cinematic story-poster cards. Each card has a per-tone SVG illustration
    inside a 16:10 surface, a gradient title overlay, optional REFERENCE
@@ -1866,7 +1956,28 @@ function starStyle(i: number) {
   .case-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 560px) {
-  .case-grid { grid-template-columns: 1fr; }
+  .case-grid {
+    display: flex;
+    gap: 16px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    max-width: none;
+    margin: 0 -16px;
+    padding: 2px 16px 16px;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+  }
+  .case-grid::-webkit-scrollbar {
+    height: 4px;
+  }
+  .case-grid::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--arc-300) 28%, transparent);
+  }
+  .case-card {
+    flex: 0 0 min(82vw, 320px);
+    scroll-snap-align: start;
+  }
 }
 
 .case-card {
