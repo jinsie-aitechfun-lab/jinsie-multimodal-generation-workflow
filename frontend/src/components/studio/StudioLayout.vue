@@ -140,6 +140,26 @@
       </div>
     </aside>
 
+    <button
+      type="button"
+      class="mobile-studio-brand"
+      aria-label="返回首页"
+      title="返回首页"
+      @click="goHome"
+    >
+      <svg width="24" height="24" viewBox="0 0 22 22" fill="none">
+        <path d="M11 1.5L20.5 6.5V15.5L11 20.5L1.5 15.5V6.5Z"
+          stroke="url(#mobileSbHexG)" stroke-width="1.5" stroke-linejoin="round"/>
+        <circle cx="11" cy="11" r="2.5" fill="url(#mobileSbHexG)" opacity="0.9"/>
+        <defs>
+          <linearGradient id="mobileSbHexG" x1="1.5" y1="1.5" x2="20.5" y2="20.5" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" :stop-color="themeAccentA"/>
+            <stop offset="100%" :stop-color="themeAccentB"/>
+          </linearGradient>
+        </defs>
+      </svg>
+    </button>
+
     <!-- Floating theme switcher — fixed to viewport top-right -->
     <ThemeSwitcher/>
 
@@ -634,6 +654,10 @@ watch(
 .s-root[data-theme="pearl"] .sb-identity-name { color: rgba(60, 66, 76, 0.85); }
 .s-root[data-theme="pearl"] .sb-identity-role { color: rgba(60, 66, 76, 0.50); }
 
+.mobile-studio-brand {
+  display: none;
+}
+
 /* ══════════════════════════════════════════════════
    CONTENT AREA
 ══════════════════════════════════════════════════ */
@@ -957,7 +981,7 @@ watch(
     border-right: none;
     border-top: 1px solid var(--sidebar-border, rgba(245,158,11,0.16));
     box-shadow:
-      0 -14px 34px rgba(0,0,0,0.48),
+      0 -8px 22px rgba(0,0,0,0.28),
       inset 0 1px 0 var(--sidebar-border, rgba(245,158,11,0.08));
   }
 
@@ -965,14 +989,76 @@ watch(
     border-right-color: transparent;
     border-top-color: var(--dev-edge, rgba(245,158,11,0.32));
     box-shadow:
-      0 -14px 34px rgba(0,0,0,0.48),
+      0 -8px 22px rgba(0,0,0,0.28),
       inset 0 1px 0 rgba(245,158,11,0.22);
+  }
+
+  .s-root[data-theme="pearl"] .sidebar {
+    background: rgba(255,255,255,0.70);
+    border-top-color: rgba(200,154,85,0.18);
+    box-shadow:
+      0 -6px 18px rgba(100,90,60,0.08),
+      inset 0 1px 0 rgba(255,255,255,0.82);
+  }
+
+  .s-root[data-theme="pearl"] .sb-item {
+    color: rgba(60,66,76,0.70);
+  }
+
+  .s-root[data-theme="pearl"] .sb-item.is-active {
+    background: rgba(200,154,85,0.13);
+    border-color: rgba(200,154,85,0.28);
+    box-shadow:
+      0 4px 14px rgba(200,154,85,0.10),
+      inset 0 1px 0 rgba(255,255,255,0.72);
+  }
+
+  .s-root[data-theme="pearl"] .sb-icon {
+    color: rgba(60,66,76,0.42);
+  }
+
+  .s-root[data-theme="pearl"] .sb-label {
+    color: rgba(60,66,76,0.54);
+  }
+
+  .s-root[data-theme="pearl"] .sb-item.is-active .sb-icon,
+  .s-root[data-theme="pearl"] .sb-item.is-active .sb-label {
+    color: #9a6f2c;
   }
 
   .sb-dev-chip,
   .sb-brand,
   .sb-footer {
     display: none;
+  }
+
+  .mobile-studio-brand {
+    position: fixed;
+    top: 4px;
+    left: 12px;
+    z-index: 1001;
+    display: inline-flex;
+    width: 34px;
+    height: 34px;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    padding: 0;
+    gap: 0;
+    border-radius: 12px;
+    opacity: 1 !important;
+    background: color-mix(in srgb, var(--sidebar-bg, rgba(7,5,2,0.88)) 42%, transparent);
+    border: 1px solid var(--sidebar-border, rgba(245,158,11,0.16));
+    backdrop-filter: blur(16px) saturate(140%);
+    -webkit-backdrop-filter: blur(16px) saturate(140%);
+    box-shadow: 0 8px 22px rgba(0,0,0,0.18);
+    appearance: none;
+    cursor: pointer;
+    color: inherit;
+  }
+
+  .mobile-studio-brand:hover {
+    transform: none;
   }
 
   .sb-nav {
@@ -1019,19 +1105,26 @@ watch(
   .s-content {
     margin-left: 0;
     min-height: 100dvh;
+    padding-top: 42px;
     padding-bottom: calc(68px + env(safe-area-inset-bottom, 0px));
   }
 
   .s-content::before {
     content: "Jinsie  ·  AI Video Studio";
-    display: block;
-    min-height: 42px;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 990;
+    display: flex;
+    align-items: center;
+    height: 42px;
     box-sizing: border-box;
-    padding: 10px 88px 8px 16px;
+    padding: 0 88px 0 54px;
     color: color-mix(in srgb, var(--text-primary) 86%, transparent);
     font-weight: 700;
-    font-size: 0.8125rem;
-    line-height: 1.2;
+    font-size: 0.78rem;
+    line-height: 1;
     letter-spacing: 0.04em;
     border-bottom: 1px solid var(--sidebar-border, rgba(245,158,11,0.10));
     background: linear-gradient(
@@ -1041,6 +1134,28 @@ watch(
     );
     backdrop-filter: blur(18px) saturate(140%);
     -webkit-backdrop-filter: blur(18px) saturate(140%);
+  }
+
+  .s-progress {
+    top: 42px;
+  }
+
+  .s-root[data-theme="pearl"] .s-content::before {
+    color: rgba(46,42,34,0.82);
+    border-bottom-color: rgba(200,154,85,0.12);
+    background: linear-gradient(
+      180deg,
+      rgba(255,255,255,0.66),
+      rgba(255,255,255,0.28)
+    );
+  }
+
+  .s-root[data-theme="pearl"] .mobile-studio-brand {
+    background: rgba(255,255,255,0.66);
+    border-color: rgba(200,154,85,0.18);
+    box-shadow:
+      0 8px 20px rgba(100,90,60,0.08),
+      inset 0 1px 0 rgba(255,255,255,0.76);
   }
 
   .s-main {

@@ -359,15 +359,17 @@ const vClickOutside: Directive<HTMLElement, () => void> = {
 
 @media (max-width: 768px) {
   .ts-root {
-    top: 8px;
+    top: 5px;
     right: 12px;
     bottom: auto;
     z-index: 1000;
   }
 
   .ts-trigger {
-    height: 30px;
+    height: 32px;
     padding: 0 10px 0 8px;
+    background: color-mix(in srgb, var(--glass-bg-light, rgba(20,16,8,0.78)) 72%, transparent);
+    box-shadow: 0 8px 22px rgba(0,0,0,0.14);
   }
 
   .ts-trigger-label {
