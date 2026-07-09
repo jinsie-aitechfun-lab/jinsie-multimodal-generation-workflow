@@ -203,8 +203,11 @@ type ReviewPlaceholderItem = {
 
 const userHasInteractedWithImages = ref(false)
 
+const createStudioSessionId = () => `studio-session-${Date.now().toString(36)}`
+const createStoryWorkflowId = () => `story-video-${Date.now()}`
+
 const DEFAULT_WORKFLOW_FORM: any = {
-  sessionId: 'demo-session-001',
+  sessionId: 'studio-session-001',
   topic: '写一个关于小猫冒险的故事',
   audience: 'children',
   tone: 'warm',
@@ -2988,7 +2991,7 @@ function performDiscardCurrentDraft() {
   // a discard would seed the next run's session_memory_summary with the
   // previous run's topic — the cleanest fix is to mint a fresh session
   // on discard so the backend treats the next run as brand new.
-  workflowForm.value.sessionId = `demo-session-${Date.now().toString(36)}`
+  workflowForm.value.sessionId = createStudioSessionId()
 
   // Clear draft-related localStorage. Also clear SESSION so a page
   // reload between discard and the next run doesn't restore the stale
@@ -3428,7 +3431,7 @@ async function executeRunWorkflow() {
   const secondaryCharacterSpecies = String(secondaryCharacter?.species || '').trim()
 
   const sessionId =
-    form.sessionId.trim() || `demo-session-${Date.now().toString(36)}`
+    form.sessionId.trim() || createStudioSessionId()
 
   const inputPayload: Record<string, unknown> = {
     topic: form.topic.trim(),
@@ -3523,7 +3526,7 @@ async function executeRunWorkflow() {
     stepsSet.add('subtitles')
   }
 
-  const workflowId = `storybook-demo-${Date.now()}`
+  const workflowId = createStoryWorkflowId()
 
   const payload = {
     workflow_id: workflowId,

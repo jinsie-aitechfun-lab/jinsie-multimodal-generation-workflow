@@ -59,7 +59,7 @@ def _post_json(base_url: str, path: str, payload: Dict[str, Any], timeout: int =
 
 def _build_run_payload(session_id: str) -> Dict[str, Any]:
     return {
-        "workflow_id": "storybook-demo",
+        "workflow_id": "story-video-image-provider",
         "session_id": session_id,
         "input": {
             "topic": "小兔子的一天",

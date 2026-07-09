@@ -38,7 +38,7 @@ def _submit_workflow(
 ) -> str:
     """POST /v1/workflow/run, assert async acceptance, return workflow_id."""
     payload: Dict[str, Any] = {
-        "workflow_id": "storybook-demo",
+        "workflow_id": "story-video-acceptance",
         "session_id": session_id,
         "input": {
             "topic": topic,
@@ -240,7 +240,7 @@ def main() -> None:
     resp1 = _load_outputs(wf_id1)
     _ok(f"/v1/workflow/run (async, {wf_id1})")
 
-    if resp1.get("workflow_id") != "storybook-demo":
+    if resp1.get("workflow_id") != "story-video-acceptance":
         _fail(f"workflow_id mismatch: {resp1.get('workflow_id')}")
     if resp1.get("session_id") != session_id:
         _fail(f"session_id mismatch: {resp1.get('session_id')}")
