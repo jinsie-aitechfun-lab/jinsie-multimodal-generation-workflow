@@ -144,6 +144,20 @@ def _workflow_outputs_path(workflow_id: str) -> Path:
     return _workflow_dir(workflow_id) / "outputs.json"
 
 
+def _raise_if_cancelled(workflow_id: str, *, scope: str = "workflow") -> None:
+    if not _is_cancelled(workflow_id):
+        return
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "code": "WORKFLOW_CANCELLED",
+            "workflow_id": workflow_id,
+            "scope": scope,
+            "message": "workflow cancellation requested",
+        },
+    )
+
+
 def _patch_workflow_outputs(workflow_id: str, patch: dict) -> None:
     """Merge patch fields into the stored outputs.json for a workflow run."""
     path = _workflow_outputs_path(workflow_id)
@@ -281,6 +295,20 @@ def cancel_workflow(req: dict = Body(...)):
     should show "cancel_requested" until the runner reaches one.
     """
     workflow_id = _require_workflow_id(req.get("workflow_id"))
+    scope = str(req.get("scope") or "workflow").strip().lower()
+
+    # Candidate-image refresh happens after the main workflow status is
+    # already completed. Still mark the cancellation registry so in-flight
+    # /refresh-scene handlers can stop before persisting late results, but
+    # do not rewrite status.json: story/storyboard outputs remain valid and
+    # the frontend shows the paused refresh state from its own marker.
+    if scope == "image_refresh":
+        _request_cancel(workflow_id)
+        return {
+            "workflow_id": workflow_id,
+            "status": "cancel_requested",
+            "scope": scope,
+        }
 
     # If the workflow already settled, there's nothing to cancel.
     status_path = _workflow_status_path(workflow_id)
@@ -307,6 +335,13 @@ def cancel_workflow(req: dict = Body(...)):
         detail={"message": "user requested cancel"},
     )
     return {"workflow_id": workflow_id, "status": "cancel_requested"}
+
+
+@app.post("/v1/workflow/cancel/clear")
+def clear_workflow_cancel(req: dict = Body(...)):
+    workflow_id = _require_workflow_id(req.get("workflow_id"))
+    _clear_cancel(workflow_id)
+    return {"workflow_id": workflow_id, "status": "cancel_cleared"}
 
 
 @app.get("/v1/workflow/status/{workflow_id}")
@@ -421,6 +456,7 @@ def render_final_video(req: FinalVideoRenderRequest):
 def refresh_image_review(req: ImageReviewRefreshRequest):
     print("[image-review] refresh request received", req.workflow_id, req.run_id)
     workflow_id = _require_workflow_id(req.workflow_id)
+    _raise_if_cancelled(workflow_id, scope="image_refresh")
     try:
         result = _runner.refresh_image_review(
             workflow_id=workflow_id,
@@ -433,6 +469,7 @@ def refresh_image_review(req: ImageReviewRefreshRequest):
             image_prompts=getattr(req, "image_prompts", None),
             video_provider=req.video_provider,
         )
+        _raise_if_cancelled(workflow_id, scope="image_refresh")
         print("[image-review] refresh completed", req.run_id)
         return ImageReviewRefreshResponse(
             workflow_id=result["workflow_id"],
@@ -446,6 +483,8 @@ def refresh_image_review(req: ImageReviewRefreshRequest):
     except ValueError as e:
         print("[image-review] refresh bad request", str(e))
         raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
     except Exception as e:
         print("[image-review] refresh runtime error", repr(e))
         raise
@@ -462,6 +501,7 @@ def refresh_image_review_scene(req: ImageReviewRefreshSceneRequest):
         req.scene_id,
     )
     workflow_id = _require_workflow_id(req.workflow_id)
+    _raise_if_cancelled(workflow_id, scope="image_refresh")
     try:
         result = _runner.refresh_image_review_scene(
             workflow_id=workflow_id,
@@ -477,6 +517,7 @@ def refresh_image_review_scene(req: ImageReviewRefreshSceneRequest):
             preserve_seed=req.preserve_seed,
             known_failed_scene_ids=list(req.known_failed_scene_ids or []),
         )
+        _raise_if_cancelled(workflow_id, scope="image_refresh")
         print("[image-review] refresh-scene completed", req.run_id, req.scene_id)
 
         # Persist updated image_review + image_assets back to outputs.json so that
@@ -501,6 +542,8 @@ def refresh_image_review_scene(req: ImageReviewRefreshSceneRequest):
     except ValueError as e:
         print("[image-review] refresh-scene bad request", str(e))
         raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
     except Exception as e:
         print("[image-review] refresh-scene runtime error", repr(e))
         # Two failure semantics, discriminated by whether the current

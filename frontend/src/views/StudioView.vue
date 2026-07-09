@@ -2797,15 +2797,17 @@ const cancelRequestedAny = computed(() =>
   cancelRequested.value || imageReviewRefreshCancelled.value,
 )
 function cancelActivePhase() {
-  // Workflow cancel beats image-refresh cancel when both could apply —
-  // server-side cancel covers the whole run, abort only stops the
-  // frontend loop.
+  // Candidate-image refresh can overlap with the workflow completion
+  // handoff for one render tick. If the user sees/cancels "候选图生成中",
+  // stop that refresh first; otherwise we may only cancel the already
+  // completed workflow while the refresh-scene request keeps running.
+  if (refreshingImageReview.value) {
+    cancelImageReviewRefresh()
+    return
+  }
   if (loading.value && activeWorkflowId.value) {
     void cancelWorkflow()
     return
-  }
-  if (refreshingImageReview.value) {
-    cancelImageReviewRefresh()
   }
 }
 
@@ -2859,6 +2861,7 @@ function cancelImageReviewRefresh() {
   if (wfId) {
     try { localStorage.setItem(STORAGE_KEY_REFRESH_CANCELLED, wfId) } catch { /* ignore */ }
     imageRefreshPausedByUser.value = true
+    notifyBackendImageRefreshCancel(wfId)
   }
 
   errorMessage.value = '已取消剩余候选图生成。'
@@ -2885,12 +2888,47 @@ function clearImageRefreshCancelledMarker() {
   imageRefreshPausedByUser.value = false
 }
 
+function notifyBackendImageRefreshCancel(workflowId: string) {
+  const normalizedWorkflowId = String(workflowId || '').trim()
+  if (!normalizedWorkflowId) return
+  void fetch(`${apiBaseUrl}/v1/workflow/cancel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      workflow_id: normalizedWorkflowId,
+      scope: 'image_refresh',
+    }),
+  }).catch(() => {
+    /* best-effort: local marker + AbortController still pause this tab */
+  })
+}
+
+async function clearBackendCancelMarker(workflowId: string) {
+  const normalizedWorkflowId = String(workflowId || '').trim()
+  if (!normalizedWorkflowId) return
+  try {
+    await fetch(`${apiBaseUrl}/v1/workflow/cancel/clear`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workflow_id: normalizedWorkflowId }),
+    })
+  } catch {
+    /* best-effort; a stale server marker will surface as a cancelled refresh */
+  }
+}
+
 // Bound to the "立即生成候选图" deferred-banner button. The user explicitly
 // asking to (re)start refresh means we must clear the persistent cancel
 // marker before invoking the refresh loop — otherwise the auto-resume
 // guard would still treat this workflow as cancelled on next mount.
-function triggerManualImageRefresh() {
+async function triggerManualImageRefresh() {
+  const wfId =
+    currentWorkflowResponse.value?.workflow_id ||
+    currentWorkflowPayload.value?.workflow_id ||
+    localStorage.getItem(STORAGE_KEY_WORKFLOW) ||
+    ''
   clearImageRefreshCancelledMarker()
+  await clearBackendCancelMarker(wfId)
   imageReviewRefreshCancelled.value = false
   errorMessage.value = ''
   void refreshImageReview()
