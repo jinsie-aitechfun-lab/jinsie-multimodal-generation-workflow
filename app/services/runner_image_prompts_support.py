@@ -13,6 +13,7 @@ from app.services.image_prompt_policy import (
     build_image_prompt_policy_blocks,
     clean_image_prompt_text,
 )
+from app.services.storage_ids import safe_child_dir
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -574,7 +575,11 @@ def _write_image_prompts_debug(workflow_id: str, prompts: List[Dict[str, Any]]) 
     if not wf:
         return
     try:
-        out_dir = PROJECT_ROOT / "assets" / "mock" / wf
+        out_dir = safe_child_dir(
+            PROJECT_ROOT / "assets" / "mock",
+            wf,
+            field_name="workflow_id",
+        )
         out_dir.mkdir(parents=True, exist_ok=True)
         debug_path = out_dir / "image_prompts_debug.json"
         debug_payload = {

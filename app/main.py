@@ -33,6 +33,7 @@ from app.services.cancellation import (
 )
 from app.services.runner import UnknownStepError, WorkflowRunner
 from app.services.runner_errors import WorkflowCancelledError
+from app.services.storage_ids import safe_child_dir, sanitize_storage_id
 
 app = FastAPI(title="jinsie-multimodal-generation-workflow", version="0.1.0")
 
@@ -124,8 +125,15 @@ def _refresh_scene_error_detail(req: ImageReviewRefreshSceneRequest, error: Exce
     }
 
 
+def _require_workflow_id(workflow_id: object) -> str:
+    try:
+        return sanitize_storage_id(workflow_id, field_name="workflow_id")
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
 def _workflow_dir(workflow_id: str) -> Path:
-    return ASSETS_DIR / "mock" / str(workflow_id)
+    return safe_child_dir(ASSETS_DIR / "mock", workflow_id, field_name="workflow_id")
 
 
 def _workflow_status_path(workflow_id: str) -> Path:
@@ -194,7 +202,11 @@ def get_real_kling_sample(sample_id: str):
 
 @app.post("/v1/workflow/run")
 def run_workflow(req: dict = Body(...)):
-    workflow_id = req.get("workflow_id") or f"wf_{int(time.time()*1000)}"
+    req = dict(req)
+    workflow_id = _require_workflow_id(
+        req.get("workflow_id") or f"wf_{int(time.time()*1000)}"
+    )
+    req["workflow_id"] = workflow_id
     requested_steps = req.get("steps") or []
     first_step = requested_steps[0] if requested_steps else {}
     first_step_name = (
@@ -268,9 +280,7 @@ def cancel_workflow(req: dict = Body(...)):
     actual cancellation takes effect at the next checkpoint, so the UI
     should show "cancel_requested" until the runner reaches one.
     """
-    workflow_id = str(req.get("workflow_id") or "").strip()
-    if not workflow_id:
-        raise HTTPException(status_code=400, detail="workflow_id is required")
+    workflow_id = _require_workflow_id(req.get("workflow_id"))
 
     # If the workflow already settled, there's nothing to cancel.
     status_path = _workflow_status_path(workflow_id)
@@ -301,6 +311,7 @@ def cancel_workflow(req: dict = Body(...)):
 
 @app.get("/v1/workflow/status/{workflow_id}")
 def get_workflow_status(workflow_id: str):
+    workflow_id = _require_workflow_id(workflow_id)
     status_path = _workflow_status_path(workflow_id)
     if status_path.exists():
         try:
@@ -324,6 +335,7 @@ def get_workflow_status(workflow_id: str):
 
 @app.get("/v1/workflow/results/{workflow_id}")
 def get_workflow_results(workflow_id: str):
+    workflow_id = _require_workflow_id(workflow_id)
     outputs_path = _workflow_outputs_path(workflow_id)
     if not outputs_path.exists():
         raise HTTPException(status_code=404, detail=f"workflow results not found: {workflow_id}")
@@ -338,9 +350,10 @@ def get_workflow_results(workflow_id: str):
 @app.post("/v1/image-review/select", response_model=ImageReviewSelectResponse)
 def select_image_review_asset(req: ImageReviewSelectRequest):
     print("[image-review] selection request received", req.workflow_id, req.scene_id)
+    workflow_id = _require_workflow_id(req.workflow_id)
     try:
         result = _runner.update_image_review_selection(
-            workflow_id=req.workflow_id,
+            workflow_id=workflow_id,
             session_id=req.session_id,
             run_id=req.run_id,
             scene_id=req.scene_id,
@@ -372,9 +385,10 @@ def select_image_review_asset(req: ImageReviewSelectRequest):
 @app.post("/v1/final-video/render", response_model=FinalVideoRenderResponse)
 def render_final_video(req: FinalVideoRenderRequest):
     print("[final-video] render request received", req.workflow_id, req.run_id)
+    workflow_id = _require_workflow_id(req.workflow_id)
     try:
         result = _runner.rerender_final_video(
-            workflow_id=req.workflow_id,
+            workflow_id=workflow_id,
             session_id=req.session_id,
             run_id=req.run_id,
             workflow_input=req.workflow_input,
@@ -385,7 +399,7 @@ def render_final_video(req: FinalVideoRenderRequest):
         print("[final-video] render completed", req.run_id)
         # Persist final_video back to outputs.json so that page refresh can
         # detect the already-generated video and skip re-rendering.
-        _patch_workflow_outputs(req.workflow_id, {
+        _patch_workflow_outputs(workflow_id, {
             "final_video": result["final_video"],
         })
         return FinalVideoRenderResponse(
@@ -406,9 +420,10 @@ def render_final_video(req: FinalVideoRenderRequest):
 @app.post("/v1/image-review/refresh", response_model=ImageReviewRefreshResponse)
 def refresh_image_review(req: ImageReviewRefreshRequest):
     print("[image-review] refresh request received", req.workflow_id, req.run_id)
+    workflow_id = _require_workflow_id(req.workflow_id)
     try:
         result = _runner.refresh_image_review(
-            workflow_id=req.workflow_id,
+            workflow_id=workflow_id,
             session_id=req.session_id,
             run_id=req.run_id,
             storyboard=req.storyboard,
@@ -446,9 +461,10 @@ def refresh_image_review_scene(req: ImageReviewRefreshSceneRequest):
         req.run_id,
         req.scene_id,
     )
+    workflow_id = _require_workflow_id(req.workflow_id)
     try:
         result = _runner.refresh_image_review_scene(
-            workflow_id=req.workflow_id,
+            workflow_id=workflow_id,
             session_id=req.session_id,
             run_id=req.run_id,
             scene_id=req.scene_id,
@@ -465,7 +481,7 @@ def refresh_image_review_scene(req: ImageReviewRefreshSceneRequest):
 
         # Persist updated image_review + image_assets back to outputs.json so that
         # page refresh loads the real generated state instead of the frozen pending state.
-        _patch_workflow_outputs(req.workflow_id, {
+        _patch_workflow_outputs(workflow_id, {
             "image_review": result["image_review"],
             "image_assets": result["image_assets"],
         })
@@ -533,7 +549,7 @@ def refresh_image_review_scene(req: ImageReviewRefreshSceneRequest):
                     )
                 )
                 _patch_workflow_outputs(
-                    req.workflow_id, {"image_assets": rebuilt_image_assets}
+                    workflow_id, {"image_assets": rebuilt_image_assets}
                 )
             except Exception as persist_err:
                 print(
@@ -548,6 +564,3 @@ def refresh_image_review_scene(req: ImageReviewRefreshSceneRequest):
             status_code=502,
             detail=detail,
         ) from e
-
-
-from fastapi import Body

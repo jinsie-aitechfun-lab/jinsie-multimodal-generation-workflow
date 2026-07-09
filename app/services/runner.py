@@ -51,6 +51,7 @@ from app.services.runner_single_scene_image_support import RunnerSingleSceneImag
 from app.services.topic_character_infer import infer_primary_character_manifest
 from app.services.story_subject_extractor import extract_story_subjects
 from app.services.llm_output_sanitizer import parse_story_payload
+from app.services.storage_ids import safe_child_dir, sanitize_storage_id
 
 
 @dataclass(frozen=True)
@@ -665,7 +666,7 @@ class WorkflowRunner:
         raise RuntimeError("TTS_VOICE is missing")
 
     def _ensure_audio_run_dir(self, run_id: str) -> Path:
-        run_dir = MOCK_AUDIO_ROOT / run_id
+        run_dir = safe_child_dir(MOCK_AUDIO_ROOT, run_id, field_name="run_id")
         run_dir.mkdir(parents=True, exist_ok=True)
         return run_dir
 
@@ -673,7 +674,7 @@ class WorkflowRunner:
         # NOTE: Do NOT create directories here.
         # We create parent dirs only when we actually write an output file.
         # This prevents leaving lots of empty run dirs when generation/refresh fails.
-        run_dir = MOCK_IMAGE_ROOT / run_id
+        run_dir = safe_child_dir(MOCK_IMAGE_ROOT, run_id, field_name="run_id")
         return run_dir
 
     def _probe_audio_duration_seconds(self, audio_path: Path) -> Optional[float]:
@@ -714,7 +715,7 @@ class WorkflowRunner:
         return round(duration, 3)
 
     def _ensure_video_run_dir(self, run_id: str) -> Path:
-        run_dir = MOCK_VIDEO_ROOT / run_id
+        run_dir = safe_child_dir(MOCK_VIDEO_ROOT, run_id, field_name="run_id")
         run_dir.mkdir(parents=True, exist_ok=True)
         return run_dir
 
@@ -906,9 +907,10 @@ class WorkflowRunner:
         req: WorkflowRunRequest,
         progress_callback: Optional[callable] = None,
     ) -> WorkflowRunResponse:
+        workflow_id = sanitize_storage_id(req.workflow_id, field_name="workflow_id")
         run_id = f"run_{uuid4().hex[:12]}"
         ctx = StepContext(
-            workflow_id=req.workflow_id,
+            workflow_id=workflow_id,
             session_id=req.session_id,
             run_id=run_id,
             input=req.input,
@@ -1015,16 +1017,20 @@ class WorkflowRunner:
             """Raise WorkflowCancelledError if the user has requested a
             cancel. Best-effort persists partial outputs first so the
             client can still see what was produced before the stop."""
-            if not _is_cancelled(req.workflow_id):
+            if not _is_cancelled(workflow_id):
                 return
             try:
-                out_dir = PROJECT_ROOT / "assets" / "mock" / str(req.workflow_id)
+                out_dir = safe_child_dir(
+                    PROJECT_ROOT / "assets" / "mock",
+                    workflow_id,
+                    field_name="workflow_id",
+                )
                 out_dir.mkdir(parents=True, exist_ok=True)
                 with open(out_dir / "outputs.json", "w", encoding="utf-8") as f:
                     json.dump(aggregated_outputs, f, ensure_ascii=False, indent=2, default=str)
             except Exception as error:  # noqa: BLE001
                 print(f"[WorkflowRunner] partial-output save on cancel failed: {error}")
-            raise WorkflowCancelledError(req.workflow_id, partial_outputs=aggregated_outputs)
+            raise WorkflowCancelledError(workflow_id, partial_outputs=aggregated_outputs)
 
         for step_index, step in enumerate(req.steps, start=1):
             _check_cancelled()
@@ -1067,7 +1073,7 @@ class WorkflowRunner:
                     )
 
         self._session.save_run_context(
-            workflow_id=req.workflow_id,
+            workflow_id=workflow_id,
             session_id=req.session_id,
             run_id=run_id,
             outputs=aggregated_outputs,
@@ -1076,7 +1082,11 @@ class WorkflowRunner:
 
         # 落盘 outputs.json：不依赖外部异步回调，保证流程结束后磁盘一定有完整产物
         try:
-            out_dir = PROJECT_ROOT / "assets" / "mock" / str(req.workflow_id)
+            out_dir = safe_child_dir(
+                PROJECT_ROOT / "assets" / "mock",
+                workflow_id,
+                field_name="workflow_id",
+            )
             out_dir.mkdir(parents=True, exist_ok=True)
             with open(out_dir / "outputs.json", "w", encoding="utf-8") as f:
                 json.dump(
@@ -1098,7 +1108,7 @@ class WorkflowRunner:
         render_package = self._render_plan.build_render_package(ctx, aggregated_outputs)
 
         return WorkflowRunResponse(
-            workflow_id=req.workflow_id,
+            workflow_id=workflow_id,
             session_id=req.session_id,
             run_id=run_id,
             status="COMPLETED",
