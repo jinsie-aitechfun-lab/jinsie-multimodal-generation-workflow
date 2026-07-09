@@ -182,7 +182,7 @@ def _build_run_payload(case: CaseConfig, session_id: str, topic: str) -> Dict[st
     ]
 
     return {
-        "workflow_id": "storybook-demo",
+        "workflow_id": "story-video-silent-audio-subtitle",
         "session_id": session_id,
         "input": {
             "topic": topic,
@@ -227,7 +227,7 @@ def _ensure_image_assets(
     min_expected = max(1, scene_count)
 
     refresh_req = {
-        "workflow_id": run_data.get("workflow_id") or "storybook-demo",
+        "workflow_id": run_data.get("workflow_id") or "story-video-silent-audio-subtitle",
         "session_id": run_data.get("session_id"),
         "run_id": run_id,
         "storyboard": storyboard,
@@ -275,7 +275,7 @@ def _render_final(
 ) -> Dict[str, Any]:
     subtitles = (run_data.get("outputs", {}) or {}).get("subtitles", {}) or {}
     render_req = {
-        "workflow_id": run_data.get("workflow_id") or "storybook-demo",
+        "workflow_id": run_data.get("workflow_id") or "story-video-silent-audio-subtitle",
         "session_id": run_data.get("session_id"),
         "run_id": str(run_data["run_id"]),
         # ✅ IMPORTANT: must pass workflow_input with topic
