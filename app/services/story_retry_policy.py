@@ -22,14 +22,15 @@ def story_main_subject(topic: str) -> str:
 def build_story_closing_sentence(topic: str) -> str:
     clean_topic = normalize_story_topic(topic)
     subject = story_main_subject(clean_topic)
+    actor = "它" if subject == "主角" else subject
 
     if "骑自行车" in clean_topic or "自行车" in clean_topic:
-        return f"{subject}扶稳车把，心里暖暖的，明白勇敢尝试就会慢慢进步。"
+        return f"{actor}再次扶稳车把，沿着小路慢慢前进，比刚开始时更稳了一些。"
 
     if "雪人" in clean_topic or "堆雪" in clean_topic:
-        return f"{subject}看着雪人，心里暖暖的，明白耐心尝试就会有美好的收获。"
+        return f"{actor}认真看着整理好的雪人，把这次耐心完成的小任务记在心里。"
 
-    return f"{subject}心里暖暖的，明白勇敢尝试就会带来美好的收获。"
+    return f"{actor}回头看看一路遇见的朋友和风景，把这次勇敢的尝试记在了心里。"
 
 
 def story_text_matches_topic(text: str, topic: str) -> bool:
@@ -130,46 +131,48 @@ def build_story_topic_anchor_sentence(topic: str) -> str:
 def build_story_completion_sentences(topic: str) -> list[str]:
     clean_topic = normalize_story_topic(topic)
     subject = story_main_subject(clean_topic)
+    actor = "它" if subject == "主角" else subject
     closing_sentence = build_story_closing_sentence(clean_topic)
 
     if "骑自行车" in clean_topic or "自行车" in clean_topic:
         return [
-            f"{subject}一次次扶正车把，慢慢找到平衡，也不再害怕摔倒。",
+            f"{actor}一次次扶正车把，慢慢找到平衡，也不再害怕摔倒。",
             f"它沿着小路继续练习，虽然速度不快，却每一步都比刚开始更稳。",
-            f"朋友们在旁边鼓励它，{subject}也越来越相信自己能够做到。",
+            f"朋友们在旁边鼓励它，{actor}也越来越相信自己能够做到。",
             closing_sentence,
         ]
 
     if "旅行" in clean_topic:
         return [
-            f"{subject}继续向前出发，看见了新的风景，也遇到了愿意互相帮助的朋友。",
-            f"路上虽然有一点小困难，但{subject}没有着急，而是停下来认真想办法。",
+            f"{actor}继续向前出发，看见了新的风景，也遇到了愿意互相帮助的朋友。",
+            f"路上虽然有一点小困难，但{actor}没有着急，而是停下来认真想办法。",
             f"它慢慢调整方向，继续沿着小路前进，把这次旅行变成了一次勇敢的尝试。",
-            f"沿途的风景一点点展开，{subject}也学会了在陌生地方保持耐心和好奇。",
+            f"沿途的风景一点点展开，{actor}也学会了在陌生地方保持耐心和好奇。",
             f"当它回头看见走过的路时，才发现自己已经比出发时更勇敢了。",
             closing_sentence,
         ]
 
     if "雪糕" in clean_topic or "冰淇淋" in clean_topic:
         return [
-            f"{subject}小心地捧着雪糕，也学会了和朋友一起分享清凉和快乐。",
+            f"{actor}小心地捧着雪糕，也学会了和朋友一起分享清凉和快乐。",
             closing_sentence,
         ]
 
     if "雪人" in clean_topic or "堆雪" in clean_topic:
         return [
-            f"{subject}又认真整理了雪人的帽子和围巾，让雪人稳稳地站在雪地里。",
+            f"{actor}又认真整理了雪人的帽子和围巾，让雪人稳稳地站在雪地里。",
             closing_sentence,
         ]
 
     if "怪兽" in clean_topic:
         return [
-            f"{subject}没有急着放弃，而是勇敢地保护大家，也学会了用善意解决问题。",
+            f"{actor}没有急着放弃，而是勇敢地保护大家，也学会了用善意解决问题。",
             closing_sentence,
         ]
 
     return [
-        f"{subject}继续认真尝试，慢慢找到了解决问题的方法。",
+        f"{actor}停下来观察周围，和伙伴们一起把线索重新整理了一遍。",
+        "新的发现让前方的小路变得清楚起来，原本让人担心的麻烦也有了答案。",
         closing_sentence,
     ]
 
@@ -584,9 +587,9 @@ def repair_retry_story_text(
     # (mid-sentence). Previously this fired whenever the last 40 chars
     # lacked one of a short list of "warmth" keywords, which over-fired
     # on perfectly fine endings ("明天又是新的一天" / "他们慢慢走回家" /
-    # etc.) and ended up REPLACING the LLM's own ending with the
-    # cliché "心里暖暖的，明白勇敢尝试就会带来美好的收获。" — which
-    # then leaked into the user's perceived story quality.
+    # etc.) and ended up replacing the LLM's own ending with a generic
+    # moral sentence, which then leaked into the user's perceived story
+    # quality.
     ends_with_punctuation = bool(cleaned) and cleaned[-1] in "。！？!?"
     needs_forced_closing = bool(cleaned) and not ends_with_punctuation and not has_warm_ending
 
