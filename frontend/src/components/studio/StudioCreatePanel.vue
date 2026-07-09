@@ -63,4 +63,26 @@ defineProps<{
   color: #c89a55;
   filter: drop-shadow(0 0 8px rgba(214,179,90,0.18));
 }
+
+@media (max-width: 768px) {
+  .create-panel {
+    height: auto;
+    min-height: 0;
+  }
+
+  .create-panel__header {
+    padding: 0.75rem 1rem 0.625rem;
+  }
+
+  .create-panel__body {
+    padding: 1rem;
+    overflow: visible;
+  }
+}
+
+@media (max-width: 420px) {
+  .create-panel__body {
+    padding: 0.875rem;
+  }
+}
 </style>

@@ -663,4 +663,59 @@ const placeholderDesc = computed(() => {
   color: var(--text-secondary);
   overflow: auto;
 }
+
+@media (max-width: 768px) {
+  .final-hero {
+    margin: 10px 0 14px;
+  }
+
+  .final-title {
+    margin-bottom: 10px;
+    font-size: 0.8125rem;
+  }
+
+  .final-shell {
+    margin-bottom: 18px;
+    border-radius: 14px;
+  }
+
+  .final-video {
+    max-height: min(54vh, 320px);
+  }
+
+  .final-placeholder {
+    padding: 24px 14px 30px;
+  }
+
+  .ph-illus {
+    width: 64px;
+    height: 64px;
+    margin-bottom: 16px;
+  }
+
+  .ph-svg {
+    width: 64px;
+    height: 64px;
+  }
+
+  .ph-title {
+    font-size: 1.15rem;
+  }
+
+  .ph-desc {
+    margin-bottom: 18px;
+    font-size: 12px;
+  }
+
+  .ph-meta {
+    flex-wrap: wrap;
+    line-height: 1.5;
+  }
+
+  .ph-render-cta {
+    width: 100%;
+    max-width: 240px;
+    min-height: 44px;
+  }
+}
 </style>

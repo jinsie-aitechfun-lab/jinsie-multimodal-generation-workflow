@@ -4245,6 +4245,32 @@ async function executeRunWorkflow() {
   overflow: hidden;
 }
 
+@media (max-width: 768px) {
+  .studio-home-grid {
+    gap: 1rem;
+  }
+
+  .review-layout {
+    gap: 1rem;
+  }
+
+  .review-audio-summary {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    padding: 0.75rem 1rem;
+  }
+
+  .review-audio-summary-count {
+    width: 100%;
+    margin-left: 1.5rem;
+    white-space: normal;
+  }
+
+  .review-audio-scenes {
+    padding: 0.875rem 1rem 1rem;
+  }
+}
+
 /* 配音素材 — collapsible card. Closed by default so it doesn't
    dominate the Review tab; expand to inspect TTS output per scene.
    Inner styling drops the dev-tool "wall of text" look: speaker
@@ -5315,7 +5341,10 @@ details.summary-item[open] > summary .summary-chevron { transform: rotate(90deg)
   -webkit-backdrop-filter: blur(6px);
 }
 @media (max-width: 720px) {
-  .dev-mode-toast { left: 76px; }
+  .dev-mode-toast {
+    left: 16px;
+    top: 62px;
+  }
 }
 
 /* Generic notice toast — top-center, prominent, click to dismiss.

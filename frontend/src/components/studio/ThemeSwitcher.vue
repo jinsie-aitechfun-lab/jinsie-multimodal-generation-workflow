@@ -359,13 +359,35 @@ const vClickOutside: Directive<HTMLElement, () => void> = {
 
 @media (max-width: 768px) {
   .ts-root {
-    bottom: 18px;
-    right: 14px;
+    top: 8px;
+    right: 12px;
+    bottom: auto;
+    z-index: 1000;
+  }
+
+  .ts-trigger {
+    height: 30px;
+    padding: 0 10px 0 8px;
+  }
+
+  .ts-trigger-label {
+    font-size: 11px;
   }
 
   .ts-panel {
+    top: calc(100% + 10px);
+    right: 0;
+    bottom: auto;
     width: min(248px, calc(100vw - 28px));
-    max-height: min(420px, calc(100vh - 78px));
+    max-height: min(360px, calc(100vh - 76px));
+    z-index: 1000;
+  }
+
+  .ts-panel::after {
+    top: -6px;
+    bottom: auto;
+    border-top: none;
+    border-bottom: 6px solid var(--glass-bg-light, rgba(20,16,8,0.94));
   }
 }
 </style>

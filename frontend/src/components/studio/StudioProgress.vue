@@ -129,4 +129,29 @@ defineEmits<{
   );
   box-shadow: 0 0 6px rgba(188, 215, 232, 0.14);
 }
+
+@media (max-width: 768px) {
+  .studio-progress {
+    padding: 8px 12px 9px;
+  }
+
+  .studio-progress__bar {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .studio-progress__pct {
+    font-size: 0.6875rem;
+  }
+
+  .studio-progress__cancel {
+    min-height: 30px;
+    padding: 4px 10px;
+  }
+
+  .studio-progress__label {
+    font-size: 0.75rem;
+    line-height: 1.45;
+  }
+}
 </style>

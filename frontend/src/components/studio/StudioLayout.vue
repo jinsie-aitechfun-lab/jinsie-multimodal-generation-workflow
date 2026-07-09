@@ -935,10 +935,134 @@ watch(
 
 /* ── Responsive ── */
 @media (max-width: 768px) {
-  .sidebar    { width: 64px; }
-  .s-content  { margin-left: 64px; }
-  .sb-label   { display: none; }
-  .sb-item    { padding: 10px 4px; }
-  .s-main     { padding: 1rem; }
+  .s-root {
+    display: block;
+    min-height: 100dvh;
+    padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+    overflow-x: hidden;
+  }
+
+  .sidebar {
+    left: 0;
+    right: 0;
+    top: auto;
+    bottom: 0;
+    width: auto;
+    height: calc(64px + env(safe-area-inset-bottom, 0px));
+    box-sizing: border-box;
+    z-index: 10020;
+    flex-direction: row;
+    justify-content: center;
+    padding: 6px 12px calc(6px + env(safe-area-inset-bottom, 0px));
+    border-right: none;
+    border-top: 1px solid var(--sidebar-border, rgba(245,158,11,0.16));
+    box-shadow:
+      0 -14px 34px rgba(0,0,0,0.48),
+      inset 0 1px 0 var(--sidebar-border, rgba(245,158,11,0.08));
+  }
+
+  .sidebar.is-dev {
+    border-right-color: transparent;
+    border-top-color: var(--dev-edge, rgba(245,158,11,0.32));
+    box-shadow:
+      0 -14px 34px rgba(0,0,0,0.48),
+      inset 0 1px 0 rgba(245,158,11,0.22);
+  }
+
+  .sb-dev-chip,
+  .sb-brand,
+  .sb-footer {
+    display: none;
+  }
+
+  .sb-nav {
+    flex: 0 1 auto;
+    width: 100%;
+    max-width: 430px;
+    height: 52px;
+    flex-direction: row;
+    justify-content: space-around;
+    align-items: center;
+    gap: 8px;
+    padding: 0;
+  }
+
+  .sb-item {
+    width: auto;
+    min-width: 78px;
+    min-height: 44px;
+    height: 50px;
+    flex: 1 1 0;
+    padding: 7px 8px;
+    border-radius: 16px;
+    gap: 4px;
+  }
+
+  .sb-item.is-active::before {
+    left: 50%;
+    top: -9px;
+    transform: translateX(-50%);
+    width: 38px;
+    height: 3px;
+    border-radius: 0 0 2px 2px;
+  }
+
+  .sb-icon {
+    font-size: 16px;
+  }
+
+  .sb-label {
+    display: block;
+    font-size: 10px;
+  }
+
+  .s-content {
+    margin-left: 0;
+    min-height: 100dvh;
+    padding-bottom: calc(68px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .s-content::before {
+    content: "Jinsie  ·  AI Video Studio";
+    display: block;
+    min-height: 42px;
+    box-sizing: border-box;
+    padding: 10px 88px 8px 16px;
+    color: color-mix(in srgb, var(--text-primary) 86%, transparent);
+    font-weight: 700;
+    font-size: 0.8125rem;
+    line-height: 1.2;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid var(--sidebar-border, rgba(245,158,11,0.10));
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--sidebar-bg, rgba(7,5,2,0.88)) 72%, transparent),
+      transparent
+    );
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+  }
+
+  .s-main {
+    max-width: none;
+    padding: 0.75rem;
+  }
+}
+
+@media (max-width: 390px) {
+  .sidebar {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .sb-nav {
+    gap: 6px;
+  }
+
+  .sb-item {
+    min-width: 0;
+    padding-left: 6px;
+    padding-right: 6px;
+  }
 }
 </style>

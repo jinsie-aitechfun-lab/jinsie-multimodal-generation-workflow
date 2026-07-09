@@ -272,6 +272,18 @@ const vClickOutside: Directive<HTMLElement, () => void> = {
   color: #b8843e;
 }
 
+@media (max-width: 768px) {
+  .ts-panel {
+    max-height: min(320px, calc(100vh - 96px));
+  }
+
+  .ts-option {
+    min-height: 40px;
+    padding: 10px 12px;
+    font-size: 1rem;
+  }
+}
+
 /* Fade animation */
 .ts-fade-enter-active,
 .ts-fade-leave-active {
@@ -294,5 +306,13 @@ const vClickOutside: Directive<HTMLElement, () => void> = {
 
 :global(:root[data-theme="pearl"]) .ts-chev {
   color: #b8843e;
+}
+
+@media (max-width: 768px) {
+  .ts-trigger {
+    min-height: 44px;
+    padding: 11px 12px;
+    font-size: 1rem;
+  }
 }
 </style>

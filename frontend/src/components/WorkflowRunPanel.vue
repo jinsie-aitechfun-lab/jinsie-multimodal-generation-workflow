@@ -1849,4 +1849,108 @@ select.input {
   flex: 1;
   min-width: 0;
 }
+
+@media (max-width: 768px) {
+  .label {
+    margin-bottom: 7px;
+    font-size: 0.8125rem;
+  }
+
+  .textarea {
+    min-height: 112px;
+    padding: 12px;
+    font-size: 1rem;
+    line-height: 1.55;
+  }
+
+  .input {
+    min-height: 44px;
+    padding: 11px 12px;
+    margin-bottom: 12px;
+    font-size: 1rem;
+  }
+
+  .config-panel,
+  .steps-panel {
+    margin-top: 0.875rem;
+    padding: 0.875rem;
+    border-radius: 12px;
+  }
+
+  .config-grid,
+  .steps-grid {
+    grid-template-columns: 1fr;
+    gap: 0.875rem;
+  }
+
+  .field span,
+  .checkbox-field span {
+    font-size: 0.8125rem;
+  }
+
+  .section-title {
+    margin-bottom: 12px;
+  }
+
+  .primaryCtaBar {
+    margin: 14px 0 2px;
+  }
+
+  .primaryCtaBtn {
+    min-height: 48px;
+    padding: 13px 16px;
+  }
+
+  .runState {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .runStateInfo {
+    width: 100%;
+  }
+
+  .runStateText {
+    max-width: 100%;
+    white-space: normal;
+  }
+
+  .cancelLink {
+    min-height: 34px;
+    padding: 6px 12px;
+  }
+
+  .collapse-head {
+    min-height: 50px;
+    padding: 0.75rem 0.875rem;
+  }
+
+  .collapse-body {
+    padding: 0 0.875rem 0.875rem;
+  }
+
+  .quickStartRow {
+    grid-template-columns: 1fr;
+  }
+
+  .chipBtn {
+    min-height: 38px;
+  }
+
+  .render-audio-block {
+    padding: 10px;
+  }
+
+  .render-audio-block .row {
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .render-audio-block .row-label {
+    min-width: 0;
+    width: 100%;
+  }
+}
 </style>

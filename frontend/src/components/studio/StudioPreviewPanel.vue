@@ -1707,4 +1707,117 @@ const doneCount = computed(
   text-overflow: ellipsis;
   pointer-events: none;
 }
+
+@media (max-width: 768px) {
+  .preview-panel {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .pp-header {
+    padding: 0.75rem 1rem 0.625rem;
+  }
+
+  .pp-body {
+    overflow: visible;
+  }
+
+  .pp-video {
+    max-height: min(52vh, 260px);
+  }
+
+  .pp-current-label {
+    padding: 0.5rem 1rem;
+  }
+
+  .pp-state {
+    min-height: 180px;
+    padding: 1.5rem 1rem;
+  }
+
+  .pp-empty {
+    padding: 1.25rem 1rem 1.5rem;
+  }
+
+  .pp-empty-illus {
+    width: 180px;
+    max-width: 72%;
+  }
+
+  .pp-empty-topics {
+    margin-top: 1rem;
+  }
+
+  .pp-hist-main {
+    padding: 1rem;
+    overflow: visible;
+  }
+
+  .pp-hist-main-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
+
+  .pp-history {
+    padding: 0.75rem 1rem 0.875rem;
+  }
+
+  .pp-work {
+    min-height: 0;
+    max-height: none;
+    margin: 0.75rem 1rem 1rem;
+    padding: 0.75rem;
+  }
+
+  .pp-work-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .pp-work-badge {
+    align-self: flex-start;
+  }
+
+  .pp-work-flow {
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 8px 6px 24px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(245,158,11,0.20) transparent;
+  }
+
+  .pp-work-flow::-webkit-scrollbar {
+    height: 3px;
+  }
+
+  .pp-work-flow::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(245,158,11,0.25);
+  }
+
+  .pp-flow-node {
+    flex: 0 0 12px;
+  }
+
+  .pp-flow-link {
+    flex: 0 0 34px;
+  }
+
+  .pp-work-foot {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .pp-cancel-link {
+    margin-left: 0;
+    min-height: 32px;
+    padding: 5px 10px;
+  }
+
+  .pp-thumb {
+    width: 132px;
+    height: 74px;
+  }
+}
 </style>
