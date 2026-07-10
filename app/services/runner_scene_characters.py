@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 
 from app.services.runner_image_prompts_support import (
     build_anatomy_separation_rules,
+    format_species_count_phrase,
     species_count_map,
 )
 
@@ -308,6 +309,22 @@ class RunnerSceneCharactersSupport:
                 f"{secondary_text} must be clearly visible near {primary_text} and are not optional background hints"
             )
 
+        identity_locks = []
+        for item in manifest_items:
+            display = str(item.get("display_name") or "").strip()
+            species = str(item.get("species") or "").strip()
+            if display and species:
+                identity_locks.append(f"{display} must be rendered as {species}")
+        if identity_locks:
+            parts.append(
+                "character identity lock: "
+                + "; ".join(identity_locks)
+                + "; do not turn any named character into another species or another character"
+            )
+        parts.append(
+            "when the story says they, everyone, all friends, companions, or partners, render the full required cast listed above"
+        )
+
         parts.append(
             "if any required scene character is missing, the image is invalid and should be regenerated"
         )
@@ -324,11 +341,7 @@ class RunnerSceneCharactersSupport:
         # "rabbit + squirrel" it becomes "expected cast count: 1 rabbit, 1 squirrel".
         counts = species_count_map(manifest_items)
         if counts:
-            count_text = ", ".join(
-                f"{n} {sp if n == 1 else sp + 's'}"
-                for sp, n in counts.items()
-            )
-            parts.append(f"expected cast count: {count_text}")
+            parts.append(f"expected cast count: {format_species_count_phrase(counts)}")
 
         return "; ".join(parts)
 

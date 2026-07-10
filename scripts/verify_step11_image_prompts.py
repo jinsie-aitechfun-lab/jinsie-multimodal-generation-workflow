@@ -194,6 +194,7 @@ def main() -> int:
     assert "storybook illustration" in first_scene_prompt
     assert "scene cast lock" in first_scene_prompt
     assert "required scene characters" in first_scene_prompt
+    assert "fixed appearance for 小兔子" in first_scene_prompt
     assert "character separation" in first_scene_prompt
     assert "scene action binding" in first_scene_prompt
     assert "subject negative constraints" in first_scene_prompt
@@ -222,7 +223,20 @@ def main() -> int:
     assert shot_result == direct_shot_result
     assert len(shot_result["prompts"]) == 2
     assert shot_result["prompts"][0]["shot_id"] == "shot_01"
-    assert shot_result["prompts"][0]["characters"] == SCENES[0]["characters"]
+    shot_characters = shot_result["prompts"][0]["characters"]
+    assert len(shot_characters) == 2
+    assert shot_characters[0]["character_id"] == "char_primary_01"
+    assert shot_characters[0]["display_name"] == "小兔子"
+    assert "long upright ears" in shot_characters[0]["signature_traits"]
+    assert "same character identity: 小兔子" in shot_characters[0]["signature_traits"]
+    assert "no turtle shell" in shot_characters[0]["forbidden_traits"]
+    assert shot_characters[0]["visual_identity"]
+    assert shot_characters[1]["character_id"] == "char_secondary_01"
+    assert shot_characters[1]["display_name"] == "小乌龟"
+    assert "round green shell" in shot_characters[1]["signature_traits"]
+    assert "same character identity: 小乌龟" in shot_characters[1]["signature_traits"]
+    assert "no rabbit ears" in shot_characters[1]["forbidden_traits"]
+    assert shot_characters[1]["visual_identity"]
     assert shot_result["prompts"][0]["required_character_ids"] == [
         "char_primary_01",
         "char_secondary_01",
@@ -234,6 +248,7 @@ def main() -> int:
     assert "story context: 小兔子和小乌龟来到河边。" in shot_result["prompts"][0][
         "prompt"
     ]
+    assert "fixed appearance for 小兔子" in shot_result["prompts"][0]["prompt"]
 
     print("[OK] scene-level image prompt contract")
     print("[OK] shot-level image prompt contract")

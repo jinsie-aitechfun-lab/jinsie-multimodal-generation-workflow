@@ -91,6 +91,35 @@ def _assert_structured_manifest(runner: WorkflowRunner) -> None:
     assert support.manifest_character_by_role(outputs, "primary") == enriched[0]
     assert support.manifest_character_by_role(outputs, "secondary") == enriched[1]
 
+    chinese_trait_input = WorkflowInput(
+        topic="嘟嘟小车去看海",
+        structured_characters_enabled=True,
+        characters=[
+            StructuredCharacterInput(
+                display_name="嘟嘟小车",
+                species="小汽车",
+                role_type="primary",
+                visual_traits="圆圆胖胖的鲜红色车身，黄色圆圆大灯、温柔小笑脸;玩具卡通比例",
+                forbidden_traits="不要人物、不要小女孩， 不要绿色车身",
+            ),
+        ],
+    )
+    chinese_manifest = support.build_character_manifest(
+        chinese_trait_input,
+        support.build_character_candidates(chinese_trait_input),
+    )
+    assert chinese_manifest[0]["signature_traits"] == [
+        "圆圆胖胖的鲜红色车身",
+        "黄色圆圆大灯",
+        "温柔小笑脸",
+        "玩具卡通比例",
+    ]
+    assert chinese_manifest[0]["forbidden_traits"] == [
+        "不要人物",
+        "不要小女孩",
+        "不要绿色车身",
+    ]
+
 
 def _assert_legacy_manifest(runner: WorkflowRunner) -> None:
     workflow_input = WorkflowInput(

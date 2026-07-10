@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Optional
 
 from app.schemas.workflow import WorkflowInput
@@ -24,6 +25,13 @@ class RunnerCharacterManifestSupport:
 
     def __init__(self, runner: Any) -> None:
         self._runner = runner
+
+    def _split_trait_text(self, text: str) -> List[str]:
+        return [
+            item.strip()
+            for item in re.split(r"[,，、;；]+", str(text or ""))
+            if item.strip()
+        ]
 
     def build_character_candidates(
         self, workflow_input: WorkflowInput
@@ -108,14 +116,8 @@ class RunnerCharacterManifestSupport:
             visual_traits_text = str(candidate.get("visual_traits") or "").strip()
             forbidden_traits_text = str(candidate.get("forbidden_traits") or "").strip()
 
-            signature_traits = [
-                item.strip() for item in visual_traits_text.split(",") if item.strip()
-            ]
-            forbidden_traits = [
-                item.strip()
-                for item in forbidden_traits_text.split(",")
-                if item.strip()
-            ]
+            signature_traits = self._split_trait_text(visual_traits_text)
+            forbidden_traits = self._split_trait_text(forbidden_traits_text)
 
             manifest.append(
                 {

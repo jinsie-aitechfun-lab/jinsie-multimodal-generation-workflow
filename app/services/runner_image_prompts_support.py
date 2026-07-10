@@ -91,6 +91,44 @@ def _scene_action_fallback(
     return ""
 
 
+_CHINESE_SPECIES_LABEL_HINTS = (
+    ("大熊猫", "panda"),
+    ("熊猫", "panda"),
+    ("小汽车", "toy car"),
+    ("汽车", "car"),
+    ("车", "car"),
+    ("小灰鼠", "mouse"),
+    ("小老鼠", "mouse"),
+    ("老鼠", "mouse"),
+    ("小鼠", "mouse"),
+    ("小蚂蚁", "ant"),
+    ("蚂蚁", "ant"),
+    ("小刺猬", "hedgehog"),
+    ("刺猬", "hedgehog"),
+    ("小海豹", "seal"),
+    ("海豹", "seal"),
+    ("小狐狸", "fox"),
+    ("狐狸", "fox"),
+    ("小棕熊", "bear"),
+    ("小熊", "bear"),
+    ("熊", "bear"),
+    ("小白兔", "rabbit"),
+    ("兔子", "rabbit"),
+    ("小松鼠", "squirrel"),
+    ("松鼠", "squirrel"),
+)
+
+
+def _species_label_from_chinese_text(*values: str) -> str:
+    text = " ".join(str(value or "") for value in values)
+    if not text:
+        return ""
+    for needle, label in _CHINESE_SPECIES_LABEL_HINTS:
+        if needle in text:
+            return label
+    return ""
+
+
 def _english_label_for_character(character: Dict[str, Any]) -> str:
     """Return a short English species noun for the diffusion prompt.
 
@@ -105,8 +143,7 @@ def _english_label_for_character(character: Dict[str, Any]) -> str:
 
     This returns a SHORT noun ("rabbit", "squirrel") rather than the
     whole descriptive phrase, so the downstream `not two <species>`
-    negatives stay clean and high-signal. Resolution chain — no
-    hardcoded animal table:
+    negatives stay clean and high-signal. Resolution chain:
 
       1. `species` if ASCII-only — already English
       2. Trailing noun of the first clause of `visual_identity`
@@ -117,7 +154,10 @@ def _english_label_for_character(character: Dict[str, Any]) -> str:
          "rabbit".
       3. `display_name` if ASCII-only
       4. `subject` if ASCII-only
-      5. Original Chinese species / display as a last resort so the
+      5. Small Chinese species normalizer for common presets and cast
+         roles, so prompt count guards can say "1 mouse, 1 ant" instead
+         of falling back to untranslated Chinese tokens.
+      6. Original Chinese species / display as a last resort so the
          prompt isn't empty.
     """
     if not isinstance(character, dict):
@@ -177,6 +217,10 @@ def _english_label_for_character(character: Dict[str, Any]) -> str:
     subject = str(character.get("subject") or "").strip()
     if _ascii_only(subject):
         return subject
+
+    chinese_label = _species_label_from_chinese_text(species, display, subject)
+    if chinese_label:
+        return chinese_label
 
     return species or display or subject or ""
 
@@ -241,7 +285,7 @@ def species_count_map(
     return counts
 
 
-def _format_species_count_phrase(counts: "Counter[str]") -> str:
+def format_species_count_phrase(counts: "Counter[str]") -> str:
     """Format a Counter into prompt-friendly text:
       {"rabbit": 1, "squirrel": 1} → "1 rabbit and 1 squirrel"
       {"rabbit": 2}                → "2 rabbits"
@@ -510,13 +554,29 @@ def _build_multi_character_roster_for_scene(
 
     total = sum(counts.values())
     species_set: List[str] = list(counts.keys())
-    count_phrase = _format_species_count_phrase(counts)  # "2 rabbits and 1 squirrel"
+    count_phrase = format_species_count_phrase(counts)  # "2 rabbits and 1 squirrel"
+    identity_locks: List[str] = []
+    for character in enriched_scene_characters:
+        if not isinstance(character, dict):
+            continue
+        label = _english_label_for_character(character)
+        display = str(character.get("display_name") or character.get("subject") or "").strip()
+        species = str(character.get("species") or "").strip()
+        if label and display:
+            identity_locks.append(f"{display} is exactly one {label}")
+        elif label and species:
+            identity_locks.append(f"{species} is exactly one {label}")
 
     parts: List[str] = [
         f"this scene contains exactly {count_phrase}",
-        f"render exactly {total} distinct animal subjects in total",
+        f"render exactly {total} distinct required subjects in total",
         f"required species in this single image: {', '.join(species_set)}",
     ]
+    if identity_locks:
+        parts.append("character identity lock: " + "; ".join(identity_locks))
+    parts.append(
+        "when the story says they, everyone, all friends, companions, or partners, it means the full required cast above"
+    )
 
     # Per-species count guards. For required=1 squirrel → "not two squirrels".
     # For required=2 rabbits → "not three rabbits" but NEVER "not two
@@ -539,6 +599,45 @@ def _build_multi_character_roster_for_scene(
         parts.append("do not duplicate a single character; do not mirror one character to fake another")
 
     return ", ".join(parts)
+
+
+def _build_scene_character_appearance_prefix(
+    enriched_scene_characters: List[Dict[str, Any]],
+) -> str:
+    """Early prompt lock for required scene character appearance.
+
+    `scene_character_prompt_block` already carries the full identity
+    contract later in the prompt. This compact prefix repeats the
+    high-signal appearance traits near position 0, where diffusion
+    models weigh color and identity terms more strongly.
+    """
+    if not isinstance(enriched_scene_characters, list) or not enriched_scene_characters:
+        return ""
+
+    parts: List[str] = []
+    for character in enriched_scene_characters:
+        if not isinstance(character, dict):
+            continue
+        display = str(character.get("display_name") or "").strip()
+        species = str(character.get("species") or "").strip()
+        name = display or species
+        if not name:
+            continue
+
+        signature_traits = character.get("signature_traits") or []
+        if not isinstance(signature_traits, list):
+            signature_traits = []
+        trait_text = ", ".join(
+            str(item).strip()
+            for item in signature_traits
+            if str(item).strip()
+        )
+        if trait_text:
+            parts.append(
+                f"fixed appearance for {name}: {species}; must keep exactly {trait_text[:180]}"
+            )
+
+    return "; ".join(parts)
 
 
 def _scene_text_mentions_all_species(
@@ -817,6 +916,9 @@ class RunnerImagePromptsSupport:
                     if is_multi_character_scene
                     else ""
                 )
+                scene_appearance_prefix = _build_scene_character_appearance_prefix(
+                    enriched_scene_characters
+                )
                 # `scene_position_anchor` is placed right after color_prefix
                 # so the early-prompt weight (most important for diffusion)
                 # encodes THIS scene's identity before the shared
@@ -826,6 +928,7 @@ class RunnerImagePromptsSupport:
                 prompt_parts = [
                     color_prefix,
                     scene_position_anchor,
+                    scene_appearance_prefix,
                     global_style_anchor,
                     shot_anchor,
                     scene_multi_roster,
@@ -846,6 +949,7 @@ class RunnerImagePromptsSupport:
                     prompt_parts = [
                         color_prefix,
                         scene_position_anchor,
+                        scene_appearance_prefix,
                         global_style_anchor,
                         compact_trait_block,
                         shot_anchor,
@@ -991,6 +1095,9 @@ class RunnerImagePromptsSupport:
                 if is_multi_character_scene
                 else ""
             )
+            scene_appearance_prefix = _build_scene_character_appearance_prefix(
+                enriched_scene_characters
+            )
             # scene_position_anchor goes early so this scene's identity
             # gets the most attention from the diffusion model; the
             # anti_repeat_block goes last so the negative-style demand
@@ -998,6 +1105,7 @@ class RunnerImagePromptsSupport:
             prompt_parts = [
                 color_prefix,
                 scene_position_anchor,
+                scene_appearance_prefix,
                 global_style_anchor,
                 scene_anchor,
                 scene_multi_roster,
@@ -1018,6 +1126,7 @@ class RunnerImagePromptsSupport:
                 prompt_parts = [
                     color_prefix,
                     scene_position_anchor,
+                    scene_appearance_prefix,
                     global_style_anchor,
                     compact_trait_block,
                     scene_anchor,
@@ -1169,7 +1278,7 @@ class RunnerImagePromptsSupport:
             return ""
         total = sum(counts.values())
         species_set = list(counts.keys())
-        count_phrase = _format_species_count_phrase(counts)  # "2 rabbits and 1 squirrel"
+        count_phrase = format_species_count_phrase(counts)  # "2 rabbits and 1 squirrel"
 
         parts: List[str] = []
         # Lead with each character's color+species label so diffusion

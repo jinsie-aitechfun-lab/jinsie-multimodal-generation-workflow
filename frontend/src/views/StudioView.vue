@@ -825,6 +825,35 @@ const STORAGE_KEY_PAYLOAD = 'jinsie_workflow_payload'
 const STORAGE_KEY_REFRESH_CANCELLED = 'jinsie_workflow_refresh_cancelled'
 const STORAGE_KEY_FORM = 'jinsie_workflow_form'
 
+function migrateLegacyWorkflowForm(form: Record<string, any>) {
+  const topic = String(form.topic || '')
+  const displayName = String(form.primaryCharacterDisplayName || '')
+  const species = String(form.primaryCharacterSpecies || '')
+  const isLegacyToyCar =
+    topic.includes('主角是小红') &&
+    topic.includes('可爱小汽车') &&
+    (displayName === '小红' || species.includes('小汽车'))
+
+  if (!isLegacyToyCar) return form
+
+  return {
+    ...form,
+    topic: topic.replaceAll('小红', '嘟嘟小车'),
+    structuredCharactersEnabled: true,
+    primaryCharacterDisplayName: '嘟嘟小车',
+    primaryCharacterSpecies: '小汽车',
+    primaryCharacterForbiddenTraits: [
+      '不要人物',
+      '不要小女孩',
+      '不要红衣服',
+      '不要红帽子',
+      String(form.primaryCharacterForbiddenTraits || ''),
+    ]
+      .filter(Boolean)
+      .join('、'),
+  }
+}
+
 watch(activeTab, (tab) => {
   localStorage.setItem(STORAGE_KEY_TAB, tab)
   // Animation is handled inside StudioLayout's watch on modelValue
@@ -1096,7 +1125,10 @@ onMounted(() => {
       if (savedForm.videoProvider && savedForm.videoProvider !== 'mock') {
         savedForm.videoProvider = 'mock'
       }
-      workflowForm.value = { ...DEFAULT_WORKFLOW_FORM, ...savedForm }
+      workflowForm.value = {
+        ...DEFAULT_WORKFLOW_FORM,
+        ...migrateLegacyWorkflowForm(savedForm),
+      }
     } catch { /* ignore malformed */ }
   }
 

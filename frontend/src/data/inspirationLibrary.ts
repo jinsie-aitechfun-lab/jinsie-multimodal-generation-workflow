@@ -81,7 +81,7 @@ const PACKAGES: InspirationItem[] = [
     ],
     prefill: {
       topic:
-        '讲一个关于勇气的儿童故事。主角是小红，一辆圆圆胖胖、鲜红色车身、黄色圆圆大灯的可爱小汽车，住在城市边缘的小车库里。它一直很好奇大海长什么样，于是某天清晨决定独自上路——穿过晨雾里的城市，开过乡间的小路，越过夜晚的星空山道，最后在黎明时分到达海边，看到第一缕阳光洒在浪花上。',
+        '讲一个关于勇气的儿童故事。主角是嘟嘟小车，一辆圆圆胖胖、鲜红色车身、黄色圆圆大灯的可爱小汽车，住在城市边缘的小车库里。它一直很好奇大海长什么样，于是某天清晨决定独自上路——穿过晨雾里的城市，开过乡间的小路，越过夜晚的星空山道，最后在黎明时分到达海边，看到第一缕阳光洒在浪花上。',
       audience: 'children',
       tone: 'warm',
       visualStyle: 'cute_chibi_anime',
@@ -94,12 +94,12 @@ const PACKAGES: InspirationItem[] = [
       durationSec: 60,
       qualityTier: 'quality',
       structuredCharactersEnabled: true,
-      primaryCharacterDisplayName: '小红',
+      primaryCharacterDisplayName: '嘟嘟小车',
       primaryCharacterSpecies: '小汽车',
       primaryCharacterVisualTraits:
         '圆圆胖胖的鲜红色车身，黄色圆圆的大灯像眼睛一样，前脸是温柔的小笑脸，玩具卡通比例',
       primaryCharacterForbiddenTraits:
-        '不要破损、不要黑色、不要写实赛车、不要尖锐线条',
+        '不要人物、不要小女孩、不要红衣服、不要红帽子、不要破损、不要黑色、不要写实赛车、不要尖锐线条',
       secondaryCharacterDisplayName: '',
       secondaryCharacterSpecies: '',
       secondaryCharacterVisualTraits: '',
