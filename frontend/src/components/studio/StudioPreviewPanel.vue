@@ -111,7 +111,7 @@
                 title="从历史记录中删除"
                 @click.stop="requestDeleteVideo(url)"
               >
-                ×
+                <span class="sr-only">从历史记录中删除</span>
               </button>
             </div>
           </div>
@@ -187,9 +187,6 @@
                   <video class="pp-hist-card-video" :src="url" preload="metadata" :muted="true"/>
                   <div class="pp-hist-card-chrome" aria-hidden="true">
                     <span class="pp-hist-card-index">{{ historyVideoIndex(idx) }}</span>
-                    <span :class="['pp-hist-card-status', { 'pp-hist-card-status--current': url === props.finalVideoUrl }]">
-                      {{ historyVideoStatus(url) }}
-                    </span>
                   </div>
                   <div class="pp-hist-card-overlay">
                     <span class="pp-hist-card-play">▶</span>
@@ -197,7 +194,12 @@
                 </div>
                 <div class="pp-hist-card-copy">
                   <div class="pp-hist-card-label">{{ historyVideoLabel(url, idx) }}</div>
-                  <div class="pp-hist-card-meta">{{ historyVideoMetaLine(url) }}</div>
+                  <div class="pp-hist-card-meta-row">
+                    <span :class="['pp-hist-card-status', { 'pp-hist-card-status--current': url === props.finalVideoUrl }]">
+                      {{ historyVideoStatus(url) }}
+                    </span>
+                    <span class="pp-hist-card-meta">{{ historyVideoMetaLine(url) }}</span>
+                  </div>
                 </div>
               </button>
               <button
@@ -278,9 +280,6 @@
                 <video class="pp-hist-card-video" :src="url" preload="metadata" :muted="true"/>
                 <div class="pp-hist-card-chrome" aria-hidden="true">
                   <span class="pp-hist-card-index">{{ historyVideoIndex(idx) }}</span>
-                  <span :class="['pp-hist-card-status', { 'pp-hist-card-status--current': url === props.finalVideoUrl }]">
-                    {{ historyVideoStatus(url) }}
-                  </span>
                 </div>
                 <div class="pp-hist-card-overlay">
                   <span class="pp-hist-card-play">▶</span>
@@ -288,7 +287,12 @@
               </div>
               <div class="pp-hist-card-copy">
                 <div class="pp-hist-card-label">{{ historyVideoLabel(url, idx) }}</div>
-                <div class="pp-hist-card-meta">{{ historyVideoMetaLine(url) }}</div>
+                <div class="pp-hist-card-meta-row">
+                  <span :class="['pp-hist-card-status', { 'pp-hist-card-status--current': url === props.finalVideoUrl }]">
+                    {{ historyVideoStatus(url) }}
+                  </span>
+                  <span class="pp-hist-card-meta">{{ historyVideoMetaLine(url) }}</span>
+                </div>
               </div>
             </button>
             <button
@@ -298,7 +302,7 @@
               title="从历史记录中删除"
               @click.stop="requestDeleteVideo(url)"
             >
-              ×
+              <span class="sr-only">从历史记录中删除</span>
             </button>
           </div>
         </div>
@@ -1034,7 +1038,7 @@ const doneCount = computed(
 }
 .pp-hist-card-delete {
   position: absolute;
-  top: 40px;
+  top: 8px;
   right: 8px;
   width: 22px;
   height: 22px;
@@ -1043,22 +1047,55 @@ const doneCount = computed(
   border-radius: 999px;
   background: rgba(8,6,3,0.78);
   color: rgba(255,245,220,0.82);
-  font-size: 15px;
-  line-height: 1;
   font-family: inherit;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  opacity: 0;
-  transition: opacity 0.16s ease, background 0.16s, border-color 0.16s, color 0.16s;
+  opacity: 0.86;
+  transition: opacity 0.16s ease, background 0.16s, border-color 0.16s, color 0.16s, transform 0.16s ease;
   z-index: 5;
 }
+
+.pp-hist-card-delete::before,
+.pp-hist-card-delete::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 10px;
+  height: 1.6px;
+  border-radius: 999px;
+  background: currentColor;
+  transform-origin: center;
+}
+
+.pp-hist-card-delete::before {
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.pp-hist-card-delete::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .pp-hist-card:hover .pp-hist-card-delete,
 .pp-hist-card:focus-within .pp-hist-card-delete {
   opacity: 1;
 }
 .pp-hist-card-delete:hover {
+  transform: scale(1.04);
   background: rgba(180,60,40,0.74);
   border-color: rgba(245,158,11,0.50);
   color: #fff;
@@ -1079,17 +1116,13 @@ const doneCount = computed(
   position: absolute;
   top: 8px;
   left: 8px;
-  right: 8px;
   z-index: 3;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 6px;
   pointer-events: none;
 }
 
-.pp-hist-card-index,
-.pp-hist-card-status {
+.pp-hist-card-index {
   display: inline-flex;
   align-items: center;
   min-height: 20px;
@@ -1107,8 +1140,19 @@ const doneCount = computed(
 }
 
 .pp-hist-card-status {
-  color: rgba(255,245,220,0.88);
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 2px 6px;
+  border: 1px solid rgba(245,158,11,0.20);
+  border-radius: 999px;
+  background: rgba(245,158,11,0.08);
+  color: color-mix(in srgb, var(--text-muted) 62%, var(--arc-300));
+  font-size: 0.5625rem;
   font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
 .pp-hist-card-status--current {
@@ -1152,7 +1196,7 @@ const doneCount = computed(
 
 .pp-hist-card-copy {
   display: grid;
-  gap: 2px;
+  gap: 4px;
   padding: 0 2px;
   min-width: 0;
 }
@@ -1171,8 +1215,16 @@ const doneCount = computed(
 
 .pp-hist-card:hover .pp-hist-card-label { color: var(--arc-300); }
 
+.pp-hist-card-meta-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .pp-hist-card-meta {
   min-width: 0;
+  flex: 1;
   font-size: 0.625rem;
   font-weight: 600;
   color: color-mix(in srgb, var(--text-muted) 74%, var(--arc-300));
@@ -1882,7 +1934,7 @@ const doneCount = computed(
   .pp-hist-card-chrome {
     top: 6px;
     left: 6px;
-    right: 6px;
+    right: auto;
   }
 
   .pp-hist-card-index,
@@ -1893,7 +1945,7 @@ const doneCount = computed(
   }
 
   .pp-hist-card-delete {
-    top: 32px;
+    top: 6px;
     right: 6px;
     width: 20px;
     height: 20px;

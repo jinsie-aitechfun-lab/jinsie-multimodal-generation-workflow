@@ -84,6 +84,7 @@
             renderMode === 'manual' &&
             assetsReady &&
             !hasFailedAssets &&
+            !hasBlockingError &&
             !renderInFlight &&
             !finalVideoUrl &&
             audioItemCount > 0 &&
@@ -94,6 +95,14 @@
           @click="emit('render')"
         >
           生成视频
+        </button>
+        <button
+          v-if="hasBlockingError"
+          type="button"
+          class="ph-discard-cta"
+          @click="emit('discard')"
+        >
+          放弃当前生成
         </button>
       </div>
     </div>
@@ -135,6 +144,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'render'): void
+  (e: 'discard'): void
 }>()
 
 function asObj(v: unknown): UnknownRecord | null {
@@ -254,6 +264,13 @@ const hasBlockingError = computed(() => {
   return Boolean(blockingErrorMessage.value && !props.loading && !props.finalVideoUrl)
 })
 
+const blockingErrorTitle = computed(() => {
+  if (blockingErrorMessage.value.includes('workflow 输入参数')) {
+    return '无法继续当前草稿'
+  }
+  return '候选图生成失败'
+})
+
 const assetsReady = computed(() => {
   return (
     sceneCount.value > 0 &&
@@ -334,7 +351,7 @@ const progressLabel = computed(() => {
 const placeholderTitle = computed(() => {
   if (props.cancelRequested) return '正在取消生成'
   if (props.pausedByUser) return '候选图已暂停'
-  if (hasBlockingError.value) return '候选图生成失败'
+  if (hasBlockingError.value) return blockingErrorTitle.value
   if (hasFailedAssets.value && !props.refreshingImages && !props.sceneRefreshingId) {
     return '场景图片生成失败'
   }
@@ -615,6 +632,30 @@ const placeholderDesc = computed(() => {
   box-shadow: var(--primary-action-shadow-hover, 0 14px 32px rgba(0, 0, 0, 0.36));
 }
 .ph-render-cta:active { transform: translateY(0); }
+
+.ph-discard-cta {
+  margin: 16px auto 0;
+  padding: 9px 24px;
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  border-radius: 10px;
+  background: rgba(245, 158, 11, 0.08);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+  transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.ph-discard-cta:hover {
+  transform: translateY(-1px);
+  border-color: rgba(245, 158, 11, 0.48);
+  background: rgba(245, 158, 11, 0.14);
+}
+.ph-discard-cta:active { transform: translateY(0); }
 
 /* Status chip shown when global bar is covering the progress. The
    left pulse dot + trailing 3-dot ellipsis come from the embedded
