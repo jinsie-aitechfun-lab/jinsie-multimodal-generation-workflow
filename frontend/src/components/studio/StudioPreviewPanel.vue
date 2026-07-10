@@ -101,7 +101,7 @@
               >
                 <video class="pp-thumb-video" :src="url" preload="metadata" :muted="true"/>
                 <div class="pp-thumb-overlay"><span class="pp-thumb-play">▶</span></div>
-                <div class="pp-thumb-index">{{ idx + 1 }}</div>
+                <div class="pp-thumb-index">{{ historyVideoIndex(idx) }}</div>
                 <div class="pp-thumb-caption">{{ historyVideoLabel(url, idx) }}</div>
               </button>
               <button
@@ -175,7 +175,7 @@
             <div
               v-for="(url, idx) in allVideoUrls"
               :key="url"
-              class="pp-hist-card"
+              :class="['pp-hist-card', { 'pp-hist-card--current': url === props.finalVideoUrl }]"
             >
               <button
                 type="button"
@@ -185,11 +185,20 @@
               >
                 <div class="pp-hist-card-frame">
                   <video class="pp-hist-card-video" :src="url" preload="metadata" :muted="true"/>
+                  <div class="pp-hist-card-chrome" aria-hidden="true">
+                    <span class="pp-hist-card-index">{{ historyVideoIndex(idx) }}</span>
+                    <span :class="['pp-hist-card-status', { 'pp-hist-card-status--current': url === props.finalVideoUrl }]">
+                      {{ historyVideoStatus(url) }}
+                    </span>
+                  </div>
                   <div class="pp-hist-card-overlay">
                     <span class="pp-hist-card-play">▶</span>
                   </div>
                 </div>
-                <div class="pp-hist-card-label">{{ historyVideoLabel(url, idx) }}</div>
+                <div class="pp-hist-card-copy">
+                  <div class="pp-hist-card-label">{{ historyVideoLabel(url, idx) }}</div>
+                  <div class="pp-hist-card-meta">{{ historyVideoMetaLine(url) }}</div>
+                </div>
               </button>
               <button
                 type="button"
@@ -257,20 +266,30 @@
           <div
             v-for="(url, idx) in allVideoUrls"
             :key="url"
-            class="pp-hist-card"
+            :class="['pp-hist-card', { 'pp-hist-card--current': url === props.finalVideoUrl }]"
           >
             <button
               type="button"
               class="pp-hist-card-main"
+              :title="historyVideoTooltip(url, idx)"
               @click="selectVideo(url)"
             >
               <div class="pp-hist-card-frame">
                 <video class="pp-hist-card-video" :src="url" preload="metadata" :muted="true"/>
+                <div class="pp-hist-card-chrome" aria-hidden="true">
+                  <span class="pp-hist-card-index">{{ historyVideoIndex(idx) }}</span>
+                  <span :class="['pp-hist-card-status', { 'pp-hist-card-status--current': url === props.finalVideoUrl }]">
+                    {{ historyVideoStatus(url) }}
+                  </span>
+                </div>
                 <div class="pp-hist-card-overlay">
                   <span class="pp-hist-card-play">▶</span>
                 </div>
               </div>
-              <div class="pp-hist-card-label">视频 {{ idx + 1 }}</div>
+              <div class="pp-hist-card-copy">
+                <div class="pp-hist-card-label">{{ historyVideoLabel(url, idx) }}</div>
+                <div class="pp-hist-card-meta">{{ historyVideoMetaLine(url) }}</div>
+              </div>
             </button>
             <button
               type="button"
@@ -463,6 +482,14 @@ function requestDeleteVideo(url: string) {
   emit('delete-video', url)
 }
 
+function historyVideoIndex(fallbackIndex: number): string {
+  return `#${String(fallbackIndex + 1).padStart(2, '0')}`
+}
+
+function historyVideoStatus(url: string): string {
+  return url === props.finalVideoUrl ? '当前作品' : '已完成'
+}
+
 /* History card label — the human-readable subtitle shown beneath the
    thumbnail. Prefers the LLM-generated story title; falls back to the
    user's input topic (truncated) ; then to the generic ordinal "视频 N"
@@ -476,6 +503,20 @@ function historyVideoLabel(url: string, fallbackIndex: number): string {
     return topic.length > 14 ? `${topic.slice(0, 14)}…` : topic
   }
   return `视频 ${fallbackIndex + 1}`
+}
+
+function historyVideoMetaLine(url: string): string {
+  const meta = props.recentVideoMetadata?.[url]
+  const parts: string[] = []
+  const createdAt = (meta?.createdAt || '').trim()
+  if (createdAt) {
+    const dt = new Date(createdAt)
+    if (!Number.isNaN(dt.getTime())) {
+      parts.push(`${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`)
+    }
+  }
+  parts.push('AI Video')
+  return parts.join(' · ')
 }
 
 /* History card tooltip — fuller info for hover. Shows title + topic +
@@ -973,6 +1014,12 @@ const doneCount = computed(
   transition: transform 0.18s;
 }
 .pp-hist-card:hover { transform: translateY(-2px); }
+.pp-hist-card--current .pp-hist-card-frame {
+  border-color: var(--arc-400);
+  box-shadow:
+    0 0 0 1px rgba(245,158,11,0.18),
+    0 8px 28px rgba(245,158,11,0.22);
+}
 .pp-hist-card-main {
   display: flex;
   flex-direction: column;
@@ -987,8 +1034,8 @@ const doneCount = computed(
 }
 .pp-hist-card-delete {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: 40px;
+  right: 8px;
   width: 22px;
   height: 22px;
   padding: 0;
@@ -1005,7 +1052,7 @@ const doneCount = computed(
   justify-content: center;
   opacity: 0;
   transition: opacity 0.16s ease, background 0.16s, border-color 0.16s, color 0.16s;
-  z-index: 2;
+  z-index: 5;
 }
 .pp-hist-card:hover .pp-hist-card-delete,
 .pp-hist-card:focus-within .pp-hist-card-delete {
@@ -1026,6 +1073,49 @@ const doneCount = computed(
   border: 1.5px solid rgba(255,255,255,0.08);
   background: #000;
   transition: border-color 0.18s, box-shadow 0.18s;
+}
+
+.pp-hist-card-chrome {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.pp-hist-card-index,
+.pp-hist-card-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 2px 7px;
+  border: 1px solid rgba(245,158,11,0.24);
+  border-radius: 999px;
+  background: rgba(8,6,3,0.58);
+  color: var(--arc-200);
+  font-size: 0.625rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.20);
+}
+
+.pp-hist-card-status {
+  color: rgba(255,245,220,0.88);
+  font-weight: 700;
+}
+
+.pp-hist-card-status--current {
+  background: rgba(245,158,11,0.24);
+  color: #fff6d8;
+  border-color: rgba(245,158,11,0.42);
+  box-shadow: 0 0 16px rgba(245,158,11,0.18);
 }
 
 .pp-hist-card:hover .pp-hist-card-frame {
@@ -1049,6 +1139,7 @@ const doneCount = computed(
   justify-content: center;
   background: rgba(0,0,0,0.35);
   opacity: 0;
+  z-index: 1;
   transition: opacity 0.18s;
 }
 .pp-hist-card:hover .pp-hist-card-overlay { opacity: 1; }
@@ -1059,11 +1150,17 @@ const doneCount = computed(
   filter: drop-shadow(0 2px 6px rgba(0,0,0,0.7));
 }
 
+.pp-hist-card-copy {
+  display: grid;
+  gap: 2px;
+  padding: 0 2px;
+  min-width: 0;
+}
+
 .pp-hist-card-label {
   font-size: 0.75rem;
   font-weight: 600;
   color: var(--text-muted);
-  padding: 0 2px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1073,6 +1170,17 @@ const doneCount = computed(
 }
 
 .pp-hist-card:hover .pp-hist-card-label { color: var(--arc-300); }
+
+.pp-hist-card-meta {
+  min-width: 0;
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--text-muted) 74%, var(--arc-300));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
 
 /* ══════════════════════════════════════════════════
    Illustrated empty state — invites user to create
@@ -1674,12 +1782,20 @@ const doneCount = computed(
 
 .pp-thumb-index {
   position: absolute;
-  bottom: 4px;
-  right: 6px;
+  top: 5px;
+  left: 6px;
+  z-index: 2;
+  min-height: 16px;
+  padding: 2px 5px;
+  border: 1px solid rgba(245,158,11,0.24);
+  border-radius: 999px;
+  background: rgba(8,6,3,0.56);
   font-size: 9px;
   font-weight: 700;
-  color: rgba(255,255,255,0.60);
+  line-height: 1;
+  color: var(--arc-200);
   font-variant-numeric: tabular-nums;
+  backdrop-filter: blur(8px);
 }
 
 /* History thumb caption — story title as a 1-line subtitle pinned to
@@ -1755,7 +1871,41 @@ const doneCount = computed(
   }
 
   .pp-hist-main-grid {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .pp-hist-card {
+    gap: 5px;
+  }
+
+  .pp-hist-card-chrome {
+    top: 6px;
+    left: 6px;
+    right: 6px;
+  }
+
+  .pp-hist-card-index,
+  .pp-hist-card-status {
+    min-height: 18px;
+    padding: 2px 5px;
+    font-size: 0.5625rem;
+  }
+
+  .pp-hist-card-delete {
+    top: 32px;
+    right: 6px;
+    width: 20px;
+    height: 20px;
+    font-size: 13px;
+  }
+
+  .pp-hist-card-label {
+    font-size: 0.6875rem;
+  }
+
+  .pp-hist-card-meta {
+    font-size: 0.5625rem;
   }
 
   .pp-history {
