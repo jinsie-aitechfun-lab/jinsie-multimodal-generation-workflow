@@ -2424,8 +2424,49 @@ function clearImageReviewAutoRefreshTimer() {
   }
 }
 
+function resolveWorkflowPayloadForRender(baseResponse: WorkflowRunResponse): WorkflowRunPayload | null {
+  if (currentWorkflowPayload.value?.input) return currentWorkflowPayload.value
+
+  try {
+    const savedPayload = localStorage.getItem(STORAGE_KEY_PAYLOAD)
+    if (savedPayload) {
+      const parsed = JSON.parse(savedPayload) as Partial<WorkflowRunPayload>
+      if (parsed && typeof parsed.input === 'object' && parsed.input) {
+        const restored: WorkflowRunPayload = {
+          workflow_id: String(parsed.workflow_id || baseResponse.workflow_id || ''),
+          session_id: String(parsed.session_id || baseResponse.session_id || ''),
+          input: parsed.input as Record<string, unknown>,
+          steps: Array.isArray(parsed.steps) ? parsed.steps as Array<{ name: StepName }> : [],
+        }
+        currentWorkflowPayload.value = restored
+        return restored
+      }
+    }
+  } catch {
+    /* malformed localStorage payload — fall through to response fallback */
+  }
+
+  const responseInput = baseResponse.input || baseResponse.workflow_input
+  if (responseInput && typeof responseInput === 'object' && !Array.isArray(responseInput)) {
+    const restored: WorkflowRunPayload = {
+      workflow_id: String(baseResponse.workflow_id || ''),
+      session_id: String(baseResponse.session_id || ''),
+      input: responseInput as Record<string, unknown>,
+      steps: [],
+    }
+    currentWorkflowPayload.value = restored
+    return restored
+  }
+
+  return null
+}
+
 async function renderFinalVideoIfReady(baseResponse: WorkflowRunResponse) {
-  if (!currentWorkflowPayload.value) return
+  const payloadForRender = resolveWorkflowPayloadForRender(baseResponse)
+  if (!payloadForRender) {
+    errorMessage.value = '缺少本次生成的 workflow 输入参数，请回到「创作故事」重新开始生成。'
+    return
+  }
   if (finalVideoRendering.value || finalVideoRenderInFlight.value) return
 
   const outputs = baseResponse.outputs || {}
@@ -2469,10 +2510,10 @@ async function renderFinalVideoIfReady(baseResponse: WorkflowRunResponse) {
   if (audioEnabled && audioItems.length === 0) return
 
   const payload = {
-    workflow_id: baseResponse.workflow_id || currentWorkflowPayload.value.workflow_id,
-    session_id: baseResponse.session_id || currentWorkflowPayload.value.session_id,
+    workflow_id: baseResponse.workflow_id || payloadForRender.workflow_id,
+    session_id: baseResponse.session_id || payloadForRender.session_id,
     run_id: baseResponse.run_id || '',
-    workflow_input: currentWorkflowPayload.value.input,
+    workflow_input: payloadForRender.input,
     image_assets: imageAssets || {},
     audio_segments: audioSegments || {},
     subtitles: subtitles || {},
@@ -3766,6 +3807,7 @@ async function executeRunWorkflow() {
                 :render-mode="workflowForm.renderMode"
                 :scene-refreshing-id="sceneRefreshingId"
                 @render="renderFinalVideoIfReady(currentWorkflowResponse || {})"
+                @discard="discardCurrentDraft"
                 :show-render-button="workflowForm.renderMode === 'auto'"
               />
               <div v-if="workflowForm.renderMode === 'manual' && !isWorkflowReadyForRender && !hasImageFailures" class="manual-hint" style="text-align:center;padding:0.5rem 0 0;">

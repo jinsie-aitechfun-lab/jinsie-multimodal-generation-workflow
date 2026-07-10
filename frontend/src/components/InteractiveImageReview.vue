@@ -346,12 +346,36 @@ function sceneNumberLabel(sceneId?: string): string {
   return match[1].padStart(2, '0')
 }
 
+function formatSceneDisplayTitle(title: string, narration?: string): string {
+  const value = String(title || '').trim()
+  if (!value) return value
+  if (/[。！？!?…]$/.test(value)) return value
+
+  const narrationText = String(narration || '').trim()
+  const continuation = narrationText.startsWith(value)
+    ? narrationText.slice(value.length).trimStart()
+    : ''
+  const continuesWithoutPunctuation =
+    Boolean(continuation) && !/^[，。！？、；：,.!?;:）】》」』"']/.test(continuation)
+
+  const endsLikeConnector = /[的和与及在被把让给从向]$/.test(value)
+  const endsLikeOpenQuantifier = /(一个又一个|一只又一只|一条又一条|一片又一片|一座又一座|一朵又一朵)$/.test(value)
+  const endsLikeVisualFragment =
+    /(毛色|眼睛|耳朵|尾巴|皮肤|花纹|身体|腹部|背部|脸颊|鼻子|嘴巴|翅膀|爪子|帽子|衣服)$/.test(value)
+  const hasOpenVisualDescription =
+    /有着/.test(value) && /(色|毛|眼|耳|尾|皮|纹|身|腹|背|脸|鼻|嘴|翅|爪|帽|衣)$/.test(value)
+
+  return continuesWithoutPunctuation || endsLikeConnector || endsLikeOpenQuantifier || endsLikeVisualFragment || hasOpenVisualDescription
+    ? `${value}…`
+    : value
+}
+
 function sceneDisplayTitle(entry: ReviewRenderEntry): string {
   const rawTitle = String(entry.sceneTitle || '').trim()
   const rawSceneId = String(entry.sceneId || '').trim()
   const technicalTitle = !rawTitle || rawTitle === rawSceneId || rawTitle === 'unknown-scene'
   if (!technicalTitle) {
-    return rawTitle
+    return formatSceneDisplayTitle(rawTitle, props.sceneNarrationMap?.[entry.sceneId])
   }
 
   const sceneNumber = sceneNumberLabel(rawSceneId)
