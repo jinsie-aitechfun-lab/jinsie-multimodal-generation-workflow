@@ -1058,7 +1058,9 @@ const doneCount = computed(
 }
 
 .pp-hist-card-delete::before,
-.pp-hist-card-delete::after {
+.pp-hist-card-delete::after,
+.pp-thumb-delete::before,
+.pp-thumb-delete::after {
   content: "";
   position: absolute;
   left: 50%;
@@ -1066,15 +1068,17 @@ const doneCount = computed(
   width: 10px;
   height: 1.6px;
   border-radius: 999px;
-  background: currentColor;
+  background: rgba(255, 246, 224, 0.96);
   transform-origin: center;
 }
 
-.pp-hist-card-delete::before {
+.pp-hist-card-delete::before,
+.pp-thumb-delete::before {
   transform: translate(-50%, -50%) rotate(45deg);
 }
 
-.pp-hist-card-delete::after {
+.pp-hist-card-delete::after,
+.pp-thumb-delete::after {
   transform: translate(-50%, -50%) rotate(-45deg);
 }
 
