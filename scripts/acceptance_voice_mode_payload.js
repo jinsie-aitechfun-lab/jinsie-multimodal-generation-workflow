@@ -1,0 +1,246 @@
+#!/usr/bin/env node
+/**
+ * Acceptance: Voice Mode payload isolation (static)
+ *
+ * Run:
+ *   node scripts/acceptance_voice_mode_payload.js
+ */
+
+const fs = require('fs')
+const path = require('path')
+
+function fail(message) {
+  console.error(`\n[FAIL] ${message}\n`)
+  process.exit(1)
+}
+
+function ok(message) {
+  console.log(`[OK] ${message}`)
+}
+
+function readFileOrFail(p) {
+  if (!fs.existsSync(p)) {
+    fail(`File not found: ${p}`)
+  }
+  return fs.readFileSync(p, 'utf8')
+}
+
+function mustInclude(text, needle, hint) {
+  if (!text.includes(needle)) {
+    fail(
+      `Missing required pattern: ${JSON.stringify(needle)}${
+        hint ? `\nHint: ${hint}` : ''
+      }`,
+    )
+  }
+}
+
+function mustNotInclude(text, needle, hint) {
+  if (text.includes(needle)) {
+    fail(
+      `Unexpected pattern found: ${JSON.stringify(needle)}${
+        hint ? `\nHint: ${hint}` : ''
+      }`,
+    )
+  }
+}
+
+/**
+ * Extract a JS/TS block by brace counting starting from a marker.
+ */
+function extractBraceBlock(text, marker) {
+  const markerIndex = text.indexOf(marker)
+  if (markerIndex === -1) return null
+
+  const braceStart = text.indexOf('{', markerIndex)
+  if (braceStart === -1) return null
+
+  let depth = 0
+  for (let i = braceStart; i < text.length; i++) {
+    const ch = text[i]
+    if (ch === '{') depth++
+    else if (ch === '}') depth--
+
+    if (depth === 0) {
+      return text.slice(braceStart, i + 1)
+    }
+  }
+  return null
+}
+
+function sliceBetween(text, startMarker, endMarker) {
+  const start = text.indexOf(startMarker)
+  if (start === -1) return null
+  const end = text.indexOf(endMarker, start + startMarker.length)
+  if (end === -1) return null
+  return text.slice(start, end + endMarker.length)
+}
+
+function main() {
+  // ✅ Do NOT use process.cwd(): when invoked via `npm --prefix frontend`, cwd becomes `frontend/`
+  // scripts/ is located at <repoRoot>/scripts, so repo root is one level up from this file.
+  const repoRoot = path.resolve(__dirname, '..')
+
+  // Payload assembly moved to StudioView.vue when the project adopted
+  // vue-router; App.vue is now a thin RouterView shell. Keep the legacy
+  // "App.vue: ..." labels in the assertions so historical CI output stays
+  // greppable.
+  const appVuePath = path.join(
+    repoRoot,
+    'frontend',
+    'src',
+    'views',
+    'StudioView.vue',
+  )
+  const runPanelPath = path.join(
+    repoRoot,
+    'frontend',
+    'src',
+    'components',
+    'WorkflowRunPanel.vue',
+  )
+
+  const appVue = readFileOrFail(appVuePath)
+  const runPanel = readFileOrFail(runPanelPath)
+
+  console.log('\n== Acceptance: Voice Mode payload isolation ==\n')
+
+  // ------------------------------------------------------------
+  // App.vue payload invariants
+  // ------------------------------------------------------------
+
+  mustInclude(
+    appVue,
+    'const inputPayload: Record<string, unknown> = {',
+    'App.vue should assemble a base inputPayload and then conditionally add mode-specific fields.',
+  )
+  ok('App.vue: base inputPayload exists')
+
+  mustInclude(
+    appVue,
+    "if (form.voiceMode === 'multi')",
+    'Expected a multi-mode conditional block.',
+  )
+  mustInclude(
+    appVue,
+    'inputPayload.speaker_profiles = {',
+    'Expected speaker_profiles to be assigned via inputPayload in multi-mode block.',
+  )
+  ok('App.vue: multi-mode speaker_profiles block exists')
+
+  mustInclude(
+    appVue,
+    "if (form.voiceMode === 'character')",
+    'Expected a character-mode conditional block.',
+  )
+  mustInclude(
+    appVue,
+    'inputPayload.character_speaker_profiles = {',
+    'Expected character_speaker_profiles to be assigned in character-mode block.',
+  )
+  ok('App.vue: character-mode character_speaker_profiles block exists')
+
+  mustNotInclude(
+    appVue,
+    "|| 'rabbit'",
+    "Avoid hardcoding default species like 'rabbit' in base payload; it causes non-character modes to carry role bias.",
+  )
+  mustNotInclude(
+    appVue,
+    "|| 'turtle'",
+    "Avoid hardcoding default species like 'turtle' in base payload; it causes non-character modes to carry role bias.",
+  )
+  ok('App.vue: no hardcoded default species injection found')
+
+  // ✅ Mutual exclusivity check:
+  // In character-mode block, we MUST NOT assign inputPayload.speaker_profiles (multi-mode only).
+  const characterIfMarker = "if (form.voiceMode === 'character')"
+  const characterBlock = extractBraceBlock(appVue, characterIfMarker)
+  if (!characterBlock) {
+    fail(
+      "Could not extract character-mode brace block in App.vue. Marker or braces may have changed; update acceptance script.",
+    )
+  }
+
+  const speakerProfilesAssignRe = /inputPayload\.speaker_profiles\s*=\s*\{/
+  if (speakerProfilesAssignRe.test(characterBlock)) {
+    fail(
+      "App.vue: inputPayload.speaker_profiles is assigned inside character-mode block. Expected mutual exclusivity: character uses character_speaker_profiles only.",
+    )
+  }
+  ok('App.vue: character-mode block does not assign inputPayload.speaker_profiles')
+
+  // Structured characters payload MUST NOT be coupled to voice mode.
+  // The character-mode brace block carries voice-domain concerns only
+  // (character_speaker_profiles); identity-domain fields (structured
+  // characters, main_character_*, secondary_character_*) flow in every
+  // voice mode so a single-narrator story about a structured character
+  // still gets the visual identity lock at story + image-prompt layer.
+  if (/structured_characters_enabled/.test(characterBlock)) {
+    fail(
+      'App.vue: structured_characters_enabled is assigned inside the character-mode block. ' +
+        'It must live in the top-level payload assembly so identity flows in single / multi modes too.',
+    )
+  }
+  ok('App.vue: structured_characters_enabled is not coupled to character voice mode')
+
+  // It still has to be wired SOMEWHERE — the top-level assembly should
+  // gate it on enableStructuredCharacters (the derived flag from the
+  // structured-character form section), not on voiceMode.
+  mustInclude(
+    appVue,
+    'inputPayload.structured_characters_enabled = true',
+    'Expected structured_characters_enabled to be assigned at top-level payload assembly (gated by enableStructuredCharacters).',
+  )
+  ok('App.vue: structured_characters_enabled wired at top-level payload assembly')
+
+  // ------------------------------------------------------------
+  // WorkflowRunPanel.vue mode switching invariants
+  // ------------------------------------------------------------
+
+  mustInclude(
+    runPanel,
+    'function updateVoiceMode(value: string)',
+    'Expected a dedicated updateVoiceMode to reset stale fields when switching modes.',
+  )
+  ok('WorkflowRunPanel.vue: updateVoiceMode exists')
+
+  const singleBlock = sliceBetween(runPanel, "if (value === 'single')", 'return')
+  if (!singleBlock) {
+    fail(
+      "Could not locate single-mode updateVoiceMode slice in WorkflowRunPanel.vue. Update markers in acceptance script.",
+    )
+  }
+  mustInclude(singleBlock, "motherVoiceStyle: ''", 'Single mode should clear motherVoiceStyle')
+  mustInclude(singleBlock, "childVoiceStyle: ''", 'Single mode should clear childVoiceStyle')
+  mustInclude(
+    singleBlock,
+    'structuredCharactersEnabled: false',
+    'Single mode should disable structured characters',
+  )
+  ok('WorkflowRunPanel.vue: single-mode clears stale fields')
+
+  const multiBlock = sliceBetween(runPanel, "if (value === 'multi')", 'return')
+  if (!multiBlock) {
+    fail(
+      "Could not locate multi-mode updateVoiceMode slice in WorkflowRunPanel.vue. Update markers in acceptance script.",
+    )
+  }
+  mustInclude(
+    multiBlock,
+    'structuredCharactersEnabled: false',
+    'Multi mode should disable structured characters',
+  )
+  ok('WorkflowRunPanel.vue: multi-mode disables structured characters')
+
+  mustInclude(
+    runPanel,
+    '@change="updateVoiceMode(($event.target as HTMLSelectElement).value)"',
+    'Voice Mode select should route through updateVoiceMode to ensure stale fields are reset.',
+  )
+  ok('WorkflowRunPanel.vue: Voice Mode select uses updateVoiceMode')
+
+  console.log('\n✅ All acceptance checks passed.\n')
+}
+
+main()
