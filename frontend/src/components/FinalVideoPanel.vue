@@ -193,17 +193,19 @@ const imageAssetCount = computed(() => {
 // flips to true, and the panel falsely shows "等待渲染 / 生成视频".
 const failedAssetCount = computed(() => {
   const n = asNum(imageAssets.value?.failed_count)
-  if (n != null && n >= 0) return n
   const ids = imageAssets.value?.failed_scene_ids
-  if (Array.isArray(ids)) return ids.length
   const assets = imageAssets.value?.assets
-  if (Array.isArray(assets)) {
-    return assets.filter((a) => {
-      const status = asStr((a as UnknownRecord | null)?.status).toLowerCase()
-      return status === 'failed'
-    }).length
-  }
-  return 0
+  const failedFromStatus = Array.isArray(assets)
+    ? assets.filter((a) => {
+        const status = asStr((a as UnknownRecord | null)?.status).toLowerCase()
+        return status === 'failed'
+      }).length
+    : 0
+  return Math.max(
+    n != null && n >= 0 ? n : 0,
+    Array.isArray(ids) ? ids.length : 0,
+    failedFromStatus,
+  )
 })
 const hasFailedAssets = computed(() => failedAssetCount.value > 0)
 const generatedAssetCount = computed(() => {
@@ -259,24 +261,44 @@ const showInternalProgress = computed(() => {
   if (workflowInFlight.value) return false
   return true
 })
-const blockingErrorMessage = computed(() => asStr(props.errorMessage).trim())
-const hasBlockingError = computed(() => {
-  return Boolean(blockingErrorMessage.value && !props.loading && !props.finalVideoUrl)
-})
-
-const blockingErrorTitle = computed(() => {
-  if (blockingErrorMessage.value.includes('workflow 输入参数')) {
-    return '无法继续当前草稿'
-  }
-  return '候选图生成失败'
-})
 
 const assetsReady = computed(() => {
   return (
     sceneCount.value > 0 &&
-    imageAssetCount.value >= sceneCount.value &&
+    generatedAssetCount.value >= sceneCount.value &&
     !hasFailedAssets.value
   )
+})
+
+const blockingErrorMessage = computed(() => asStr(props.errorMessage).trim())
+const isFinalVideoRenderError = computed(() =>
+  blockingErrorMessage.value.startsWith('最终视频生成失败：'),
+)
+const isStaleGenericNetworkError = computed(() => {
+  if (!assetsReady.value || hasFailedAssets.value) return false
+  return [
+    'Failed to fetch',
+    'Load failed',
+    'NetworkError when attempting to fetch resource.',
+  ].includes(blockingErrorMessage.value)
+})
+const hasBlockingError = computed(() => {
+  return Boolean(
+    blockingErrorMessage.value &&
+    !isStaleGenericNetworkError.value &&
+    !props.loading &&
+    !props.finalVideoUrl,
+  )
+})
+
+const blockingErrorTitle = computed(() => {
+  if (isFinalVideoRenderError.value) {
+    return '最终视频生成失败'
+  }
+  if (blockingErrorMessage.value.includes('workflow 输入参数')) {
+    return '无法继续当前草稿'
+  }
+  return '候选图生成失败'
 })
 
 const progressPct = computed(() => {
@@ -307,7 +329,11 @@ const progressLabel = computed(() => {
   // a failure, and the copy should reflect that.
   if (props.cancelRequested) return '正在取消生成…'
   if (props.pausedByUser) return `候选图已暂停（${generatedAssetCount.value}/${sceneCount.value || '?'}）`
-  if (hasBlockingError.value) return `候选图生成失败（${generatedAssetCount.value}/${sceneCount.value || '?'}）`
+  if (hasBlockingError.value) {
+    return isFinalVideoRenderError.value
+      ? '最终视频生成失败'
+      : `候选图生成失败（${generatedAssetCount.value}/${sceneCount.value || '?'}）`
+  }
   // Persisted per-scene failures (B1). Must come BEFORE any check that
   // counts asset length, since failed placeholders inflate the length
   // and would otherwise let the state machine cross into "等待渲染".
