@@ -1,4 +1,5 @@
 import json
+import os
 import time
 from pathlib import Path
 
@@ -37,14 +38,31 @@ from app.services.storage_ids import safe_child_dir, sanitize_storage_id
 
 app = FastAPI(title="jinsie-multimodal-generation-workflow", version="0.1.0")
 
+DEFAULT_CORS_ALLOW_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+]
+
+
+def _cors_allow_origins() -> list[str]:
+    origins: list[str] = []
+    for origin in DEFAULT_CORS_ALLOW_ORIGINS:
+        if origin and origin not in origins:
+            origins.append(origin)
+
+    raw = os.getenv("CORS_ALLOW_ORIGINS", "")
+    for origin in raw.split(","):
+        value = origin.strip()
+        if value and value not in origins:
+            origins.append(value)
+    return origins
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:5174",
-        "http://127.0.0.1:5174",
-    ],
+    allow_origins=_cors_allow_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
