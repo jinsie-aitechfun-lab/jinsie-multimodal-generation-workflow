@@ -1,5 +1,5 @@
 <template>
-  <div class="landing">
+  <div class="landing" :data-theme="theme">
     <!-- Decorative starfield + soft glow drift behind everything.
          Three layers: ambient radial wash, two big blurred glows,
          and a sparse twinkle field. -->
@@ -146,20 +146,14 @@
           @pointermove="onHeroPointerMove"
           @pointerleave="onHeroPointerLeave"
         >
-          <!-- Two illustration variants: dark scene for dark themes,
-               cream-paper scene for pearl. Same positioning; CSS toggles
-               which one is visible based on the active theme. -->
           <img
-            class="hero-storybook-art hero-storybook-art--dark"
-            src="/hero/storybook-hero-transparent.png"
+            class="hero-storybook-art"
+            :src="heroImage.src"
+            :width="heroImage.width"
+            :height="heroImage.height"
             alt=""
-            aria-hidden="true"
-            draggable="false"
-          />
-          <img
-            class="hero-storybook-art hero-storybook-art--light"
-            src="/hero/storybook-hero-transparent-white.png"
-            alt=""
+            loading="eager"
+            fetchpriority="high"
             aria-hidden="true"
             draggable="false"
           />
@@ -201,7 +195,7 @@
          with the title overlaid on a soft gradient at the bottom. First
          card carries the REFERENCE ribbon (《小老鼠吃月亮》). Hover lifts
          the card and softly zooms the illustration. -->
-    <section class="landing-section cases-section">
+    <section ref="casesSectionRef" class="landing-section cases-section">
       <h2 class="section-eyebrow">
         <span class="eyebrow-line"></span>
         Showcase
@@ -224,13 +218,13 @@
               v-if="caseItem.videoSrc"
               class="case-video"
               ref="caseVideoRefs"
-              :src="caseItem.videoSrc"
+              :src="caseVideosEnabled ? caseItem.videoSrc : undefined"
               :data-case-id="caseItem.id"
               autoplay
               muted
               loop
               playsinline
-              preload="metadata"
+              :preload="caseVideosEnabled ? 'metadata' : 'none'"
               @loadedmetadata="onCaseVideoMetadata(caseItem.id, $event)"
             ></video>
             <!-- MOON: night sky + crescent moon (bitten) + tiny mouse -->
@@ -589,11 +583,27 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
+import { useTheme } from '../../composables/useTheme'
 import ThemeSwitcher from '../studio/ThemeSwitcher.vue'
 
 const router = useRouter()
+const { theme } = useTheme()
+
+const heroImage = computed(() =>
+  theme.value === 'pearl'
+    ? {
+        src: '/hero/storybook-hero-transparent-white.webp',
+        width: 2212,
+        height: 1896,
+      }
+    : {
+        src: '/hero/storybook-hero-transparent.webp',
+        width: 2178,
+        height: 1531,
+      },
+)
 
 // Pointer-parallax on the hero illustration. Mousemove writes --px / --py
 // CSS vars (range ~ -0.5..0.5) onto .hero-visual; the .hero-storybook-art
@@ -648,6 +658,9 @@ const showcaseVideoRef = ref<HTMLVideoElement | null>(null)
 // autoplay will resume video playback automatically when the element
 // re-enters the viewport.
 const caseVideoRefs = ref<HTMLVideoElement[]>([])
+const casesSectionRef = ref<HTMLElement | null>(null)
+const caseVideosEnabled = ref(false)
+let caseLoadObserver: IntersectionObserver | null = null
 let caseVideoObserver: IntersectionObserver | null = null
 
 // Real video durations read from the <video> element's metadata as
@@ -784,6 +797,25 @@ function handleShowcaseKeydown(e: KeyboardEvent) {
 onMounted(() => {
   window.addEventListener('keydown', handleShowcaseKeydown)
 
+  // Keep the four large showcase MP4 files out of the initial request set.
+  // Attach their src values once the section is within 200px of the viewport,
+  // then keep them attached to avoid reload flicker on repeated scrolling.
+  if (typeof IntersectionObserver !== 'undefined' && casesSectionRef.value) {
+    caseLoadObserver = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return
+        caseVideosEnabled.value = true
+        caseLoadObserver?.disconnect()
+        caseLoadObserver = null
+      },
+      { rootMargin: '200px 0px', threshold: 0.01 },
+    )
+    caseLoadObserver.observe(casesSectionRef.value)
+  } else {
+    // Older browsers keep the existing eager/autoplay experience.
+    caseVideosEnabled.value = true
+  }
+
   // Pause case-grid videos when scrolled out of view so a long page
   // doesn't keep 4 mp4 decoders running in the background. Re-plays
   // automatically when they scroll back in. IntersectionObserver is
@@ -839,6 +871,10 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleShowcaseKeydown)
+  if (caseLoadObserver) {
+    caseLoadObserver.disconnect()
+    caseLoadObserver = null
+  }
   if (caseVideoObserver) {
     caseVideoObserver.disconnect()
     caseVideoObserver = null
@@ -1128,6 +1164,14 @@ function starStyle(i: number) {
   z-index: 0;
   overflow: hidden;
   pointer-events: none;
+}
+
+/* Pearl uses a clean paper surface. Binding the shared theme to the local
+   Landing root keeps these scoped selectors reliable without global CSS or
+   !important, while dark themes retain the original grid and starfield. */
+.landing[data-theme='pearl'] .bg-grid,
+.landing[data-theme='pearl'] .bg-stars {
+  display: none;
 }
 
 /* Slow ambient drift — keeps the page feeling "alive" without animating
@@ -1529,13 +1573,6 @@ function starStyle(i: number) {
   transition: translate 0.5s cubic-bezier(0.22, 0.65, 0.3, 1);
   will-change: transform, translate;
 }
-
-/* Dark/light variants — MUST come after base `.hero-storybook-art {
-   display: block }` to win on equal specificity. Default: show dark,
-   hide light. Pearl theme block flips the pair. The variants share the
-   same absolute position; only one renders at a time. */
-.hero-storybook-art--dark  { display: block !important; }
-.hero-storybook-art--light { display: none  !important; }
 
 @keyframes hero-art-zoom {
   /* Atmosphere-only breath — barely perceptible. */
@@ -2827,12 +2864,6 @@ function starStyle(i: number) {
     radial-gradient(circle at 30% 22%, rgba(214,179,90,0.06) 0%, transparent 42%),
     radial-gradient(circle at 78% 78%, rgba(170,200,224,0.08) 0%, transparent 44%);
 }
-:root[data-theme="pearl"] .landing .bg-grid {
-  /* Hide the 1px gold grid on pearl. On a near-white surface the grid
-     lines anti-alias unevenly and read as faint jagged hatching along
-     the left margin. Dark themes keep their grid via the base rule. */
-  display: none;
-}
 /* Force GPU compositing on the soft blur layers so their animated drift
    doesn't show micro-edge artifacts at low alpha. */
 :root[data-theme="pearl"] .landing .bg-glow-a,
@@ -2842,18 +2873,6 @@ function starStyle(i: number) {
   backface-visibility: hidden;
   will-change: transform;
 }
-/* Remove the starfield entirely on pearl. On a near-white paper surface
-   the 1-3px dots + their box-shadow halo anti-alias as faint rectangles,
-   and the deterministic golden-ratio layout puts several of them near
-   the left edge in a near-vertical column — which read as a sawtooth
-   strip running down the left margin. Dark themes still get the stars
-   via the base rule; the new `.landing::after` morning-light drift now
-   covers the "atmospheric motion" duty on pearl. */
-:root[data-theme="pearl"] .landing .bg-stars,
-:root[data-theme="pearl"] .landing .bg-stars span {
-  display: none !important;
-}
-
 /* Top-right Enter Studio — pearl glass pill */
 :root[data-theme="pearl"] .landing .landing-enter-studio {
   background: linear-gradient(
@@ -2931,8 +2950,9 @@ function starStyle(i: number) {
   background: linear-gradient(180deg, #c89a55 0%, #a07332 100%);
   color: #fff7e2;
   border-color: rgba(120, 86, 30, 0.55);
-  padding: 15px 32px;
-  font-size: 1rem;
+  min-height: 48px;
+  padding: 12px 30px;
+  font-size: 0.95rem;
   box-shadow:
     inset 0 1px 0 rgba(255, 248, 220, 0.36),
     inset 0 -1px 0 rgba(80, 56, 18, 0.22),
@@ -2951,6 +2971,12 @@ function starStyle(i: number) {
 
 /* Hero secondary — soft paper outline, no dark glow */
 :root[data-theme="pearl"] .landing .hero-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 12px 24px;
+  font-size: 0.9rem;
   color: #4a4032;
   background: rgba(255, 255, 255, 0.55);
   border-color: rgba(151, 132, 96, 0.25);
@@ -3032,12 +3058,6 @@ function starStyle(i: number) {
   color: rgba(58, 49, 38, 0.62);
 }
 
-/* Pearl-theme: swap which illustration is visible. The dark variant is
-   designed for deep-space backgrounds; the light variant is a separate
-   cream/paper asset that already targets the pearl surface, so we don't
-   apply brightness/contrast filters or opacity reduction. */
-:root[data-theme="pearl"] .landing .hero-storybook-art--dark  { display: none  !important; }
-:root[data-theme="pearl"] .landing .hero-storybook-art--light { display: block !important; }
 /* Pearl: hero illustration as a soft paper-style background visual.
    Quieter than the gold dark theme — readable but not the focal element.
    A dedicated light-theme illustration may replace this later. */
