@@ -2086,6 +2086,42 @@ function buildStepSummaries(data: WorkflowRunResponse): Array<{
   }))
 }
 
+function hasCompleteImageAssets(data: WorkflowRunResponse): boolean {
+  const storyboard = data.outputs?.storyboard as Record<string, unknown> | undefined
+  const imageAssets = data.outputs?.image_assets as Record<string, unknown> | undefined
+  const scenes = Array.isArray(storyboard?.scenes) ? storyboard.scenes : []
+  const assets = Array.isArray(imageAssets?.assets) ? imageAssets.assets : []
+  const failedCount =
+    typeof imageAssets?.failed_count === 'number' ? imageAssets.failed_count : 0
+  const failedSceneIds = Array.isArray(imageAssets?.failed_scene_ids)
+    ? imageAssets.failed_scene_ids
+    : []
+  const failedFromStatus = assets.some((asset) => {
+    const status = (asset as Record<string, unknown> | null)?.status
+    return typeof status === 'string' && status.toLowerCase() === 'failed'
+  })
+  const generatedCount =
+    typeof imageAssets?.generated_count === 'number'
+      ? imageAssets.generated_count
+      : assets.length - failedCount
+
+  return (
+    scenes.length > 0 &&
+    generatedCount >= scenes.length &&
+    failedCount === 0 &&
+    failedSceneIds.length === 0 &&
+    !failedFromStatus
+  )
+}
+
+function isGenericNetworkRequestError(message: string): boolean {
+  return [
+    'Failed to fetch',
+    'Load failed',
+    'NetworkError when attempting to fetch resource.',
+  ].includes(String(message || '').trim())
+}
+
 function applyWorkflowResponse(data: WorkflowRunResponse) {
   storyText.value = extractStoryText(data)
   storyboardText.value = extractStoryboardText(data)
@@ -2124,6 +2160,14 @@ function applyWorkflowResponse(data: WorkflowRunResponse) {
   resultText.value = stringifyPretty(data)
   currentWorkflowResponse.value = data
   syncReviewPlaceholders(data)
+
+  // A transient workflow/status fetch can fail after the backend has already
+  // completed and persisted every candidate. Once the recovered response
+  // proves all scenes succeeded, that generic browser error is stale. Keep
+  // every specific image/render/validation error intact.
+  if (hasCompleteImageAssets(data) && isGenericNetworkRequestError(errorMessage.value)) {
+    errorMessage.value = ''
+  }
 
   const sessionId = data.session_id || workflowForm.value.sessionId
   if (sessionId) {
@@ -2553,6 +2597,7 @@ async function renderFinalVideoIfReady(baseResponse: WorkflowRunResponse) {
 
   finalVideoRendering.value = true
   finalVideoRenderInFlight.value = true
+  errorMessage.value = ''
 
   try {
     const response = await fetch(`${apiBaseUrl}/v1/final-video/render`, {
@@ -2579,6 +2624,9 @@ async function renderFinalVideoIfReady(baseResponse: WorkflowRunResponse) {
     }
 
     applyWorkflowResponse(mergedResponse)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Request failed'
+    errorMessage.value = `最终视频生成失败：${message}`
   } finally {
     finalVideoRenderInFlight.value = false
     finalVideoRendering.value = false
@@ -3230,6 +3278,17 @@ async function refreshImageReview() {
   if (failures.length > 0) {
     errorMessage.value = `部分候选图生成失败：${failures.length}/${refreshTotal} 个场景未完成。图片服务暂时不可用，请在 Review 中重试失败场景或稍后再试。`
     return
+  }
+
+  // The loop completed without a failed scene. Clear only a stale generic
+  // network error; specific validation or render errors belong to their own
+  // phase and must remain visible.
+  if (
+    currentWorkflowResponse.value &&
+    hasCompleteImageAssets(currentWorkflowResponse.value) &&
+    isGenericNetworkRequestError(errorMessage.value)
+  ) {
+    errorMessage.value = ''
   }
 
   if (workflowForm.value.renderMode === 'auto' && currentWorkflowResponse.value) {
