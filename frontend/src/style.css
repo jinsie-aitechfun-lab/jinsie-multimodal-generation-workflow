@@ -420,9 +420,9 @@ body {
    :root for ~600ms when the user picks a new theme.
 ─────────────────────────────────────────────────────── */
 :root.theme-transitioning,
-:root.theme-transitioning *,
-:root.theme-transitioning *::before,
-:root.theme-transitioning *::after {
+:root.theme-transitioning *:not(.landing, .landing *),
+:root.theme-transitioning *:not(.landing, .landing *)::before,
+:root.theme-transitioning *:not(.landing, .landing *)::after {
   transition:
     background-color 0.40s ease,
     background-image 0.40s ease,

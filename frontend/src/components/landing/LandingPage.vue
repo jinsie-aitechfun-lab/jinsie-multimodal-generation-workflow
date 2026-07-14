@@ -1991,7 +1991,7 @@ function starStyle(i: number) {
     margin: 0 auto 16px;
   }
   .hero-storybook-art {
-    object-position: 48% center;
+    object-position: 40% center;
   }
 }
 
