@@ -149,10 +149,12 @@
         >
           <div
             class="hero-image-layer"
-            :class="{ 'hero-image-layer--ready': heroReady }"
+            :class="{ 'hero-image-layer--ready': isDisplayedHeroCurrent }"
+            :data-hero-theme="displayedHero?.theme"
           >
             <img
               v-if="displayedHero"
+              :key="displayedHero.src"
               class="hero-storybook-art"
               :src="displayedHero.src"
               :width="displayedHero.width"
@@ -591,7 +593,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTheme } from '../../composables/useTheme'
 import {
@@ -610,9 +612,19 @@ const displayedHero = ref<LandingHeroAsset | null>(
   isHeroReady(theme.value) ? getHeroAsset(theme.value) : null,
 )
 const heroReady = ref(false)
+const requestedHeroTheme = computed(() => getHeroAsset(theme.value).theme)
+const isDisplayedHeroCurrent = computed(
+  () =>
+    heroReady.value &&
+    displayedHero.value !== null &&
+    displayedHero.value.theme === requestedHeroTheme.value,
+)
 const warnedHeroThemes = new Set<string>()
 let heroRequestToken = 0
-let heroRevealFrame: number | null = null
+
+function nextAnimationFrame(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()))
+}
 
 watch(
   theme,
@@ -620,10 +632,13 @@ watch(
     const requestToken = ++heroRequestToken
     heroReady.value = false
 
-    if (heroRevealFrame !== null) {
-      cancelAnimationFrame(heroRevealFrame)
-      heroRevealFrame = null
-    }
+    await nextTick()
+    if (requestToken !== heroRequestToken) return
+
+    // Paint one frame with the previous image fully hidden before loading
+    // or binding the requested theme, including when it is already cached.
+    await nextAnimationFrame()
+    if (requestToken !== heroRequestToken) return
 
     try {
       const asset = await loadAndDecodeHero(requestedTheme, 'high')
@@ -633,12 +648,12 @@ watch(
       await nextTick()
       if (requestToken !== heroRequestToken) return
 
-      heroRevealFrame = requestAnimationFrame(() => {
-        heroRevealFrame = null
-        if (requestToken !== heroRequestToken) return
-        heroReady.value = true
-        preloadAlternateHero(requestedTheme)
-      })
+      // Give the newly keyed image one hidden paint before its entry fade.
+      await nextAnimationFrame()
+      if (requestToken !== heroRequestToken) return
+
+      heroReady.value = true
+      preloadAlternateHero(requestedTheme)
     } catch (error) {
       if (requestToken !== heroRequestToken) return
       displayedHero.value = null
@@ -917,10 +932,6 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   heroRequestToken += 1
-  if (heroRevealFrame !== null) {
-    cancelAnimationFrame(heroRevealFrame)
-    heroRevealFrame = null
-  }
   window.removeEventListener('keydown', handleShowcaseKeydown)
   if (caseLoadObserver) {
     caseLoadObserver.disconnect()
@@ -1145,38 +1156,6 @@ function starStyle(i: number) {
 }
 
 @media (max-width: 600px) {
-  .landing::before {
-    content: "";
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 56px;
-    z-index: 9997;
-    pointer-events: none;
-    background: linear-gradient(
-      180deg,
-      rgba(13, 9, 3, 0.82),
-      rgba(13, 9, 3, 0.52) 58%,
-      rgba(13, 9, 3, 0)
-    );
-    border-bottom: 1px solid color-mix(in srgb, var(--arc-300) 12%, transparent);
-    backdrop-filter: blur(16px) saturate(140%);
-    -webkit-backdrop-filter: blur(16px) saturate(140%);
-  }
-
-  :root[data-theme="pearl"] .landing::before {
-    background: linear-gradient(
-      180deg,
-      rgba(255, 255, 255, 0.18),
-      rgba(255, 255, 255, 0.08)
-    );
-    border-bottom-color: rgba(190, 148, 54, 0.06);
-    box-shadow: none;
-    backdrop-filter: blur(18px) saturate(112%);
-    -webkit-backdrop-filter: blur(18px) saturate(112%);
-  }
-
   .landing-topbar {
     display: none;
   }
@@ -1586,11 +1565,18 @@ function starStyle(i: number) {
   inset: 0;
   z-index: 1;
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
-  transition: opacity 200ms ease;
+  transition: none;
 }
 .hero-image-layer--ready {
   opacity: 1;
+  visibility: visible;
+  animation: hero-image-layer-in 160ms ease both;
+}
+@keyframes hero-image-layer-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 /* (No ::before fade overlay — the transparent PNG has empty left
@@ -2003,6 +1989,9 @@ function starStyle(i: number) {
     max-width: 390px;
     height: clamp(258px, 66vw, 284px);
     margin: 0 auto 16px;
+  }
+  .hero-storybook-art {
+    object-position: 48% center;
   }
 }
 
@@ -2731,6 +2720,7 @@ function starStyle(i: number) {
   }
   .hero-image-layer {
     transition: none;
+    animation: none;
   }
 }
 
