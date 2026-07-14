@@ -61,7 +61,8 @@
             <span class="hero-title-rest">AI Video Studio</span>
           </h1>
           <p class="hero-subtitle">
-            从故事创意到视频成片的 AI 创作工作台
+            <span class="hero-subtitle-line">从故事创意到视频成片的</span>{{ ' ' }}
+            <span class="hero-subtitle-line hero-subtitle-line-emphasis">AI 创作工作台</span>
           </p>
           <p class="hero-subtitle hero-subtitle-secondary">
             当前版本以绘本风故事视频为示例，打通故事生成、分镜设计、画面审核、配音字幕与视频合成的完整工作流。
@@ -1127,9 +1128,7 @@ function starStyle(i: number) {
   }
 
   .landing-topbar {
-    top: 12px;
-    left: 12px;
-    right: auto;
+    display: none;
   }
 
   .landing-enter-studio {
@@ -1751,7 +1750,7 @@ function starStyle(i: number) {
   }
 }
 
-@media (max-width: 960px) {
+@media (max-width: 1100px) {
   .landing-hero {
     min-height: auto;
     padding: 88px 24px 44px;
@@ -1763,6 +1762,10 @@ function starStyle(i: number) {
     padding-top: 0;
   }
   .hero-left {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
     text-align: center;
   }
   .hero-title {
@@ -1770,6 +1773,12 @@ function starStyle(i: number) {
     font-size: clamp(2.15rem, 8vw, 3.2rem);
   }
   .hero-cta-row {
+    width: 100%;
+    justify-content: center;
+    flex-wrap: nowrap;
+  }
+  .hero-workflow-icons {
+    width: 100%;
     justify-content: center;
     flex-wrap: nowrap;
   }
@@ -1806,12 +1815,23 @@ function starStyle(i: number) {
 @media (max-width: 600px) {
   .landing-hero { padding: 64px 16px 26px; }
   .hero-grid {
-    gap: 18px;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "badge"
+      "title"
+      "subtitle"
+      "visual"
+      "actions"
+      "secondary"
+      "workflow";
+    gap: 0;
   }
   .hero-left {
-    text-align: center;
+    display: contents;
   }
   .hero-badge {
+    grid-area: badge;
+    justify-self: center;
     align-self: center;
     align-items: center;
     margin-bottom: 18px;
@@ -1828,6 +1848,8 @@ function starStyle(i: number) {
     letter-spacing: 0.11em;
   }
   .hero-title {
+    grid-area: title;
+    justify-self: center;
     align-items: center;
     margin-bottom: 12px;
     font-size: clamp(1.95rem, 10.8vw, 2.45rem);
@@ -1836,55 +1858,98 @@ function starStyle(i: number) {
     letter-spacing: 0.07em;
   }
   .hero-subtitle {
-    width: min(100%, 340px);
-    max-width: 340px;
-    margin-left: auto;
-    margin-right: auto;
+    width: min(100%, 320px);
+    max-width: 320px;
+    margin-inline: auto;
     margin-bottom: 20px;
-    font-size: 0.92rem;
-    line-height: 1.52;
-    text-align: left;
+    font-size: 1.125rem;
+    font-weight: 500;
+    line-height: 1.55;
+    text-align: center;
+    color: color-mix(in srgb, var(--text-secondary) 76%, var(--text-primary));
+  }
+  .hero-subtitle:not(.hero-subtitle-secondary) {
+    grid-area: subtitle;
+    margin-bottom: 22px;
+  }
+  .hero-subtitle-line {
+    display: block;
+  }
+  .hero-subtitle-line + .hero-subtitle-line {
+    margin-top: 3px;
+  }
+  .hero-subtitle-line-emphasis {
+    font-weight: 600;
   }
   .hero-subtitle-secondary {
+    grid-area: secondary;
     width: min(100%, 340px);
     max-width: 340px;
-    margin-left: auto;
-    margin-right: auto;
-    margin-top: -8px;
+    margin-inline: auto;
+    margin-top: 0;
     margin-bottom: 22px;
-    font-size: 0.75rem;
-    line-height: 1.62;
+    font-size: 0.875rem;
+    line-height: 1.7;
     letter-spacing: 0.02em;
-    text-align: left;
+    text-align: center;
+    color: color-mix(in srgb, var(--text-secondary) 82%, var(--text-primary));
   }
   .hero-cta-row {
+    grid-area: actions;
+    justify-self: center;
     width: 100%;
     max-width: 340px;
     gap: 10px;
+    margin: 0 auto 20px;
   }
   .hero-primary,
   .hero-secondary {
-    flex: 1 1 0;
     justify-content: center;
-    min-height: 42px;
+    min-height: 48px;
     white-space: nowrap;
   }
   .hero-primary {
+    flex: 1.08 1 0;
     padding: 11px 14px;
     font-size: 0.88rem;
   }
   .hero-secondary {
+    flex: 0.92 1 0;
     padding: 10px 12px;
     font-size: 0.82rem;
   }
   .hero-workflow-icons {
-    display: none;
+    grid-area: workflow;
+    justify-self: center;
+    display: inline-flex;
+    width: 100%;
+    max-width: 360px;
+    margin: 0 auto;
+    gap: 4px;
+    flex-wrap: nowrap;
+    justify-content: space-between;
+  }
+  .hero-workflow-icons .hwi-item {
+    flex: 1 1 0;
+    min-width: 0;
+    gap: 6px;
   }
   .hero-visual {
-    max-width: min(360px, 100%);
+    grid-area: visual;
+    position: relative;
+    width: calc(100% - 8px);
+    max-width: 390px;
+    height: clamp(258px, 66vw, 284px);
+    margin: 0 auto 16px;
   }
   .hero-storybook-art {
-    max-height: 34vh;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    object-fit: contain;
+    object-position: center;
   }
 }
 
@@ -3031,6 +3096,17 @@ function starStyle(i: number) {
   margin-top: 22px;
   gap: 10px;
   opacity: 1;
+}
+@media (max-width: 600px) {
+  :root[data-theme="pearl"] .landing .hero-workflow-icons {
+    margin-top: 0;
+  }
+  :root[data-theme="pearl"] .landing .hero-subtitle {
+    color: rgba(58, 50, 38, 0.78);
+  }
+  :root[data-theme="pearl"] .landing .hero-subtitle-secondary {
+    color: rgba(58, 49, 38, 0.72);
+  }
 }
 :root[data-theme="pearl"] .landing .hwi-icon {
   /* Sizes (width / height / font-size) inherit from base scoped CSS so
