@@ -147,17 +147,24 @@
           @pointermove="onHeroPointerMove"
           @pointerleave="onHeroPointerLeave"
         >
-          <img
-            class="hero-storybook-art"
-            :src="heroImage.src"
-            :width="heroImage.width"
-            :height="heroImage.height"
-            alt=""
-            loading="eager"
-            fetchpriority="high"
-            aria-hidden="true"
-            draggable="false"
-          />
+          <div
+            class="hero-image-layer"
+            :class="{ 'hero-image-layer--ready': heroReady }"
+          >
+            <img
+              v-if="displayedHero"
+              class="hero-storybook-art"
+              :src="displayedHero.src"
+              :width="displayedHero.width"
+              :height="displayedHero.height"
+              alt=""
+              loading="eager"
+              decoding="async"
+              fetchpriority="high"
+              aria-hidden="true"
+              draggable="false"
+            />
+          </div>
         </div>
       </div>
     </header>
@@ -584,26 +591,64 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTheme } from '../../composables/useTheme'
+import {
+  getHeroAsset,
+  isHeroReady,
+  loadAndDecodeHero,
+  preloadAlternateHero,
+  type LandingHeroAsset,
+} from '../../lib/landingHeroAssets'
 import ThemeSwitcher from '../studio/ThemeSwitcher.vue'
 
 const router = useRouter()
 const { theme } = useTheme()
 
-const heroImage = computed(() =>
-  theme.value === 'pearl'
-    ? {
-        src: '/hero/storybook-hero-transparent-white.webp',
-        width: 2212,
-        height: 1896,
+const displayedHero = ref<LandingHeroAsset | null>(
+  isHeroReady(theme.value) ? getHeroAsset(theme.value) : null,
+)
+const heroReady = ref(false)
+const warnedHeroThemes = new Set<string>()
+let heroRequestToken = 0
+let heroRevealFrame: number | null = null
+
+watch(
+  theme,
+  async (requestedTheme) => {
+    const requestToken = ++heroRequestToken
+    heroReady.value = false
+
+    if (heroRevealFrame !== null) {
+      cancelAnimationFrame(heroRevealFrame)
+      heroRevealFrame = null
+    }
+
+    try {
+      const asset = await loadAndDecodeHero(requestedTheme, 'high')
+      if (requestToken !== heroRequestToken) return
+
+      displayedHero.value = asset
+      await nextTick()
+      if (requestToken !== heroRequestToken) return
+
+      heroRevealFrame = requestAnimationFrame(() => {
+        heroRevealFrame = null
+        if (requestToken !== heroRequestToken) return
+        heroReady.value = true
+        preloadAlternateHero(requestedTheme)
+      })
+    } catch (error) {
+      if (requestToken !== heroRequestToken) return
+      displayedHero.value = null
+      if (!warnedHeroThemes.has(requestedTheme)) {
+        warnedHeroThemes.add(requestedTheme)
+        console.warn(`[Landing Hero] ${requestedTheme} image failed to load.`, error)
       }
-    : {
-        src: '/hero/storybook-hero-transparent.webp',
-        width: 2178,
-        height: 1531,
-      },
+    }
+  },
+  { immediate: true, flush: 'sync' },
 )
 
 // Pointer-parallax on the hero illustration. Mousemove writes --px / --py
@@ -871,6 +916,11 @@ onMounted(() => {
   }
 })
 onBeforeUnmount(() => {
+  heroRequestToken += 1
+  if (heroRevealFrame !== null) {
+    cancelAnimationFrame(heroRevealFrame)
+    heroRevealFrame = null
+  }
   window.removeEventListener('keydown', handleShowcaseKeydown)
   if (caseLoadObserver) {
     caseLoadObserver.disconnect()
@@ -1531,6 +1581,18 @@ function starStyle(i: number) {
   overflow: visible;
 }
 
+.hero-image-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms ease;
+}
+.hero-image-layer--ready {
+  opacity: 1;
+}
+
 /* (No ::before fade overlay — the transparent PNG has empty left
    padding, so the image's bounding box doesn't cross into the left
    text column. Left-column text relies on z-index: 3 above the image
@@ -1541,10 +1603,13 @@ function starStyle(i: number) {
 .hero-flow-bridge { z-index: 2; }
 
 .hero-storybook-art {
+  position: absolute;
+  inset: 0;
   width: 100%;
-  height: auto;
-  max-height: 76vh;
+  height: 100%;
+  max-height: none;
   object-fit: contain;
+  object-position: center;
   display: block;
   user-select: none;
   -webkit-user-drag: none;
@@ -1800,11 +1865,8 @@ function starStyle(i: number) {
     transform: none;
     width: 100%;
     max-width: 640px;
-    height: auto;
+    height: min(50vh, 500px);
     margin: 0 auto;
-  }
-  .hero-storybook-art {
-    max-height: 50vh;
   }
   .hero-subtitle,
   .hero-subtitle-secondary {
@@ -1941,15 +2003,6 @@ function starStyle(i: number) {
     max-width: 390px;
     height: clamp(258px, 66vw, 284px);
     margin: 0 auto 16px;
-  }
-  .hero-storybook-art {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    max-height: none;
-    object-fit: contain;
-    object-position: center;
   }
 }
 
@@ -2675,6 +2728,9 @@ function starStyle(i: number) {
   .hero-storybook-art {
     translate: 0 0 !important;
     transition: none !important;
+  }
+  .hero-image-layer {
+    transition: none;
   }
 }
 

@@ -20,6 +20,20 @@
 
         document.documentElement.dataset.theme = theme
         document.documentElement.style.colorScheme = theme === 'pearl' ? 'light' : 'dark'
+
+        const heroPreloadId = 'landing-hero-preload'
+        if (window.location.pathname === '/' && !document.getElementById(heroPreloadId)) {
+          const heroPreload = document.createElement('link')
+          heroPreload.id = heroPreloadId
+          heroPreload.rel = 'preload'
+          heroPreload.as = 'image'
+          heroPreload.type = 'image/webp'
+          heroPreload.href = theme === 'pearl'
+            ? '/hero/storybook-hero-transparent-white.webp'
+            : '/hero/storybook-hero-transparent.webp'
+          heroPreload.fetchPriority = 'high'
+          document.head.appendChild(heroPreload)
+        }
       })()
     </script>
     <style>
