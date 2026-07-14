@@ -1156,38 +1156,6 @@ function starStyle(i: number) {
 }
 
 @media (max-width: 600px) {
-  .landing::before {
-    content: "";
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 56px;
-    z-index: 9997;
-    pointer-events: none;
-    background: linear-gradient(
-      180deg,
-      rgba(13, 9, 3, 0.82),
-      rgba(13, 9, 3, 0.52) 58%,
-      rgba(13, 9, 3, 0)
-    );
-    border-bottom: 1px solid color-mix(in srgb, var(--arc-300) 12%, transparent);
-    backdrop-filter: blur(16px) saturate(140%);
-    -webkit-backdrop-filter: blur(16px) saturate(140%);
-  }
-
-  :root[data-theme="pearl"] .landing::before {
-    background: linear-gradient(
-      180deg,
-      rgba(255, 255, 255, 0.18),
-      rgba(255, 255, 255, 0.08)
-    );
-    border-bottom-color: rgba(190, 148, 54, 0.06);
-    box-shadow: none;
-    backdrop-filter: blur(18px) saturate(112%);
-    -webkit-backdrop-filter: blur(18px) saturate(112%);
-  }
-
   .landing-topbar {
     display: none;
   }
@@ -2021,6 +1989,9 @@ function starStyle(i: number) {
     max-width: 390px;
     height: clamp(258px, 66vw, 284px);
     margin: 0 auto 16px;
+  }
+  .hero-storybook-art {
+    object-position: 48% center;
   }
 }
 
