@@ -496,16 +496,6 @@ const placeholderDesc = computed(() => {
   border-bottom-left-radius: 18px;
   border-bottom-right-radius: 18px;
 }
-:global(:root[data-theme="pearl"]) .final-shell.ready::after {
-  height: 52px;
-  background: linear-gradient(
-    180deg,
-    rgba(46, 42, 34, 0) 0%,
-    rgba(46, 42, 34, 0.10) 60%,
-    rgba(46, 42, 34, 0.18) 100%
-  );
-}
-
 .final-video {
   width: 100%;
   display: block;
@@ -514,10 +504,6 @@ const placeholderDesc = computed(() => {
   max-height: 72vh;
   accent-color: var(--arc-300, #fbbf24);
 }
-:global(:root[data-theme="pearl"]) .final-video {
-  accent-color: #b8843e;
-}
-
 .final-placeholder {
   padding: 32px 20px 45px;
   text-align: center;
@@ -784,5 +770,21 @@ const placeholderDesc = computed(() => {
     max-width: 240px;
     min-height: 44px;
   }
+}
+</style>
+
+<style>
+:root[data-theme="pearl"] .final-hero .final-shell.ready::after {
+  height: 52px;
+  background: linear-gradient(
+    180deg,
+    rgba(46, 42, 34, 0) 0%,
+    rgba(46, 42, 34, 0.10) 60%,
+    rgba(46, 42, 34, 0.18) 100%
+  );
+}
+
+:root[data-theme="pearl"] .final-hero .final-video {
+  accent-color: #b8843e;
 }
 </style>
