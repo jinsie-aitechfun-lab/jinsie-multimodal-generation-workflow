@@ -1274,11 +1274,6 @@ select.input {
   border-color: var(--input-focus-border);
 }
 
-/* Pearl theme — darker champagne chevron on white bg */
-:global(:root[data-theme="pearl"]) .input.select {
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'><path d='M1 1 L6 6 L11 1' stroke='%23b8843e' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
-}
-
 .config-panel,
 .steps-panel {
   margin-top: 1rem;
@@ -1952,5 +1947,12 @@ select.input {
     min-width: 0;
     width: 100%;
   }
+}
+</style>
+
+<style>
+/* Pearl theme — darker champagne chevron on white bg */
+:root[data-theme="pearl"] .workflow-run-panel .input.select {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'><path d='M1 1 L6 6 L11 1' stroke='%23b8843e' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
 }
 </style>

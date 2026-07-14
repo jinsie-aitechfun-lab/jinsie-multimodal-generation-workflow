@@ -313,50 +313,6 @@ const vClickOutside: Directive<HTMLElement, () => void> = {
   transform: translateY(6px);
 }
 
-/* Pearl Dawn: lighter acrylic switcher, no grey capsule feel */
-:global(:root[data-theme="pearl"]) .ts-trigger {
-  background:
-    linear-gradient(145deg, rgba(255,255,255,0.86), rgba(255,255,255,0.62));
-  border-color: rgba(214,179,90,0.24);
-  box-shadow:
-    0 12px 34px rgba(46,42,34,0.08),
-    0 4px 14px rgba(142,197,255,0.08),
-    inset 0 1px 0 rgba(255,255,255,0.88);
-}
-
-:global(:root[data-theme="pearl"]) .ts-trigger:hover,
-:global(:root[data-theme="pearl"]) .ts-trigger[aria-expanded='true'] {
-  background:
-    linear-gradient(145deg, rgba(255,255,255,0.92), rgba(240,248,255,0.68));
-  border-color: rgba(214,179,90,0.34);
-  box-shadow:
-    0 16px 40px rgba(46,42,34,0.09),
-    0 0 22px rgba(142,197,255,0.10),
-    inset 0 1px 0 rgba(255,255,255,0.92);
-}
-
-:global(:root[data-theme="pearl"]) .ts-trigger-dot,
-:global(:root[data-theme="pearl"]) .ts-swatch {
-  box-shadow:
-    0 0 0 1px rgba(214,179,90,0.18),
-    0 2px 6px rgba(46,42,34,0.10);
-}
-
-:global(:root[data-theme="pearl"]) .ts-panel {
-  background:
-    linear-gradient(145deg, rgba(255,255,255,0.90), rgba(255,255,255,0.70));
-  border-color: rgba(214,179,90,0.22);
-  box-shadow:
-    0 24px 60px rgba(46,42,34,0.12),
-    0 8px 24px rgba(142,197,255,0.08),
-    inset 0 1px 0 rgba(255,255,255,0.88);
-}
-
-:global(:root[data-theme="pearl"]) .ts-panel::after {
-  border-top-color: rgba(255,255,255,0.82);
-  filter: drop-shadow(0 1px 1px rgba(214,179,90,0.12));
-}
-
 @media (max-width: 768px) {
   .ts-root {
     top: 5px;
@@ -391,5 +347,51 @@ const vClickOutside: Directive<HTMLElement, () => void> = {
     border-top: none;
     border-bottom: 6px solid var(--glass-bg-light, rgba(20,16,8,0.94));
   }
+}
+</style>
+
+<style>
+/* Pearl Dawn: lighter acrylic switcher, no grey capsule feel */
+:root[data-theme="pearl"] .ts-root .ts-trigger {
+  background:
+    linear-gradient(145deg, rgba(255,255,255,0.86), rgba(255,255,255,0.62));
+  border-color: rgba(214,179,90,0.24);
+  box-shadow:
+    0 12px 34px rgba(46,42,34,0.08),
+    0 4px 14px rgba(142,197,255,0.08),
+    inset 0 1px 0 rgba(255,255,255,0.88);
+}
+
+:root[data-theme="pearl"] .ts-root .ts-trigger:hover,
+:root[data-theme="pearl"] .ts-root .ts-trigger[aria-expanded='true'] {
+  background:
+    linear-gradient(145deg, rgba(255,255,255,0.92), rgba(240,248,255,0.68));
+  border-color: rgba(214,179,90,0.34);
+  box-shadow:
+    0 16px 40px rgba(46,42,34,0.09),
+    0 0 22px rgba(142,197,255,0.10),
+    inset 0 1px 0 rgba(255,255,255,0.92);
+}
+
+:root[data-theme="pearl"] .ts-root .ts-trigger-dot,
+:root[data-theme="pearl"] .ts-root .ts-swatch {
+  box-shadow:
+    0 0 0 1px rgba(214,179,90,0.18),
+    0 2px 6px rgba(46,42,34,0.10);
+}
+
+:root[data-theme="pearl"] .ts-root .ts-panel {
+  background:
+    linear-gradient(145deg, rgba(255,255,255,0.90), rgba(255,255,255,0.70));
+  border-color: rgba(214,179,90,0.22);
+  box-shadow:
+    0 24px 60px rgba(46,42,34,0.12),
+    0 8px 24px rgba(142,197,255,0.08),
+    inset 0 1px 0 rgba(255,255,255,0.88);
+}
+
+:root[data-theme="pearl"] .ts-root .ts-panel::after {
+  border-top-color: rgba(255,255,255,0.82);
+  filter: drop-shadow(0 1px 1px rgba(214,179,90,0.12));
 }
 </style>
