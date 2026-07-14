@@ -1661,82 +1661,6 @@ const doneCount = computed(
   letter-spacing: 0.04em;
 }
 
-/* Pearl Dawn: refined acrylic preview surface */
-:global(:root[data-theme="pearl"]) .preview-panel {
-  border-color: rgba(214, 179, 90, 0.20);
-  box-shadow:
-    0 26px 72px rgba(46,42,34,0.085),
-    0 10px 26px rgba(142,197,255,0.075),
-    inset 0 1px 0 rgba(255,255,255,0.92);
-}
-
-:global(:root[data-theme="pearl"]) .pp-header {
-  border-bottom-color: rgba(214, 179, 90, 0.14);
-  background: linear-gradient(180deg, rgba(255,255,255,0.42), rgba(255,255,255,0));
-}
-
-:global(:root[data-theme="pearl"]) .pp-player-wrap {
-  border: 1px solid rgba(214,179,90,0.18);
-  box-shadow:
-    0 24px 64px rgba(46,42,34,0.10),
-    0 8px 28px rgba(142,197,255,0.08),
-    inset 0 1px 0 rgba(255,255,255,0.82);
-}
-/* Pearl theme — overlay is much lighter so the bright canvas stays bright. */
-:global(:root[data-theme="pearl"]) .pp-player-wrap::after {
-  height: 44px;
-  background: linear-gradient(
-    180deg,
-    rgba(46, 42, 34, 0) 0%,
-    rgba(46, 42, 34, 0.10) 60%,
-    rgba(46, 42, 34, 0.16) 100%
-  );
-}
-
-:global(:root[data-theme="pearl"]) .pp-current-label {
-  background:
-    linear-gradient(90deg, rgba(255,255,255,0.66), rgba(238,247,255,0.50));
-  border-bottom-color: rgba(214,179,90,0.12);
-  backdrop-filter: blur(14px) saturate(1.08);
-  -webkit-backdrop-filter: blur(14px) saturate(1.08);
-}
-
-:global(:root[data-theme="pearl"]) .pp-current-tag {
-  background: linear-gradient(135deg, rgba(248,232,198,0.78), rgba(229,242,255,0.56));
-  border-color: rgba(214,179,90,0.28);
-  color: #8b6722;
-  box-shadow:
-    0 0 14px rgba(214,179,90,0.12),
-    inset 0 1px 0 rgba(255,255,255,0.78);
-}
-
-:global(:root[data-theme="pearl"]) .pp-work,
-:global(:root[data-theme="pearl"]) .pp-empty {
-  background:
-    radial-gradient(circle at 12% 18%, rgba(246, 222, 166, 0.20), transparent 28%),
-    radial-gradient(circle at 86% 78%, rgba(142, 197, 255, 0.16), transparent 36%),
-    linear-gradient(145deg, rgba(255,255,255,0.72), rgba(247,250,252,0.54));
-  border: 1px solid rgba(214,179,90,0.18);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.86),
-    0 18px 46px rgba(46,42,34,0.06);
-  backdrop-filter: blur(18px) saturate(1.08);
-  -webkit-backdrop-filter: blur(18px) saturate(1.08);
-}
-
-:global(:root[data-theme="pearl"]) .pp-empty {
-  border-radius: 18px;
-}
-
-/* Pearl-only refinement — filename gets darker on the white surface to
-   keep text contrast (other states now flow from --arc-* tokens directly). */
-:global(:root[data-theme="pearl"]) .pp-work-filename {
-  color: rgba(46,42,34,0.92);
-}
-:global(:root[data-theme="pearl"]) .pp-current-url {
-  color: rgba(111,106,95,0.76);
-}
-
 /* Thumbnail tile (was a button — now a div wrapping a main button +
    delete button so the × doesn't trigger the play click). */
 .pp-thumb {
@@ -2074,5 +1998,85 @@ const doneCount = computed(
     width: 132px;
     height: 74px;
   }
+}
+</style>
+
+<style>
+/* Pearl Dawn: refined acrylic preview surface */
+:root[data-theme="pearl"] .preview-panel {
+  border-color: rgba(214, 179, 90, 0.20);
+  box-shadow:
+    0 26px 72px rgba(46,42,34,0.085),
+    0 10px 26px rgba(142,197,255,0.075),
+    inset 0 1px 0 rgba(255,255,255,0.92);
+}
+
+:root[data-theme="pearl"] .pp-header {
+  border-bottom-color: rgba(214, 179, 90, 0.14);
+  background: linear-gradient(180deg, rgba(255,255,255,0.42), rgba(255,255,255,0));
+}
+
+:root[data-theme="pearl"] .pp-player-wrap {
+  border: 1px solid rgba(214,179,90,0.18);
+  box-shadow:
+    0 24px 64px rgba(46,42,34,0.10),
+    0 8px 28px rgba(142,197,255,0.08),
+    inset 0 1px 0 rgba(255,255,255,0.82);
+}
+
+/* Pearl theme — overlay is much lighter so the bright canvas stays bright. */
+:root[data-theme="pearl"] .pp-player-wrap::after {
+  height: 44px;
+  background: linear-gradient(
+    180deg,
+    rgba(46, 42, 34, 0) 0%,
+    rgba(46, 42, 34, 0.10) 60%,
+    rgba(46, 42, 34, 0.16) 100%
+  );
+}
+
+:root[data-theme="pearl"] .pp-current-label {
+  background:
+    linear-gradient(90deg, rgba(255,255,255,0.66), rgba(238,247,255,0.50));
+  border-bottom-color: rgba(214,179,90,0.12);
+  backdrop-filter: blur(14px) saturate(1.08);
+  -webkit-backdrop-filter: blur(14px) saturate(1.08);
+}
+
+:root[data-theme="pearl"] .pp-current-tag {
+  background: linear-gradient(135deg, rgba(248,232,198,0.78), rgba(229,242,255,0.56));
+  border-color: rgba(214,179,90,0.28);
+  color: #8b6722;
+  box-shadow:
+    0 0 14px rgba(214,179,90,0.12),
+    inset 0 1px 0 rgba(255,255,255,0.78);
+}
+
+:root[data-theme="pearl"] .pp-work,
+:root[data-theme="pearl"] .pp-empty {
+  background:
+    radial-gradient(circle at 12% 18%, rgba(246, 222, 166, 0.20), transparent 28%),
+    radial-gradient(circle at 86% 78%, rgba(142, 197, 255, 0.16), transparent 36%),
+    linear-gradient(145deg, rgba(255,255,255,0.72), rgba(247,250,252,0.54));
+  border: 1px solid rgba(214,179,90,0.18);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.86),
+    0 18px 46px rgba(46,42,34,0.06);
+  backdrop-filter: blur(18px) saturate(1.08);
+  -webkit-backdrop-filter: blur(18px) saturate(1.08);
+}
+
+:root[data-theme="pearl"] .pp-empty {
+  border-radius: 18px;
+}
+
+/* Pearl-only refinement — filename gets darker on the white surface to
+   keep text contrast (other states now flow from --arc-* tokens directly). */
+:root[data-theme="pearl"] .pp-work-filename {
+  color: rgba(46,42,34,0.92);
+}
+
+:root[data-theme="pearl"] .pp-current-url {
+  color: rgba(111,106,95,0.76);
 }
 </style>

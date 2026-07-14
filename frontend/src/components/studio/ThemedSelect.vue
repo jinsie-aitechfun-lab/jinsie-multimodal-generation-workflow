@@ -296,15 +296,15 @@ const vClickOutside: Directive<HTMLElement, () => void> = {
 }
 </style>
 
-<style scoped>
-/* Pearl theme — scoped overrides for trigger */
-:global(:root[data-theme="pearl"]) .ts-trigger {
+<style>
+/* Pearl theme — global theme selector with component-prefixed targets */
+:root[data-theme="pearl"] .ts-select .ts-trigger {
   background: rgba(255, 255, 255, 0.92);
   border-color: rgba(214, 179, 90, 0.26);
   color: #2E2A22;
 }
 
-:global(:root[data-theme="pearl"]) .ts-chev {
+:root[data-theme="pearl"] .ts-select .ts-chev {
   color: #b8843e;
 }
 
