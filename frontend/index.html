@@ -5,9 +5,95 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>jinsie-multimodal-frontend</title>
+    <script>
+      (() => {
+        const storageKey = 'studio_theme'
+        const visibleThemes = ['gold', 'pearl']
+        let theme = 'gold'
+
+        try {
+          const stored = window.localStorage.getItem(storageKey)
+          if (stored && visibleThemes.includes(stored)) theme = stored
+        } catch {
+          // Keep the existing default when storage is unavailable.
+        }
+
+        document.documentElement.dataset.theme = theme
+        document.documentElement.style.colorScheme = theme === 'pearl' ? 'light' : 'dark'
+      })()
+    </script>
+    <style>
+      html {
+        background: #09090b;
+      }
+
+      html[data-theme='pearl'] {
+        background: #fffdf7;
+      }
+
+      body {
+        margin: 0;
+      }
+
+      .boot-shell {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        background: #09090b;
+        color: rgba(255, 255, 255, 0.72);
+        font-family: Inter, 'SF Pro Display', system-ui, sans-serif;
+      }
+
+      [data-theme='pearl'] .boot-shell {
+        background: #fffdf7;
+        color: #6f6a5f;
+      }
+
+      .boot-mark {
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+        font-size: 0.8rem;
+        font-weight: 650;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+
+      .boot-dot {
+        width: 0.4rem;
+        height: 0.4rem;
+        border-radius: 50%;
+        background: #f59e0b;
+        box-shadow: 0 0 14px rgba(245, 158, 11, 0.5);
+        animation: boot-breathe 1.4s ease-in-out infinite;
+      }
+
+      [data-theme='pearl'] .boot-dot {
+        background: #c2914a;
+        box-shadow: 0 0 12px rgba(194, 145, 74, 0.28);
+      }
+
+      @keyframes boot-breathe {
+        50% {
+          opacity: 0.4;
+          transform: scale(0.82);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .boot-dot {
+          animation: none;
+        }
+      }
+    </style>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <div class="boot-shell" role="status" aria-label="Jinsie 正在启动">
+        <div class="boot-mark"><span class="boot-dot" aria-hidden="true"></span>Jinsie</div>
+      </div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

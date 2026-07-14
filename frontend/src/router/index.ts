@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
-import LandingPage from '../components/landing/LandingPage.vue'
-import StudioView from '../views/StudioView.vue'
+
+const LandingPage = () => import('../components/landing/LandingPage.vue')
+const StudioView = () => import('../views/StudioView.vue')
 
 const routes: RouteRecordRaw[] = [
   {
