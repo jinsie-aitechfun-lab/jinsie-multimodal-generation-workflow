@@ -9,6 +9,7 @@ type ImageAssetRef = {
   public_url?: string
   mime_type?: string
   provider?: string
+  version?: string | number
 }
 
 type ImageReviewSelectedAsset = {
@@ -28,7 +29,7 @@ type ImageReviewSelectedAsset = {
 type ReviewPlaceholderItem = {
   scene_id: string
   scene_title: string
-  state: 'waiting' | 'refreshing' | 'done' | 'failed'
+  state: 'waiting' | 'queued' | 'refreshing' | 'confirming' | 'done' | 'failed'
   error_message?: string
 }
 
@@ -51,7 +52,7 @@ type ReviewRenderEntry =
       kind: 'placeholder'
       sceneId: string
       sceneTitle: string
-      state: 'waiting' | 'refreshing' | 'done' | 'failed'
+      state: 'waiting' | 'queued' | 'refreshing' | 'confirming' | 'done' | 'failed'
       errorMessage?: string
     }
 
@@ -97,7 +98,7 @@ const props = defineProps<{
   // browsers happily serve the cached image since the URL hasn't
   // changed. Appending `?v=${sceneImageVersions[sceneId]}` to every
   // image URL forces a fresh fetch after each per-scene refresh.
-  sceneImageVersions?: Record<string, number>
+  sceneImageVersions?: Record<string, string | number>
   // Map of scene_id → narration text (the TTS script for this scene).
   // Surfaced inline on each candidate's card so the user knows what
   // each scene is ABOUT in plain language. This is the user-readable
@@ -105,6 +106,8 @@ const props = defineProps<{
   // hundreds of lines of cast-lock boilerplate and not useful to show.
   sceneNarrationMap?: Record<string, string>
 }>()
+
+const imageRetryAttempts = ref<Record<string, number>>({})
 
 // A scene's candidates are locked when:
 //   • the final video already exists for this run (any swap would let
@@ -187,11 +190,27 @@ function toAssetHref(path?: string, sceneId?: string): string {
   // version after each successful refresh; absent / zero versions
   // are treated as "no bust needed" so unchanged scenes don't refetch.
   const version = sceneId ? props.sceneImageVersions?.[sceneId] : undefined
-  if (version && version > 0) {
-    const separator = normalizedPath.includes('?') ? '&' : '?'
-    return `${normalizedBase}${normalizedPath}${separator}v=${version}`
+  const retryAttempt = imageRetryAttempts.value[`${sceneId || ''}:${trimmed}`] || 0
+  const queryParts: string[] = []
+  if (version != null && String(version).length > 0 && String(version) !== '0') {
+    queryParts.push(`v=${encodeURIComponent(String(version))}`)
   }
-  return `${normalizedBase}${normalizedPath}`
+  if (retryAttempt > 0) queryParts.push(`retry=${retryAttempt}`)
+  if (queryParts.length === 0) return `${normalizedBase}${normalizedPath}`
+  const separator = normalizedPath.includes('?') ? '&' : '?'
+  return `${normalizedBase}${normalizedPath}${separator}${queryParts.join('&')}`
+}
+
+function retryImageGet(path: string, sceneId: string) {
+  const key = `${sceneId}:${path}`
+  const current = imageRetryAttempts.value[key] || 0
+  if (current >= 3) return
+  window.setTimeout(() => {
+    imageRetryAttempts.value = {
+      ...imageRetryAttempts.value,
+      [key]: current + 1,
+    }
+  }, 500 * 2 ** current)
 }
 
 function assetRefPath(assetRef?: ImageAssetRef): string {
@@ -259,10 +278,12 @@ function onCancelRefresh() {
   emit('cancel-refresh')
 }
 
-function placeholderStatusText(state: 'waiting' | 'refreshing' | 'done' | 'failed'): string {
+function placeholderStatusText(state: ReviewPlaceholderItem['state']): string {
+  if (state === 'queued') return '排队中'
   if (state === 'refreshing') {
     return props.cancelRequested ? '正在取消生成' : '正在生成'
   }
+  if (state === 'confirming') return '结果确认中'
   if (state === 'done') {
     return '已完成'
   }
@@ -272,12 +293,14 @@ function placeholderStatusText(state: 'waiting' | 'refreshing' | 'done' | 'faile
   return props.cancelRequested ? '正在取消生成' : '等待生成'
 }
 
-function selectedStatusCopy(state: 'waiting' | 'refreshing' | 'done' | 'failed'): string {
+function selectedStatusCopy(state: ReviewPlaceholderItem['state']): string {
+  if (state === 'queued') return '任务已提交，等待执行'
   if (state === 'refreshing') {
     return props.cancelRequested
       ? '正在取消生成…'
       : '正在生成当前预览图'
   }
+  if (state === 'confirming') return '任务可能仍在服务器执行，请勿重复提交'
   if (state === 'done') {
     return '当前预览图已生成'
   }
@@ -299,12 +322,14 @@ function reviewStatusLabel(status: string | undefined): string {
   return status || '-'
 }
 
-function candidateStatusCopy(state: 'waiting' | 'refreshing' | 'done' | 'failed', index: 'A' | 'B'): string {
+function candidateStatusCopy(state: ReviewPlaceholderItem['state'], index: 'A' | 'B'): string {
+  if (state === 'queued') return `候选图 ${index} 排队中`
   if (state === 'refreshing') {
     return props.cancelRequested
       ? `候选图 ${index} 正在取消生成…`
       : `正在生成候选图 ${index}`
   }
+  if (state === 'confirming') return `候选图 ${index} 结果确认中`
   if (state === 'done') {
     return `候选图 ${index} 已生成`
   }
@@ -418,6 +443,8 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
     if (
       matchedItem &&
       placeholder.state !== 'refreshing' &&
+      placeholder.state !== 'queued' &&
+      placeholder.state !== 'confirming' &&
       placeholder.state !== 'waiting' &&
       placeholder.state !== 'failed'
     ) {
@@ -645,6 +672,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                   class="preview-visual-image"
                   :src="toAssetHref(assetRefPath(entry.item.selected_asset_ref), entry.sceneId)"
                   :alt="entry.sceneTitle || 'selected-image'"
+                  @error="retryImageGet(assetRefPath(entry.item.selected_asset_ref), entry.sceneId)"
                 />
                 <div v-else class="placeholder-card">
                   <div class="placeholder-art">
@@ -763,6 +791,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                       class="preview-visual-image"
                       :src="toAssetHref(assetRefPath(candidate), entry.sceneId)"
                       :alt="candidate.file_name || 'candidate-image'"
+                      @error="retryImageGet(assetRefPath(candidate), entry.sceneId)"
                     />
 
                     <div v-else class="placeholder-card">

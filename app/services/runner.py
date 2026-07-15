@@ -52,6 +52,7 @@ from app.services.topic_character_infer import infer_primary_character_manifest
 from app.services.story_subject_extractor import extract_story_subjects
 from app.services.llm_output_sanitizer import parse_story_payload
 from app.services.storage_ids import safe_child_dir, sanitize_storage_id
+from app.services.atomic_json_store import write_json_atomic
 
 
 @dataclass(frozen=True)
@@ -1026,8 +1027,7 @@ class WorkflowRunner:
                     field_name="workflow_id",
                 )
                 out_dir.mkdir(parents=True, exist_ok=True)
-                with open(out_dir / "outputs.json", "w", encoding="utf-8") as f:
-                    json.dump(aggregated_outputs, f, ensure_ascii=False, indent=2, default=str)
+                write_json_atomic(out_dir / "outputs.json", aggregated_outputs)
             except Exception as error:  # noqa: BLE001
                 print(f"[WorkflowRunner] partial-output save on cancel failed: {error}")
             raise WorkflowCancelledError(workflow_id, partial_outputs=aggregated_outputs)
@@ -1088,14 +1088,7 @@ class WorkflowRunner:
                 field_name="workflow_id",
             )
             out_dir.mkdir(parents=True, exist_ok=True)
-            with open(out_dir / "outputs.json", "w", encoding="utf-8") as f:
-                json.dump(
-                    aggregated_outputs,
-                    f,
-                    ensure_ascii=False,
-                    indent=2,
-                    default=str,
-                )
+            write_json_atomic(out_dir / "outputs.json", aggregated_outputs)
         except Exception as error:
             print(f"[WorkflowRunner] write outputs.json failed: {error}")
 
