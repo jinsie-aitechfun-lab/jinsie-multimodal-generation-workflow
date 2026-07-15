@@ -319,6 +319,84 @@ const subtitlesText = ref('')
 const renderPlanText = ref('')
 const finalVideoText = ref('')
 const finalVideoUrl = ref('')
+type VideoPreviewLoadState = 'idle' | 'loading' | 'ready' | 'retrying' | 'failed'
+const VIDEO_PREVIEW_RETRY_DELAYS_MS = [1000, 2500] as const
+const videoPreviewLoadState = ref<VideoPreviewLoadState>('idle')
+const videoPreviewRetryCount = ref(0)
+const videoPreviewRetryVersion = ref(0)
+let videoPreviewRetryTimer: number | null = null
+
+function clearVideoPreviewRetryTimer() {
+  if (videoPreviewRetryTimer == null) return
+  window.clearTimeout(videoPreviewRetryTimer)
+  videoPreviewRetryTimer = null
+}
+
+const videoPreviewUrl = computed(() => {
+  const url = finalVideoUrl.value
+  if (!url || videoPreviewRetryVersion.value === 0) return url
+  const hashIndex = url.indexOf('#')
+  const base = hashIndex >= 0 ? url.slice(0, hashIndex) : url
+  const hash = hashIndex >= 0 ? url.slice(hashIndex) : ''
+  const separator = base.includes('?') ? '&' : '?'
+  return `${base}${separator}preview_retry=${videoPreviewRetryVersion.value}${hash}`
+})
+const videoPreviewPlayerKey = computed(
+  () => `${finalVideoUrl.value || 'idle'}::${videoPreviewRetryVersion.value}`,
+)
+const videoPreviewStatusText = computed(() => {
+  if (videoPreviewLoadState.value === 'loading') return '视频已生成，正在加载预览…'
+  if (videoPreviewLoadState.value === 'retrying') return '视频预览加载失败，正在重试…'
+  if (videoPreviewLoadState.value === 'ready') return '视频预览已就绪'
+  if (videoPreviewLoadState.value === 'failed') return '视频预览加载失败'
+  return ''
+})
+
+watch(finalVideoUrl, (url) => {
+  clearVideoPreviewRetryTimer()
+  videoPreviewRetryCount.value = 0
+  videoPreviewRetryVersion.value = 0
+  videoPreviewLoadState.value = url ? 'loading' : 'idle'
+}, { immediate: true })
+
+function markVideoPreviewReady() {
+  if (!finalVideoUrl.value) return
+  clearVideoPreviewRetryTimer()
+  videoPreviewLoadState.value = 'ready'
+}
+
+function handleVideoPreviewError() {
+  const failedUrl = finalVideoUrl.value
+  if (
+    !failedUrl ||
+    videoPreviewLoadState.value === 'failed' ||
+    videoPreviewRetryTimer != null
+  ) return
+  if (videoPreviewRetryCount.value >= VIDEO_PREVIEW_RETRY_DELAYS_MS.length) {
+    videoPreviewLoadState.value = 'failed'
+    return
+  }
+
+  const delay = VIDEO_PREVIEW_RETRY_DELAYS_MS[videoPreviewRetryCount.value]
+  videoPreviewRetryCount.value += 1
+  videoPreviewLoadState.value = 'retrying'
+  videoPreviewRetryTimer = window.setTimeout(() => {
+    videoPreviewRetryTimer = null
+    if (finalVideoUrl.value !== failedUrl) return
+    videoPreviewRetryVersion.value += 1
+    videoPreviewLoadState.value = 'loading'
+  }, delay)
+}
+
+function reloadVideoPreviewManually() {
+  if (!finalVideoUrl.value) return
+  clearVideoPreviewRetryTimer()
+  videoPreviewRetryCount.value = 0
+  videoPreviewRetryVersion.value += 1
+  videoPreviewLoadState.value = 'loading'
+}
+
+onBeforeUnmount(clearVideoPreviewRetryTimer)
 const finalVideoAudioEnabled = ref(true)
 const recentFinalVideoUrls = ref<string[]>([])
 
@@ -4235,6 +4313,10 @@ async function executeRunWorkflow() {
 
       <StudioPreviewPanel
         :final-video-url="finalVideoUrl"
+        :video-preview-url="videoPreviewUrl"
+        :video-player-key="videoPreviewPlayerKey"
+        :video-load-state="videoPreviewLoadState"
+        :video-status-text="videoPreviewStatusText"
         :recent-video-urls="recentFinalVideoUrls"
         :recent-video-metadata="recentVideoMetadata"
         :render-in-flight="finalVideoRenderInFlight"
@@ -4256,6 +4338,9 @@ async function executeRunWorkflow() {
         @set-topic="setExampleTopic"
         @cancel="cancelActivePhase"
         @delete-video="requestDeleteRecentVideo"
+        @video-ready="markVideoPreviewReady"
+        @video-error="handleVideoPreviewError"
+        @reload-video="reloadVideoPreviewManually"
       />
     </section>
       <section v-if="activeTab === 'review'" class="review-layout">
@@ -4266,7 +4351,9 @@ async function executeRunWorkflow() {
               <span class="review-section-icon" aria-hidden="true">▶</span>
               <span class="review-section-title">最终视频</span>
               <span v-if="finalVideoRenderInFlight" class="badge badge-arc" style="font-size:0.6rem;">渲染中</span>
-              <span v-else-if="finalVideoUrl" class="badge badge-ok" style="font-size:0.6rem;">已完成</span>
+              <span v-else-if="finalVideoUrl && videoPreviewLoadState === 'ready'" class="badge badge-ok" style="font-size:0.6rem;">已完成</span>
+              <span v-else-if="finalVideoUrl && videoPreviewLoadState === 'failed'" class="badge badge-warn" style="font-size:0.6rem;">加载失败</span>
+              <span v-else-if="finalVideoUrl" class="badge badge-arc" style="font-size:0.6rem;">加载中</span>
               <span v-if="finalVideoAudioEnabled === false" class="badge badge-warn" style="font-size:0.6rem;">无声</span>
               <!-- Manual render CTA is rendered inside `FinalVideoPanel`'s
                    body so it sits next to the "等待用户触发渲染" copy and
@@ -4278,6 +4365,10 @@ async function executeRunWorkflow() {
             <div class="review-video-body">
               <FinalVideoPanel
                 :final-video-url="finalVideoUrl"
+                :video-preview-url="videoPreviewUrl"
+                :video-player-key="videoPreviewPlayerKey"
+                :video-load-state="videoPreviewLoadState"
+                :video-status-text="videoPreviewStatusText"
                 :final-video-text="finalVideoText"
                 :workflow-response="currentWorkflowResponse"
                 :render-in-flight="finalVideoRenderInFlight"
@@ -4293,6 +4384,9 @@ async function executeRunWorkflow() {
                 :render-mode="workflowForm.renderMode"
                 :scene-refreshing-id="sceneRefreshingId"
                 @render="renderFinalVideoIfReady(currentWorkflowResponse || {})"
+                @video-ready="markVideoPreviewReady"
+                @video-error="handleVideoPreviewError"
+                @reload-video="reloadVideoPreviewManually"
                 @discard="discardCurrentDraft"
                 :show-render-button="workflowForm.renderMode === 'auto'"
               />
