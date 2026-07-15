@@ -135,7 +135,10 @@ def main() -> int:
 
     captured = {}
 
-    def fake_run_single_scene_image_asset(*, ctx, outputs, scene, scene_index):
+    def fake_run_single_scene_image_asset(
+        *, ctx, outputs, scene, scene_index, preserve_seed=False
+    ):
+        del preserve_seed
         captured["ctx"] = ctx
         captured["outputs"] = outputs
         captured["scene"] = scene
@@ -167,7 +170,10 @@ def main() -> int:
     assert result["image_assets"]["assets"][0]["selected_asset_ref"] == ASSET_REF
     assert isinstance(result["video_prompts"].get("prompts"), list)
 
-    def fake_pending_single_scene_image_asset(*, ctx, outputs, scene, scene_index):
+    def fake_pending_single_scene_image_asset(
+        *, ctx, outputs, scene, scene_index, preserve_seed=False
+    ):
+        del preserve_seed
         return make_pending_single_scene_assets()
 
     runner._run_single_scene_image_asset = fake_pending_single_scene_image_asset

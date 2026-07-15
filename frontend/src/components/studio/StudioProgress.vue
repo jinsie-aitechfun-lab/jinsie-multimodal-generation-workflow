@@ -2,9 +2,13 @@
   <div v-if="visible" class="studio-progress" :class="{ 'studio-progress--complete': percent >= 100 }">
     <div class="studio-progress__bar">
       <div class="progress-track" style="flex:1;">
-        <div class="progress-fill" :style="{ width: `${Math.min(100, percent)}%` }" />
+        <div
+          class="progress-fill"
+          :class="{ 'progress-fill--indeterminate': indeterminate }"
+          :style="indeterminate ? undefined : { width: `${Math.min(100, percent)}%` }"
+        />
       </div>
-      <span class="studio-progress__pct">{{ Math.round(percent) }}%</span>
+      <span class="studio-progress__pct">{{ indeterminate ? '—' : `${Math.round(percent)}%` }}</span>
       <!-- Global cancel entry — visible on every tab whenever a workflow
            run is in flight. Reuses cancelWorkflow via @cancel emit; pure
            UI, no new state. -->
@@ -36,6 +40,7 @@ defineProps<{
   visible?: boolean
   cancellable?: boolean
   cancelRequested?: boolean
+  indeterminate?: boolean
 }>()
 
 defineEmits<{
@@ -104,6 +109,14 @@ defineEmits<{
 .studio-progress--complete .progress-fill {
   background: linear-gradient(90deg, #34d399 0%, var(--arc-400) 100%);
   box-shadow: 0 0 8px rgba(52,211,153,0.60);
+}
+.progress-fill--indeterminate {
+  width: 34%;
+  animation: studio-progress-indeterminate 1.4s ease-in-out infinite;
+}
+@keyframes studio-progress-indeterminate {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(300%); }
 }
 
 @media (max-width: 768px) {

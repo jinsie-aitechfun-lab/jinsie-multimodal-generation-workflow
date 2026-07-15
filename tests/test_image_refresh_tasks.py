@@ -1,0 +1,223 @@
+from __future__ import annotations
+
+import json
+import os
+import tempfile
+import threading
+import time
+import unittest
+from pathlib import Path
+
+from app.services.image_refresh_tasks import (
+    ImageRefreshCoordinator,
+    ImageRefreshTaskManager,
+)
+
+
+class _FakeReview:
+    def build_image_review_item_from_asset(self, asset, provider):
+        return {
+            "scene_id": asset["scene_id"],
+            "scene_title": asset["scene_title"],
+            "review_status": "auto_selected",
+            "selection_mode": "default_first_pass",
+            "selection_source": "default_auto_selection",
+            "selection_reason": "test",
+            "selected_asset_ref": asset["selected_asset_ref"],
+            "candidate_asset_refs": asset["candidate_asset_refs"],
+            "characters": asset.get("characters", []),
+            "character_ids": asset.get("character_ids", []),
+            "prompt": asset.get("prompt", ""),
+        }
+
+    def upsert_image_review_item(self, image_review, scene_review_item, provider):
+        items = [
+            dict(item)
+            for item in image_review.get("selected_assets", [])
+            if item.get("scene_id") != scene_review_item["scene_id"]
+        ]
+        items.append(dict(scene_review_item))
+        return {
+            **image_review,
+            "enabled": True,
+            "mode": "selection_contract",
+            "provider": provider,
+            "selected_assets": items,
+            "selected_count": len(items),
+            "asset_count": len(items),
+        }
+
+
+class _FakeRunner:
+    def __init__(self, assets_dir: Path):
+        self.assets_dir = assets_dir
+        self._image_review = _FakeReview()
+        self.provider_calls = 0
+        self.provider_lock = threading.Lock()
+
+    def _image_provider_name(self):
+        return "mock"
+
+    def build_image_assets_from_selected_assets(
+        self,
+        *,
+        run_id,
+        image_review,
+        provider,
+        storyboard_scenes,
+        known_failed_scene_ids=None,
+    ):
+        selected = image_review.get("selected_assets", [])
+        selected_ids = {item["scene_id"] for item in selected}
+        failed = [
+            scene_id
+            for scene_id in (known_failed_scene_ids or [])
+            if scene_id not in selected_ids
+        ]
+        assets = []
+        for item in selected:
+            selected_ref = item["selected_asset_ref"]
+            assets.append(
+                {
+                    "scene_id": item["scene_id"],
+                    "scene_title": item.get("scene_title", ""),
+                    "status": "generated",
+                    "selected_asset_ref": selected_ref,
+                    "candidate_asset_refs": item["candidate_asset_refs"],
+                    **selected_ref,
+                }
+            )
+        for scene_id in failed:
+            assets.append({"scene_id": scene_id, "status": "failed"})
+        return {
+            "run_id": run_id,
+            "provider": provider,
+            "status": "completed" if not failed else "partial_failure",
+            "assets": assets,
+            "asset_count": len(assets),
+            "generated_count": len(selected),
+            "failed_count": len(failed),
+            "failed_scene_ids": failed,
+        }
+
+    def refresh_image_review_scene(self, **kwargs):
+        with self.provider_lock:
+            self.provider_calls += 1
+        time.sleep(0.03)
+        run_id = kwargs["run_id"]
+        scene_id = kwargs["scene_id"]
+        run_dir = self.assets_dir / "mock" / "image" / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        for suffix in ("candidate_a", "candidate_b"):
+            (run_dir / f"{scene_id}__{suffix}.png").write_bytes(b"png")
+        return {"scene_id": scene_id}
+
+
+class ImageRefreshReliabilityTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.assets_dir = Path(self.temp.name) / "assets"
+        self.workflow_id = "workflow_test"
+        self.run_id = "run_test"
+        self.workflow_dir = self.assets_dir / "mock" / self.workflow_id
+        self.workflow_dir.mkdir(parents=True)
+        self.scenes = [
+            {"scene_id": f"scene_{index:02d}", "scene_title": f"Scene {index}"}
+            for index in range(1, 7)
+        ]
+        self.outputs_path = self.workflow_dir / "outputs.json"
+        self.outputs_path.write_text(
+            json.dumps(
+                {
+                    "workflow_id": self.workflow_id,
+                    "run_id": self.run_id,
+                    "outputs": {
+                        "storyboard": {"scenes": self.scenes},
+                        "image_review": {"selected_assets": []},
+                        "image_assets": {"assets": []},
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        self.runner = _FakeRunner(self.assets_dir)
+        self.coordinator = ImageRefreshCoordinator(self.assets_dir, self.runner)
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def _write_candidates(self, scene_id: str):
+        run_dir = self.assets_dir / "mock" / "image" / self.run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        for suffix in ("candidate_a", "candidate_b"):
+            (run_dir / f"{scene_id}__{suffix}.png").write_bytes(b"png")
+
+    def test_six_out_of_order_reconciles_do_not_lose_scenes(self):
+        for scene in self.scenes:
+            self._write_candidates(scene["scene_id"])
+
+        threads = [
+            threading.Thread(
+                target=self.coordinator.reconcile,
+                args=(self.workflow_id, self.run_id, scene["scene_id"]),
+            )
+            for scene in reversed(self.scenes)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        document = json.loads(self.outputs_path.read_text(encoding="utf-8"))
+        review = document["outputs"]["image_review"]
+        scene_ids = [item["scene_id"] for item in review["selected_assets"]]
+        self.assertEqual(6, len(scene_ids))
+        self.assertEqual(6, len(set(scene_ids)))
+        self.assertEqual(0, self.runner.provider_calls)
+
+    def test_existing_files_restore_metadata_without_provider(self):
+        self._write_candidates("scene_05")
+        result = self.coordinator.reconcile(
+            self.workflow_id, self.run_id, "scene_05"
+        )
+        self.assertIsNotNone(result)
+        self.assertEqual(0, self.runner.provider_calls)
+        self.assertEqual(1, result["image_review"]["selected_count"])
+
+    def test_duplicate_submit_reuses_task_and_calls_provider_once(self):
+        old = os.environ.get("IMAGE_TASK_CONCURRENCY")
+        os.environ["IMAGE_TASK_CONCURRENCY"] = "1"
+        try:
+            manager = ImageRefreshTaskManager(self.assets_dir, self.coordinator)
+            manager.start()
+            payload = {
+                "workflow_id": self.workflow_id,
+                "run_id": self.run_id,
+                "scene_id": "scene_01",
+                "storyboard": {"scenes": self.scenes},
+                "workflow_input": {},
+                "image_review": {},
+            }
+            first, _ = manager.submit(payload)
+            second, _ = manager.submit(payload)
+            self.assertEqual(first["task_id"], second["task_id"])
+
+            deadline = time.time() + 2
+            task = manager.get(first["task_id"])
+            while task and task["status"] not in {"succeeded", "failed"}:
+                self.assertLess(time.time(), deadline)
+                time.sleep(0.01)
+                task = manager.get(first["task_id"])
+            self.assertEqual("succeeded", task["status"])
+            third, _ = manager.submit(payload)
+            self.assertEqual(first["task_id"], third["task_id"])
+            self.assertEqual(1, self.runner.provider_calls)
+        finally:
+            if old is None:
+                os.environ.pop("IMAGE_TASK_CONCURRENCY", None)
+            else:
+                os.environ["IMAGE_TASK_CONCURRENCY"] = old
+
+
+if __name__ == "__main__":
+    unittest.main()

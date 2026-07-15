@@ -11,6 +11,13 @@ import WorkflowRunPanel from '../components/WorkflowRunPanel.vue'
 import InspirationLibraryPanel from '../components/InspirationLibraryPanel.vue'
 import type { InspirationItem } from '../data/inspirationLibrary'
 import FinalVideoPanel from '../components/FinalVideoPanel.vue'
+import {
+  summarizeImageGeneration,
+  summarizeWorkflowProgress,
+  type ImageGenerationSummary,
+  type SceneGenerationState,
+  type WorkflowProgressSummary,
+} from '../lib/workflowState'
 
 type StepName = string
 
@@ -56,6 +63,7 @@ type ImageAssetRef = {
   public_url?: string
   mime_type?: string
   provider?: string
+  version?: string | number
 }
 
 type ImageReviewSelectedAsset = {
@@ -85,13 +93,6 @@ type ImageReviewSelectResponse = {
   audio_segments?: Record<string, unknown>
   subtitles?: Record<string, unknown>
   storyboard?: Record<string, unknown>
-}
-
-type ApiErrorDetail = {
-  code?: string
-  scene_id?: string
-  provider?: string
-  message?: string
 }
 
 type ReviewWaitingState =
@@ -173,17 +174,14 @@ type SamplesSummaryResponse = {
   >
 }
 
-type ImageReviewRefreshSceneResponse = {
-  workflow_id?: string
-  session_id?: string
-  run_id?: string
-  scene_id?: string
-  scene_image_asset?: Record<string, unknown>
-  scene_review_item?: Record<string, unknown>
-  image_assets?: Record<string, unknown>
-  image_review?: Record<string, unknown>
-  video_prompts?: Record<string, unknown>
-  timestamp?: string
+type ImageRefreshTaskResponse = {
+  task_id: string
+  workflow_id: string
+  run_id: string
+  scene_id: string
+  status: 'queued' | 'running' | 'succeeded' | 'failed'
+  result?: Record<string, unknown>
+  error?: string
 }
 
 type FinalVideoRenderResponse = {
@@ -197,7 +195,7 @@ type FinalVideoRenderResponse = {
 type ReviewPlaceholderItem = {
   scene_id: string
   scene_title: string
-  state: 'waiting' | 'refreshing' | 'done' | 'failed'
+  state: 'waiting' | 'queued' | 'refreshing' | 'confirming' | 'done' | 'failed'
   error_message?: string
 }
 
@@ -637,7 +635,9 @@ const reviewPlaceholders = ref<ReviewPlaceholderItem[]>([])
 // image file (backend overwrites the same file path on regen) and the
 // user sees the OLD image. The map is passed into InteractiveImageReview
 // and appended as `?v=${version}` to that scene's image URLs.
-const sceneImageVersions = ref<Record<string, number>>({})
+const sceneImageVersions = ref<Record<string, string | number>>({})
+const sceneTaskIds = ref<Record<string, string>>({})
+const imageStateHydrating = ref(false)
 const imageReviewRefreshCancelled = ref(false)
 // Reactive mirror of STORAGE_KEY_REFRESH_CANCELLED — true iff THIS workflow's
 // image refresh was paused by user cancel. Used to distinguish "已暂停" (user
@@ -663,17 +663,32 @@ const studioTabs = computed(() => {
   return tabs
 })
 
+const imageGenerationSummary = computed<ImageGenerationSummary>(() =>
+  summarizeImageGeneration(
+    reviewPlaceholders.value.map((item) => ({
+      scene_id: item.scene_id,
+      state: (
+        item.state === 'done'
+          ? 'ready'
+          : item.state === 'refreshing'
+            ? 'generating'
+            : item.state === 'waiting'
+              ? 'pending'
+              : item.state
+      ) as SceneGenerationState,
+    })),
+  ),
+)
+
 const isWorkflowReadyForRender = computed(() => {
   const response = currentWorkflowResponse.value
   if (!response) return false
 
   const outputs = response.outputs || {}
   const storyboard = outputs.storyboard as any
-  const imageAssets = outputs.image_assets as any
   const audioSegments = outputs.audio_segments as any
 
   const scenes = Array.isArray(storyboard?.scenes) ? storyboard.scenes : []
-  const imageAssetList = Array.isArray(imageAssets?.assets) ? imageAssets.assets : []
   const audioItems = Array.isArray(audioSegments?.items) ? audioSegments.items : []
   const audioEnabled = audioSegments?.enabled === true
   const audioOk = !audioEnabled || audioItems.length > 0
@@ -682,92 +697,18 @@ const isWorkflowReadyForRender = computed(() => {
   // length alone can hit scene_count on a partially-failed run. Exclude
   // those — otherwise the auto-render watcher sees ready=true and the
   // manual hint banner ("候选图尚未就绪") incorrectly disappears.
-  const failedCountRaw = imageAssets?.failed_count
-  const failedCount = typeof failedCountRaw === 'number' ? failedCountRaw : 0
-  const failedIdsLen = Array.isArray(imageAssets?.failed_scene_ids)
-    ? imageAssets.failed_scene_ids.length
-    : 0
-  const failedFromStatus = imageAssetList.filter(
-    (a: any) => typeof a?.status === 'string' && a.status.toLowerCase() === 'failed',
-  ).length
-  const totalFailed = Math.max(failedCount, failedIdsLen, failedFromStatus)
-  const successfulAssetCount = imageAssetList.length - totalFailed
-
   return (
     scenes.length > 0 &&
-    successfulAssetCount >= scenes.length &&
+    imageGenerationSummary.value.readyCount >= scenes.length &&
+    imageGenerationSummary.value.failedCount === 0 &&
     audioOk
   )
-})
-
-// Image-pipeline percent shared by both the top progress bar and
-// FinalVideoPanel.progressPct so the two never disagree. Formula:
-// generated_count / scene_count × 85 (matches FinalVideoPanel's
-// `if (hasFailedAssets)` branch and its normal branch — both cap at
-// 85% reserving the last 15% for the render step). Used for the
-// single-scene-retry case and the settled-failure case in the top
-// bar; previously both were hardcoded (75 / 70) which drifted from
-// the FinalVideoPanel value as soon as generated/total ratio changed.
-const imagePipelinePercent = computed(() => {
-  const outputs = currentWorkflowResponse.value?.outputs || {}
-  const storyboard = outputs.storyboard as Record<string, unknown> | undefined
-  const imageAssets = outputs.image_assets as Record<string, unknown> | undefined
-  const scenes = Array.isArray(storyboard?.scenes) ? storyboard.scenes : []
-  const total = scenes.length
-  if (!total) return 0
-  const assets = Array.isArray(imageAssets?.assets) ? imageAssets.assets : []
-  const failedCountRaw = imageAssets?.failed_count
-  const failedCount = typeof failedCountRaw === 'number' ? failedCountRaw : 0
-  const generatedRaw = imageAssets?.generated_count
-  const generated =
-    typeof generatedRaw === 'number'
-      ? generatedRaw
-      : Math.max(0, assets.length - failedCount)
-  return Math.floor(Math.min(1, Math.max(0, generated / total)) * 85)
-})
-
-// Label for the settled-failure top progress bar — "候选图生成失败 5/6".
-// Reads image_assets.generated_count / failed_count when present (B1
-// writes both), falls back to scanning the assets array. Distinct from
-// reviewRefreshProgress.text (which is only meaningful during an
-// in-flight refresh loop).
-const settledFailureLabel = computed(() => {
-  const imageAssets = currentWorkflowResponse.value?.outputs?.image_assets as
-    | Record<string, unknown>
-    | undefined
-  const storyboard = currentWorkflowResponse.value?.outputs?.storyboard as
-    | Record<string, unknown>
-    | undefined
-  const scenes = Array.isArray(storyboard?.scenes) ? storyboard.scenes : []
-  const total = scenes.length
-  const assets = Array.isArray(imageAssets?.assets) ? imageAssets.assets : []
-  const generatedRaw = imageAssets?.generated_count
-  const generated =
-    typeof generatedRaw === 'number'
-      ? generatedRaw
-      : assets.filter(
-          (a: any) => typeof a?.status === 'string' && a.status.toLowerCase() !== 'failed',
-        ).length
-  return `候选图生成失败（${generated}/${total || '?'}）— 在「画面审核」重试`
 })
 
 // Exposed for the manual-mode hint below (and any other consumer that
 // needs to distinguish "still generating" from "stopped with failures").
 const hasImageFailures = computed(() => {
-  const imageAssets = currentWorkflowResponse.value?.outputs?.image_assets as
-    | Record<string, unknown>
-    | undefined
-  if (!imageAssets) return false
-  const failedCount =
-    typeof imageAssets.failed_count === 'number' ? imageAssets.failed_count : 0
-  if (failedCount > 0) return true
-  const ids = imageAssets.failed_scene_ids
-  if (Array.isArray(ids) && ids.length > 0) return true
-  const assets = imageAssets.assets
-  if (!Array.isArray(assets)) return false
-  return assets.some(
-    (a: any) => typeof a?.status === 'string' && a.status.toLowerCase() === 'failed',
-  )
+  return imageGenerationSummary.value.failedCount > 0
 })
 
 watch(
@@ -823,7 +764,32 @@ const STORAGE_KEY_PAYLOAD = 'jinsie_workflow_payload'
 // the user just stopped. Cleared by: starting a new workflow, manually
 // clicking "立即生成候选图", or finishing a successful refresh+render.
 const STORAGE_KEY_REFRESH_CANCELLED = 'jinsie_workflow_refresh_cancelled'
+const STORAGE_KEY_IMAGE_TASKS = 'jinsie_image_refresh_tasks'
 const STORAGE_KEY_FORM = 'jinsie_workflow_form'
+
+function imageTaskStorageKey(workflowId: string, runId: string) {
+  return `${workflowId}:${runId}`
+}
+
+function loadSceneTaskIds(workflowId: string, runId: string) {
+  try {
+    const all = JSON.parse(localStorage.getItem(STORAGE_KEY_IMAGE_TASKS) || '{}')
+    const stored = all?.[imageTaskStorageKey(workflowId, runId)]
+    sceneTaskIds.value = stored && typeof stored === 'object' ? { ...stored } : {}
+  } catch {
+    sceneTaskIds.value = {}
+  }
+}
+
+function persistSceneTaskIds(workflowId: string, runId: string) {
+  try {
+    const all = JSON.parse(localStorage.getItem(STORAGE_KEY_IMAGE_TASKS) || '{}')
+    all[imageTaskStorageKey(workflowId, runId)] = sceneTaskIds.value
+    localStorage.setItem(STORAGE_KEY_IMAGE_TASKS, JSON.stringify(all))
+  } catch {
+    /* best-effort route recovery */
+  }
+}
 
 function migrateLegacyWorkflowForm(form: Record<string, any>) {
   const topic = String(form.topic || '')
@@ -951,6 +917,9 @@ function onGlobalKeydown(event: KeyboardEvent) {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onGlobalKeydown)
+  clearImageReviewAutoRefreshTimer()
+  imageReviewRefreshAbortController?.abort()
+  imageReviewRefreshAbortController = null
   if (devModeToastTimer) {
     clearTimeout(devModeToastTimer)
     devModeToastTimer = null
@@ -1240,6 +1209,7 @@ onMounted(() => {
   } catch { /* ignore */ }
 
   if (savedWorkflowId) {
+    imageStateHydrating.value = true
     const base = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() || 'http://127.0.0.1:8004'
 
     const reconnectInFlight = (statusData: any) => {
@@ -1276,6 +1246,7 @@ onMounted(() => {
               return
             }
             applyWorkflowResponse(asyncData)
+            imageStateHydrating.value = false
             // Match runWorkflow()'s post-completion path so the deferred
             // candidate-image refresh kicks in automatically (sets
             // refreshingImageReview=true → CTA + progress bar reflect it).
@@ -1347,10 +1318,14 @@ onMounted(() => {
             return
           }
           applyWorkflowResponse(data)
+          imageStateHydrating.value = false
           resumePendingSceneGenerationAfterRestore()
         }
       })
       .catch(() => {/* silently ignore — server may not be up yet */})
+      .finally(() => {
+        imageStateHydrating.value = false
+      })
   }
 })
 
@@ -1698,6 +1673,16 @@ const workflowStatusProgress = computed(() => {
   return Math.max(0, Math.min(100, Math.round(progress)))
 })
 
+const workflowProgressSummary = computed<WorkflowProgressSummary>(() =>
+  summarizeWorkflowProgress({
+    completed: Boolean(finalVideoUrl.value),
+    rendering: finalVideoRenderInFlight.value,
+    awaitingRender: awaitingManualRender.value,
+    workflowPercent: workflowStatusProgress.value,
+    images: imageGenerationSummary.value,
+  }),
+)
+
 const reviewEmptyStateText = computed(() => {
   if (workflowIsProcessing.value) {
     return `${workflowRunStatusMessage.value} 故事和分镜生成完成后会自动在 Review 页展示选图和结果。`
@@ -1718,7 +1703,10 @@ const reviewWaitingState = computed<ReviewWaitingState>(() => {
     return 'ready'
   }
 
-  if (refreshingImageReview.value) {
+  if (
+    imageGenerationSummary.value.generatingCount > 0 ||
+    imageGenerationSummary.value.queuedCount > 0
+  ) {
     return 'refreshing'
   }
 
@@ -1744,43 +1732,24 @@ const reviewRefreshProgress = computed(() => {
     }
   }
 
-  const queue = sceneRefreshQueue.value
-  if (queue.length === 0) {
-    return {
-      text: '候选图生成中',
-      percent: 0,
-    }
-  }
-
-  // Counter alignment fix: top bar must show the SAME numerator AND
-  // denominator as the body counter (`FinalVideoPanel:187`) so the user
-  // never sees two different "X/Y" values for the same in-flight run.
-  // Previously the top used `(currentIndex+1)/sceneRefreshQueue.length`
-  // — current position over refresh-queue length, which differs from
-  // the body's "completed/total". Now both use "completed/total". The
-  // current scene's natural title is still appended after the count
-  // for context.
-  const placeholders = reviewPlaceholders.value
-  const totalScenes = placeholders.length || queue.length
-
-  const currentIndexInQueue = Math.max(queue.indexOf(sceneRefreshingId.value), 0)
-  const currentSceneId = sceneRefreshingId.value || queue[currentIndexInQueue] || ''
-  const currentPlaceholder = placeholders.find(
-    (item) => item.scene_id === currentSceneId,
+  const summary = imageGenerationSummary.value
+  const currentPlaceholder = reviewPlaceholders.value.find(
+    (item) => item.scene_id === summary.currentScene,
   )
-  const currentSceneTitle = currentPlaceholder?.scene_title || currentSceneId
-
-  const completedCount = placeholders.filter(
-    (item) => ['done', 'failed'].includes(item.state),
-  ).length
+  const currentSceneTitle = currentPlaceholder?.scene_title || summary.currentScene
+  const confirmingOnly =
+    summary.confirmingCount > 0 && summary.queuedCount + summary.generatingCount === 0
 
   return {
-    text: `候选图生成中：${completedCount}/${totalScenes}${
+    text: `${confirmingOnly ? '候选图结果确认中' : '候选图生成中'}：${summary.readyCount}/${summary.totalCount}${
       currentSceneTitle ? ` · ${currentSceneTitle}` : ''
     }`,
     percent: Math.max(
       5,
-      Math.min(100, Math.round((completedCount / totalScenes) * 100)),
+      Math.min(
+        100,
+        Math.round((summary.readyCount / Math.max(1, summary.totalCount)) * 100),
+      ),
     ),
   }
 })
@@ -2159,6 +2128,31 @@ function applyWorkflowResponse(data: WorkflowRunResponse) {
   characterManifestText.value = extractCharacterManifestText(data)
   resultText.value = stringifyPretty(data)
   currentWorkflowResponse.value = data
+  if (data.workflow_id && data.run_id) {
+    loadSceneTaskIds(data.workflow_id, data.run_id)
+  }
+  const selectedAssets = (data.outputs?.image_review as Record<string, unknown> | undefined)
+    ?.selected_assets
+  if (Array.isArray(selectedAssets)) {
+    const stableVersions: Record<string, string | number> = {}
+    for (const raw of selectedAssets) {
+      if (!raw || typeof raw !== 'object') continue
+      const item = raw as Record<string, unknown>
+      const sceneId = String(item.scene_id || '')
+      const candidates = Array.isArray(item.candidate_asset_refs)
+        ? item.candidate_asset_refs
+        : []
+      const version = candidates
+        .map((candidate) =>
+          candidate && typeof candidate === 'object'
+            ? (candidate as Record<string, unknown>).version
+            : undefined,
+        )
+        .find((value) => typeof value === 'string' || typeof value === 'number')
+      if (sceneId && version != null) stableVersions[sceneId] = version
+    }
+    sceneImageVersions.value = stableVersions
+  }
   syncReviewPlaceholders(data)
 
   // A transient workflow/status fetch can fail after the backend has already
@@ -2196,8 +2190,11 @@ function buildReviewPlaceholdersFromStoryboard(data: WorkflowRunResponse): Revie
   const hasSelectedAssets =
     Array.isArray(imageReview?.selected_assets) &&
     (imageReview?.selected_assets as unknown[]).length > 0
+  const hasExplicitFailures =
+    (typeof imageAssets?.failed_count === 'number' && imageAssets.failed_count > 0) ||
+    (Array.isArray(imageAssets?.failed_scene_ids) && imageAssets.failed_scene_ids.length > 0)
 
-  if (!imagesDeferredToRefresh && !hasSelectedAssets) {
+  if (!imagesDeferredToRefresh && !hasSelectedAssets && !hasExplicitFailures) {
     return []
   }
 
@@ -2223,7 +2220,11 @@ function buildReviewPlaceholdersFromStoryboard(data: WorkflowRunResponse): Revie
   const imageAssetList = Array.isArray((imageAssets as Record<string, unknown>)?.assets)
     ? ((imageAssets as Record<string, unknown>).assets as unknown[])
     : []
-  const failedSceneIds = new Set(
+  const failedSceneIds = new Set<string>([
+    ...(Array.isArray(imageAssets?.failed_scene_ids)
+      ? imageAssets.failed_scene_ids.map((id) => String(id || '')).filter(Boolean)
+      : []),
+    ...(
     imageAssetList
       .map((item: unknown) => {
         if (!item || typeof item !== 'object') return ''
@@ -2232,8 +2233,9 @@ function buildReviewPlaceholdersFromStoryboard(data: WorkflowRunResponse): Revie
           ? String(rec.scene_id || '')
           : ''
       })
-      .filter(Boolean),
-  )
+      .filter(Boolean)
+    ),
+  ])
 
   // Legacy outputs (written before B1) silently dropped failed scenes
   // — image_assets.assets just had fewer entries than storyboard
@@ -2273,6 +2275,8 @@ function buildReviewPlaceholdersFromStoryboard(data: WorkflowRunResponse): Revie
     } else if (workflowIsTerminal) {
       // Legacy / unmarked: workflow ended without this scene's asset
       state = 'failed'
+    } else if (sceneTaskIds.value[sceneId]) {
+      state = 'confirming'
     } else {
       state = 'waiting'
     }
@@ -2293,7 +2297,7 @@ function syncReviewPlaceholders(data: WorkflowRunResponse) {
 
 function markPlaceholderState(
   sceneId: string,
-  state: 'waiting' | 'refreshing' | 'done' | 'failed',
+  state: ReviewPlaceholderItem['state'],
   errorMessage = '',
 ) {
   reviewPlaceholders.value = reviewPlaceholders.value.map((item) =>
@@ -2307,24 +2311,6 @@ function markPlaceholderState(
   )
 }
 
-function formatImageReviewUserError(sceneId: string, status: number, errorBody: unknown): string {
-  const body = errorBody as Record<string, unknown> | null
-  const detailValue = body && typeof body === 'object' ? body.detail : undefined
-  const detail =
-    detailValue && typeof detailValue === 'object' ? (detailValue as ApiErrorDetail) : null
-  const detailSceneId = detail?.scene_id || sceneId
-  const code = String(detail?.code || '').toUpperCase()
-
-  if (status >= 500 || code === 'IMAGE_GENERATION_FAILED') {
-    return `${detailSceneId} 候选图生成失败：图片服务暂时不可用，请稍后重试。`
-  }
-
-  if (status === 408 || status === 429) {
-    return `${detailSceneId} 候选图生成失败：图片服务响应较慢，请稍后重试。`
-  }
-
-  return `${detailSceneId} 候选图生成失败：请稍后重试。`
-}
 async function fetchSamplesSummary() {
   const response = await fetch(`${apiBaseUrl}/v1/samples/summary`)
   if (!response.ok) {
@@ -2633,6 +2619,49 @@ async function renderFinalVideoIfReady(baseResponse: WorkflowRunResponse) {
   }
 }
 
+function waitForTaskPoll(ms: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'))
+      return
+    }
+    const onAbort = () => {
+      window.clearTimeout(timer)
+      reject(new DOMException('Aborted', 'AbortError'))
+    }
+    const timer = window.setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
+async function fetchAuthoritativeWorkflow(workflowId: string, signal?: AbortSignal) {
+  const response = await fetch(
+    `${apiBaseUrl}/v1/workflow/results/${encodeURIComponent(workflowId)}`,
+    { signal },
+  )
+  if (!response.ok) throw new Error(`Workflow outputs HTTP ${response.status}`)
+  return (await response.json()) as WorkflowRunResponse
+}
+
+async function lookupSceneTask(
+  workflowId: string,
+  runId: string,
+  sceneId: string,
+  signal?: AbortSignal,
+) {
+  const query = new URLSearchParams({ workflow_id: workflowId, run_id: runId, scene_id: sceneId })
+  const response = await fetch(
+    `${apiBaseUrl}/v1/image-review/refresh-scene-task?${query.toString()}`,
+    { signal },
+  )
+  if (response.status === 404) return null
+  if (!response.ok) throw new Error(`Image task lookup HTTP ${response.status}`)
+  return (await response.json()) as ImageRefreshTaskResponse
+}
+
 async function refreshImageReviewScene(
   sceneId: string,
   signal?: AbortSignal,
@@ -2644,6 +2673,8 @@ async function refreshImageReviewScene(
   // to the backend so image_assets only writes failed placeholders
   // for these — not for scenes still queued for processing.
   knownFailedSceneIds?: string[],
+  retryFailed: boolean = false,
+  allowCreate: boolean = true,
 ) {
   if (!currentWorkflowResponse.value || !currentWorkflowPayload.value) {
     return
@@ -2659,7 +2690,7 @@ async function refreshImageReviewScene(
   }
 
   sceneRefreshingId.value = sceneId
-  markPlaceholderState(sceneId, 'refreshing')
+  markPlaceholderState(sceneId, sceneTaskIds.value[sceneId] ? 'confirming' : 'queued')
 
   const payload = {
     workflow_id: currentWorkflowResponse.value.workflow_id || currentWorkflowPayload.value.workflow_id,
@@ -2688,120 +2719,116 @@ async function refreshImageReviewScene(
     known_failed_scene_ids: knownFailedSceneIds ?? [],
   }
 
-  let response: Response
-  try {
-    response = await fetch(`${apiBaseUrl}/v1/image-review/refresh-scene`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-      signal,
-    })
-  } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') {
-      throw error
-    }
-    console.warn('[image-review] refresh-scene network error', sceneId, error)
-    throw new Error(`${sceneId} 候选图生成失败：网络连接不稳定，请稍后重试。`)
-  }
+  const workflowId = String(payload.workflow_id)
+  const runId = String(payload.run_id)
+  let task: ImageRefreshTaskResponse | null = null
+  let pollDelay = 2000
 
-  if (!response.ok) {
-    let message = ''
-    let errorBody: any = null
+  while (!task) {
     try {
-      errorBody = await response.json()
-      console.warn('[image-review] refresh-scene failed', sceneId, response.status, errorBody)
-      message = formatImageReviewUserError(sceneId, response.status, errorBody)
-    } catch {
-      const detail = await response.text().catch(() => '')
-      console.warn('[image-review] refresh-scene failed', sceneId, response.status, detail)
-      message =
-        response.status >= 500
-          ? `${sceneId} 候选图生成失败：图片服务暂时不可用，请稍后重试。`
-          : `${sceneId} 候选图生成失败：请稍后重试。`
-    }
-
-    // On 502 the backend has already persisted the failure into
-    // outputs.json (main.py fallback) and embeds the rebuilt
-    // image_assets / image_review in the error detail. Merge them into
-    // the in-memory workflow response so the failure-aware UI (top bar
-    // failure label, hidden 生成视频 button, FinalVideoPanel failure
-    // branch) all reflect the new state immediately — without needing
-    // a page reload to re-fetch outputs.json.
-    if (errorBody && currentWorkflowResponse.value) {
-      const detail: Record<string, unknown> | undefined =
-        errorBody.detail && typeof errorBody.detail === 'object'
-          ? (errorBody.detail as Record<string, unknown>)
-          : (errorBody as Record<string, unknown>)
-      const detailImageAssets = detail?.image_assets
-      const detailImageReview = detail?.image_review
-      if (detailImageAssets || detailImageReview) {
-        const priorOutputs = (currentWorkflowResponse.value.outputs || {}) as Record<
-          string,
-          unknown
-        >
-        // Drop stale final_video here too — same reason as the success
-        // path below: a previously-rendered video no longer matches the
-        // image set after a failed retry of one of its scenes.
-        const { final_video: _staleVideo, ...priorOutputsSansVideo } = priorOutputs
-        void _staleVideo
-        const mergedOutputs: Record<string, unknown> = { ...priorOutputsSansVideo }
-        if (detailImageAssets) mergedOutputs.image_assets = detailImageAssets
-        if (detailImageReview) mergedOutputs.image_review = detailImageReview
-        applyWorkflowResponse({
-          ...currentWorkflowResponse.value,
-          outputs: mergedOutputs,
-        })
+      const knownTaskId = sceneTaskIds.value[sceneId]
+      if (knownTaskId) {
+        const response = await fetch(
+          `${apiBaseUrl}/v1/image-review/refresh-scene-task/${encodeURIComponent(knownTaskId)}`,
+          { signal },
+        )
+        if (response.ok) task = (await response.json()) as ImageRefreshTaskResponse
+        else if (response.status === 404) task = await lookupSceneTask(workflowId, runId, sceneId, signal)
+        else throw new Error(`Image task HTTP ${response.status}`)
+      } else {
+        task = await lookupSceneTask(workflowId, runId, sceneId, signal)
+        if (!task) {
+          if (!allowCreate) {
+            markPlaceholderState(sceneId, 'waiting')
+            return
+          }
+          const response = await fetch(`${apiBaseUrl}/v1/image-review/refresh-scene-task`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...payload, retry_failed: retryFailed }),
+            signal,
+          })
+          if (!response.ok) throw new Error(`Image task create HTTP ${response.status}`)
+          task = (await response.json()) as ImageRefreshTaskResponse
+        }
       }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') throw error
+      markPlaceholderState(sceneId, 'confirming')
+      await waitForTaskPoll(pollDelay, signal)
+      pollDelay = Math.min(5000, pollDelay + 750)
+    }
+  }
+
+  while (task.status === 'failed' && retryFailed) {
+    try {
+      const response = await fetch(`${apiBaseUrl}/v1/image-review/refresh-scene-task`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payload, retry_failed: true }),
+        signal,
+      })
+      if (!response.ok) throw new Error(`Image task retry HTTP ${response.status}`)
+      task = (await response.json()) as ImageRefreshTaskResponse
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') throw error
+      markPlaceholderState(sceneId, 'confirming')
+      await waitForTaskPoll(pollDelay, signal)
+      pollDelay = Math.min(5000, pollDelay + 750)
+    }
+  }
+
+  sceneTaskIds.value = { ...sceneTaskIds.value, [sceneId]: task.task_id }
+  persistSceneTaskIds(workflowId, runId)
+
+  while (true) {
+    if (task.status === 'succeeded') {
+      markPlaceholderState(sceneId, 'confirming')
+      try {
+        const authoritative = await fetchAuthoritativeWorkflow(workflowId, signal)
+        applyWorkflowResponse(authoritative)
+        markPlaceholderState(sceneId, 'done')
+        return
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') throw error
+        markPlaceholderState(sceneId, 'confirming')
+      }
+    } else if (task.status === 'failed') {
+      // One final identity lookup runs the backend file reconcile. Only an
+      // explicit failed state with no recoverable A/B files becomes failed.
+      let recovered: ImageRefreshTaskResponse | null
+      try {
+        recovered = await lookupSceneTask(workflowId, runId, sceneId, signal)
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') throw error
+        markPlaceholderState(sceneId, 'confirming')
+        await waitForTaskPoll(pollDelay, signal)
+        pollDelay = Math.min(5000, pollDelay + 750)
+        continue
+      }
+      if (recovered?.status === 'succeeded') {
+        task = recovered
+        continue
+      }
+      throw new Error(`${sceneId} 候选图生成失败：${task.error || '服务端任务失败'}`)
+    } else {
+      markPlaceholderState(sceneId, task.status === 'running' ? 'refreshing' : 'queued')
     }
 
-    throw new Error(message)
+    await waitForTaskPoll(pollDelay, signal)
+    pollDelay = Math.min(5000, pollDelay + 500)
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/v1/image-review/refresh-scene-task/${encodeURIComponent(task.task_id)}`,
+        { signal },
+      )
+      if (!response.ok) throw new Error(`Image task poll HTTP ${response.status}`)
+      task = (await response.json()) as ImageRefreshTaskResponse
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') throw error
+      markPlaceholderState(sceneId, 'confirming')
+    }
   }
-
-  const data: ImageReviewRefreshSceneResponse = await response.json()
-
-  // Strip the stale final_video — a successful per-scene refresh
-  // means the previously-rendered video no longer matches the image
-  // set. If we kept it, applyWorkflowResponse below would restore
-  // finalVideoUrl to the old public_url and undo the retry-clear in
-  // retryImageReviewScene, trapping the user in the same state.
-  const priorOutputs = currentWorkflowResponse.value.outputs || {}
-  const { final_video: _staleVideo, ...priorOutputsSansVideo } = priorOutputs as Record<
-    string,
-    unknown
-  >
-  void _staleVideo
-
-  const mergedResponse: WorkflowRunResponse = {
-    ...(currentWorkflowResponse.value || {}),
-    workflow_id: data.workflow_id || currentWorkflowResponse.value.workflow_id,
-    session_id: data.session_id || currentWorkflowResponse.value.session_id,
-    run_id: data.run_id || currentWorkflowResponse.value.run_id,
-    outputs: {
-      ...priorOutputsSansVideo,
-      image_assets:
-        data.image_assets || currentWorkflowResponse.value.outputs?.image_assets || {},
-      image_review:
-        data.image_review || currentWorkflowResponse.value.outputs?.image_review || {},
-      video_prompts:
-        data.video_prompts || currentWorkflowResponse.value.outputs?.video_prompts || {},
-    },
-  }
-
-  // Cache-bust ONLY at the URL building stage (toAssetHref reads this
-  // map and appends ?v=ts). We must NOT mutate the underlying asset
-  // paths here — those flow into /v1/final-video/render's payload and
-  // are used by the backend to locate the actual files on disk. A
-  // `?_=ts` suffix on relative_path would make the backend search for
-  // a non-existent file and silently break the final video.
-  sceneImageVersions.value = {
-    ...sceneImageVersions.value,
-    [sceneId]: Date.now(),
-  }
-
-  applyWorkflowResponse(mergedResponse)
-  markPlaceholderState(sceneId, 'done')
 }
 
 async function retryImageReviewScene(sceneId: string) {
@@ -2870,6 +2897,7 @@ async function retryImageReviewScene(sceneId: string) {
       undefined,
       false,
       knownFailed,
+      true,
     )
     if (workflowForm.value.renderMode === 'auto' && currentWorkflowResponse.value) {
       void renderFinalVideoIfReady(currentWorkflowResponse.value)
@@ -3100,6 +3128,7 @@ function performDiscardCurrentDraft() {
   refreshingImageReview.value = false
   sceneRefreshQueue.value = []
   sceneRefreshingId.value = ''
+  sceneTaskIds.value = {}
   clearImageReviewAutoRefreshTimer()
   reviewAutoRefreshFiredOnce = false
   restoreAutoRefreshFired = false
@@ -3167,7 +3196,7 @@ function performDiscardCurrentDraft() {
   activeTab.value = 'run'
 }
 
-async function refreshImageReview() {
+async function refreshImageReview(allowCreate = true) {
   if (!currentWorkflowResponse.value || !currentWorkflowPayload.value) {
     return
   }
@@ -3232,41 +3261,37 @@ async function refreshImageReview() {
   }
 
   try {
-    for (const sceneId of sceneRefreshQueue.value) {
-      if (imageReviewRefreshCancelled.value) {
-        break
-      }
-
-      imageReviewRefreshAbortController = new AbortController()
-      try {
-        await refreshImageReviewScene(
-          sceneId,
-          imageReviewRefreshAbortController.signal,
-          undefined,
-          false,
-          Array.from(failedSceneIds),
-        )
-        // Success path — if this scene was previously failed (resumed
-        // partial run), drop it from the failed set so subsequent
-        // calls don't re-mark it.
-        failedSceneIds.delete(sceneId)
-      } catch (error) {
-        if (
-          imageReviewRefreshCancelled.value ||
-          (error instanceof DOMException && error.name === 'AbortError')
-        ) {
-          markPlaceholderState(sceneId, 'waiting')
-          break
+    imageReviewRefreshAbortController = new AbortController()
+    const signal = imageReviewRefreshAbortController.signal
+    await Promise.all(
+      sceneRefreshQueue.value.map(async (sceneId) => {
+        if (imageReviewRefreshCancelled.value) return
+        try {
+          await refreshImageReviewScene(
+            sceneId,
+            signal,
+            undefined,
+            false,
+            Array.from(failedSceneIds),
+            failedSceneIds.has(sceneId),
+            allowCreate,
+          )
+          failedSceneIds.delete(sceneId)
+        } catch (error) {
+          if (
+            imageReviewRefreshCancelled.value ||
+            (error instanceof DOMException && error.name === 'AbortError')
+          ) {
+            markPlaceholderState(sceneId, 'waiting')
+            return
+          }
+          const message = error instanceof Error ? error.message : '候选图分场景刷新失败'
+          failures.push(message)
+          failedSceneIds.add(sceneId)
+          markPlaceholderState(sceneId, 'failed', message)
         }
-
-        const message = error instanceof Error ? error.message : '候选图分场景刷新失败'
-        failures.push(message)
-        failedSceneIds.add(sceneId)
-        markPlaceholderState(sceneId, 'failed', message)
-      } finally {
-        imageReviewRefreshAbortController = null
-      }
-    }
+      }),
+    )
   } finally {
     sceneRefreshingId.value = ''
     sceneRefreshQueue.value = []
@@ -3296,6 +3321,7 @@ async function refreshImageReview() {
   }
 }
 function scheduleImageReviewAutoRefreshIfNeeded() {
+  if (imageStateHydrating.value) return
   if (reviewWaitingState.value !== 'deferred_pending' || reviewAutoRefreshFiredOnce) {
     return
   }
@@ -3323,9 +3349,12 @@ function scheduleImageReviewAutoRefreshIfNeeded() {
 //     (per-workflow) only.
 let restoreAutoRefreshFired = false
 function resumePendingSceneGenerationAfterRestore() {
+  if (imageStateHydrating.value) return
   if (restoreAutoRefreshFired) return
-  const hasPending = reviewPlaceholders.value.some((p) => p.state === 'waiting')
-  if (!hasPending) return
+  const hasRecoverableTask = reviewPlaceholders.value.some((p) =>
+    ['waiting', 'queued', 'refreshing', 'confirming'].includes(p.state),
+  )
+  if (!hasRecoverableTask) return
   if (!currentWorkflowPayload.value) return
   if (finalVideoUrl.value) return
   // Respect persistent user cancel — Landing → Studio nav must not undo
@@ -3336,8 +3365,13 @@ function resumePendingSceneGenerationAfterRestore() {
   // Fire immediately — same render tick as applyWorkflowResponse, so
   // refreshingImageReview = true masks the deferred-banner from the
   // very first paint.
-  if (!refreshingImageReview.value && reviewPlaceholders.value.some((p) => p.state === 'waiting')) {
-    void refreshImageReview()
+  if (
+    !refreshingImageReview.value &&
+    reviewPlaceholders.value.some((p) =>
+      ['waiting', 'queued', 'refreshing', 'confirming'].includes(p.state),
+    )
+  ) {
+    void refreshImageReview(false)
   }
 }
 
@@ -3438,6 +3472,8 @@ async function executeRunWorkflow() {
   imageReviewRefreshAbortController = null
   imageReviewRefreshCancelled.value = false
   imageRefreshPausedByUser.value = false
+  sceneTaskIds.value = {}
+  sceneImageVersions.value = {}
   // Drop the previous run's "paused by user" marker so its presence in
   // localStorage doesn't shape this run's UI copy.
   try {
@@ -3786,27 +3822,12 @@ async function executeRunWorkflow() {
           Boolean(sceneRefreshingId) ||
           hasImageFailures
         "
-        :percent="
-          singleSceneRetryActive
-            ? imagePipelinePercent
-            : finalVideoRenderInFlight
-              ? 92
-              : awaitingManualRender
-                ? 85
-                : hasImageFailures
-                  ? imagePipelinePercent
-                  : (workflowStatusProgress ?? (refreshingImageReview ? reviewRefreshProgress.percent : 0))
-        "
+        :percent="workflowProgressSummary.overallPercent ?? 0"
+        :indeterminate="workflowProgressSummary.indeterminate"
         :label="
-          singleSceneRetryActive
-            ? `正在为 ${sceneRefreshingId} 重新生成候选图`
-            : finalVideoRenderInFlight
-              ? '正在合成视频（音频、字幕、画面拼接中）'
-              : awaitingManualRender
-                ? '候选图已就绪，等待你点击「生成视频」'
-                : hasImageFailures
-                  ? settledFailureLabel
-                  : (workflowIsProcessing ? workflowRunStatusMessage : reviewRefreshProgress.text)
+          cancelRequestedAny
+            ? cancellingLabel
+            : (workflowProgressSummary.stageLabel || workflowRunStatusMessage)
         "
         :cancellable="phaseCancellable && !awaitingManualRender && !singleSceneRetryActive && !hasImageFailures"
         :cancel-requested="cancelRequestedAny"
@@ -3895,6 +3916,8 @@ async function executeRunWorkflow() {
                 :error-message="errorMessage"
                 :workflow-status-message="workflowRunStatusMessage"
                 :workflow-status-progress="workflowStatusProgress"
+                :image-generation-summary="imageGenerationSummary"
+                :workflow-progress-summary="workflowProgressSummary"
                 :render-mode="workflowForm.renderMode"
                 :scene-refreshing-id="sceneRefreshingId"
                 @render="renderFinalVideoIfReady(currentWorkflowResponse || {})"

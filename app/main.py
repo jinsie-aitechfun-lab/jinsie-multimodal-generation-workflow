@@ -12,7 +12,6 @@ except ImportError:
 from fastapi import FastAPI, HTTPException
 from fastapi import Body
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 
 from app.schemas.workflow import (
@@ -22,11 +21,15 @@ from app.schemas.workflow import (
     ImageReviewRefreshResponse,
     ImageReviewRefreshSceneRequest,
     ImageReviewRefreshSceneResponse,
+    ImageReviewRefreshSceneTaskRequest,
+    ImageReviewRefreshSceneTaskResponse,
     ImageReviewSelectRequest,
     ImageReviewSelectResponse,
     WorkflowRunRequest,
     WorkflowRunResponse,
 )
+from app.services.atomic_json_store import read_json, update_json_atomic, write_json_atomic
+from app.services.cache_control_static import RevalidatingStaticFiles
 from app.services.cancellation import (
     clear as _clear_cancel,
     is_cancelled as _is_cancelled,
@@ -34,6 +37,10 @@ from app.services.cancellation import (
 )
 from app.services.runner import UnknownStepError, WorkflowRunner
 from app.services.runner_errors import WorkflowCancelledError
+from app.services.image_refresh_tasks import (
+    ImageRefreshCoordinator,
+    ImageRefreshTaskManager,
+)
 from app.services.storage_ids import safe_child_dir, sanitize_storage_id
 
 app = FastAPI(title="jinsie-multimodal-generation-workflow", version="0.1.0")
@@ -74,7 +81,14 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 ASSETS_DIR = PROJECT_ROOT / "assets"
 
 if ASSETS_DIR.exists():
-    app.mount("/assets", StaticFiles(directory=str(ASSETS_DIR)), name="assets")
+    app.mount(
+        "/assets",
+        RevalidatingStaticFiles(directory=str(ASSETS_DIR)),
+        name="assets",
+    )
+
+_image_refresh_coordinator = ImageRefreshCoordinator(ASSETS_DIR, _runner)
+_image_refresh_tasks = ImageRefreshTaskManager(ASSETS_DIR, _image_refresh_coordinator)
 
 
 @app.on_event("startup")
@@ -89,6 +103,7 @@ def _abandon_orphaned_workflows() -> None:
     "abandoned" on startup so the frontend can treat them as a clean
     terminal state and recover.
     """
+    _image_refresh_tasks.start()
     mock_dir = ASSETS_DIR / "mock"
     if not mock_dir.exists():
         return
@@ -97,11 +112,7 @@ def _abandon_orphaned_workflows() -> None:
     rewritten = 0
     for status_path in mock_dir.glob("*/status.json"):
         try:
-            with open(status_path, "r", encoding="utf-8") as f:
-                content = f.read().strip()
-            if not content:
-                continue
-            data = json.loads(content)
+            data = read_json(status_path, default={}) or {}
             existing = str(data.get("status") or "").strip().lower()
             if existing not in transient_states:
                 continue
@@ -110,8 +121,7 @@ def _abandon_orphaned_workflows() -> None:
             data["abandoned_reason"] = (
                 f"server restarted while workflow status was '{existing}'"
             )
-            with open(status_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
+            write_json_atomic(status_path, data)
             rewritten += 1
         except (OSError, json.JSONDecodeError):
             # Corrupt or unreadable status file — leave it; the frontend
@@ -150,6 +160,13 @@ def _require_workflow_id(workflow_id: object) -> str:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
 
+def _require_storage_id(value: object, field_name: str) -> str:
+    try:
+        return sanitize_storage_id(value, field_name=field_name)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
 def _workflow_dir(workflow_id: str) -> Path:
     return safe_child_dir(ASSETS_DIR / "mock", workflow_id, field_name="workflow_id")
 
@@ -182,15 +199,69 @@ def _patch_workflow_outputs(workflow_id: str, patch: dict) -> None:
     if not path.exists():
         return
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        outputs = data.get("outputs") or {}
-        outputs.update(patch)
-        data["outputs"] = outputs
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        def merge(data):
+            if not isinstance(data, dict):
+                raise ValueError("workflow outputs must be a JSON object")
+            nested = data.get("outputs")
+            if isinstance(nested, dict):
+                nested.update(patch)
+            else:
+                data.update(patch)
+            return data
+
+        update_json_atomic(path, merge)
     except Exception as e:
         print(f"[patch_workflow_outputs] failed to patch {workflow_id}: {e}")
+
+
+def _merge_review_scene_item(
+    workflow_id: str,
+    run_id: str,
+    scene_item: dict,
+) -> dict:
+    """Upsert one review scene against the latest on-disk outputs."""
+    merged: dict = {}
+
+    def update(document):
+        if not isinstance(document, dict):
+            raise ValueError("workflow outputs must be a JSON object")
+        outputs = (
+            document["outputs"]
+            if isinstance(document.get("outputs"), dict)
+            else document
+        )
+        current_review = outputs.get("image_review") or {}
+        provider = str(
+            current_review.get("provider")
+            or (outputs.get("image_assets") or {}).get("provider")
+            or _runner._image_provider_name()
+        )
+        latest_review = _runner._image_review.upsert_image_review_item(
+            image_review=current_review,
+            scene_review_item=scene_item,
+            provider=provider,
+        )
+        storyboard_scenes = (outputs.get("storyboard") or {}).get("scenes") or []
+        prior_assets = outputs.get("image_assets") or {}
+        failed_ids = [
+            str(value)
+            for value in (prior_assets.get("failed_scene_ids") or [])
+            if str(value) != str(scene_item.get("scene_id") or "")
+        ]
+        latest_assets = _runner.build_image_assets_from_selected_assets(
+            run_id=run_id,
+            image_review=latest_review,
+            provider=provider,
+            storyboard_scenes=storyboard_scenes,
+            known_failed_scene_ids=failed_ids,
+        )
+        outputs["image_review"] = latest_review
+        outputs["image_assets"] = latest_assets
+        merged.update({"image_review": latest_review, "image_assets": latest_assets})
+        return document
+
+    update_json_atomic(_workflow_outputs_path(workflow_id), update)
+    return merged
 
 
 def _write_workflow_status(
@@ -209,8 +280,7 @@ def _write_workflow_status(
 
     out_dir = _workflow_dir(workflow_id)
     out_dir.mkdir(parents=True, exist_ok=True)
-    with open(_workflow_status_path(workflow_id), "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
+    write_json_atomic(_workflow_status_path(workflow_id), payload)
     return payload
 
 
@@ -259,8 +329,7 @@ def run_workflow(req: dict = Body(...)):
     def on_complete(outputs: dict):
         out_dir = _workflow_dir(workflow_id)
         out_dir.mkdir(parents=True, exist_ok=True)
-        with open(_workflow_outputs_path(workflow_id), "w", encoding="utf-8") as f:
-            json.dump(outputs, f, ensure_ascii=False, indent=2)
+        write_json_atomic(_workflow_outputs_path(workflow_id), outputs)
         _write_workflow_status(workflow_id, "completed")
         _clear_cancel(workflow_id)
         print(f"[AsyncRunner] workflow {workflow_id} completed.")
@@ -393,8 +462,7 @@ def get_workflow_results(workflow_id: str):
     if not outputs_path.exists():
         raise HTTPException(status_code=404, detail=f"workflow results not found: {workflow_id}")
     try:
-        with open(outputs_path, "r", encoding="utf-8") as f:
-            outputs = json.load(f)
+        outputs = read_json(outputs_path)
     except (json.JSONDecodeError, OSError) as e:
         raise HTTPException(status_code=500, detail=f"failed to read workflow results: {e}")
     return outputs
@@ -416,6 +484,21 @@ def select_image_review_asset(req: ImageReviewSelectRequest):
             workflow_input=req.workflow_input,
             video_provider=req.video_provider,
         )
+        selected_items = (result.get("image_review") or {}).get("selected_assets") or []
+        selected_item = next(
+            (
+                item
+                for item in selected_items
+                if isinstance(item, dict)
+                and str(item.get("scene_id") or "") == str(req.scene_id or "")
+            ),
+            None,
+        )
+        if selected_item:
+            persisted = _merge_review_scene_item(
+                workflow_id, req.run_id, selected_item
+            )
+            result.update(persisted)
         print("[image-review] selection updated", req.run_id, req.scene_id)
         return ImageReviewSelectResponse(
             workflow_id=result["workflow_id"],
@@ -538,12 +621,15 @@ def refresh_image_review_scene(req: ImageReviewRefreshSceneRequest):
         _raise_if_cancelled(workflow_id, scope="image_refresh")
         print("[image-review] refresh-scene completed", req.run_id, req.scene_id)
 
-        # Persist updated image_review + image_assets back to outputs.json so that
-        # page refresh loads the real generated state instead of the frozen pending state.
-        _patch_workflow_outputs(workflow_id, {
-            "image_review": result["image_review"],
-            "image_assets": result["image_assets"],
-        })
+        # Merge from the files under the shared outputs lock. Never persist the
+        # request's stale image_review snapshot over scenes completed meanwhile.
+        reconciled = _image_refresh_coordinator.reconcile(
+            workflow_id, req.run_id, req.scene_id
+        )
+        if reconciled:
+            result["image_review"] = reconciled["image_review"]
+            result["image_assets"] = reconciled["image_assets"]
+            result["scene_review_item"] = reconciled["scene_review_item"]
 
         return ImageReviewRefreshSceneResponse(
             workflow_id=result["workflow_id"],
@@ -584,7 +670,19 @@ def refresh_image_review_scene(req: ImageReviewRefreshSceneRequest):
         #       3. embed rebuilt assets in the 502 detail so the FE
         #          updates in-memory state without a reload
         current_scene = str(req.scene_id or "").strip()
-        prior_selected_raw = (req.image_review or {}).get("selected_assets") or []
+        stored_document = read_json(_workflow_outputs_path(workflow_id), default={}) or {}
+        stored_outputs = (
+            stored_document.get("outputs")
+            if isinstance(stored_document, dict)
+            and isinstance(stored_document.get("outputs"), dict)
+            else stored_document
+        )
+        stored_review = (
+            stored_outputs.get("image_review")
+            if isinstance(stored_outputs, dict)
+            else {}
+        ) or {}
+        prior_selected_raw = stored_review.get("selected_assets") or []
         had_prior_success = bool(current_scene) and isinstance(
             prior_selected_raw, list
         ) and any(
@@ -596,22 +694,10 @@ def refresh_image_review_scene(req: ImageReviewRefreshSceneRequest):
         rebuilt_image_assets = None
         if not had_prior_success:
             try:
-                failed_ids = list(req.known_failed_scene_ids or [])
-                if current_scene and current_scene not in failed_ids:
-                    failed_ids.append(current_scene)
-                storyboard_scenes = (req.storyboard or {}).get("scenes") or []
-                rebuilt_image_assets = (
-                    _runner.build_image_assets_from_selected_assets(
-                        run_id=req.run_id,
-                        image_review=req.image_review or {},
-                        provider=str(_runner._image_provider_name()),
-                        storyboard_scenes=storyboard_scenes,
-                        known_failed_scene_ids=failed_ids,
-                    )
+                failed_state = _image_refresh_coordinator.mark_failed(
+                    workflow_id, req.run_id, current_scene
                 )
-                _patch_workflow_outputs(
-                    workflow_id, {"image_assets": rebuilt_image_assets}
-                )
+                rebuilt_image_assets = failed_state["image_assets"]
             except Exception as persist_err:
                 print(
                     "[image-review] failed to persist failure",
@@ -625,3 +711,57 @@ def refresh_image_review_scene(req: ImageReviewRefreshSceneRequest):
             status_code=502,
             detail=detail,
         ) from e
+
+
+@app.post(
+    "/v1/image-review/refresh-scene-task",
+    response_model=ImageReviewRefreshSceneTaskResponse,
+    status_code=202,
+)
+def create_image_review_scene_task(req: ImageReviewRefreshSceneTaskRequest):
+    workflow_id = _require_workflow_id(req.workflow_id)
+    run_id = _require_storage_id(req.run_id, "run_id")
+    scene_id = _require_storage_id(req.scene_id, "scene_id")
+    _image_refresh_tasks.start()
+    payload = req.model_dump(exclude={"retry_failed"})
+    payload["workflow_id"] = workflow_id
+    payload["run_id"] = run_id
+    payload["scene_id"] = scene_id
+    try:
+        task, _created = _image_refresh_tasks.submit(
+            payload, retry_failed=req.retry_failed
+        )
+        return ImageReviewRefreshSceneTaskResponse(**task)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.get(
+    "/v1/image-review/refresh-scene-task",
+    response_model=ImageReviewRefreshSceneTaskResponse,
+)
+def recover_image_review_scene_task(
+    workflow_id: str, run_id: str, scene_id: str
+):
+    normalized_workflow_id = _require_workflow_id(workflow_id)
+    run_id = _require_storage_id(run_id, "run_id")
+    scene_id = _require_storage_id(scene_id, "scene_id")
+    _image_refresh_tasks.start()
+    task = _image_refresh_tasks.recover_status(
+        normalized_workflow_id, run_id, scene_id
+    )
+    if task is None:
+        raise HTTPException(status_code=404, detail="image refresh task not found")
+    return ImageReviewRefreshSceneTaskResponse(**task)
+
+
+@app.get(
+    "/v1/image-review/refresh-scene-task/{task_id}",
+    response_model=ImageReviewRefreshSceneTaskResponse,
+)
+def get_image_review_scene_task(task_id: str):
+    _image_refresh_tasks.start()
+    task = _image_refresh_tasks.get(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail=f"image refresh task not found: {task_id}")
+    return ImageReviewRefreshSceneTaskResponse(**task)

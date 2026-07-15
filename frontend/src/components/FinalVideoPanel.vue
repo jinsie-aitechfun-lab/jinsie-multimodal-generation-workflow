@@ -115,6 +115,7 @@
 import { computed } from 'vue'
 import GenerationLoadingAnimation from './studio/GenerationLoadingAnimation.vue'
 import InlineStatusPulse from './studio/InlineStatusPulse.vue'
+import type { ImageGenerationSummary, WorkflowProgressSummary } from '../lib/workflowState'
 
 type UnknownRecord = Record<string, unknown>
 
@@ -130,6 +131,8 @@ const props = defineProps<{
   errorMessage?: string
   workflowStatusMessage?: string
   workflowStatusProgress?: number | null
+  imageGenerationSummary?: ImageGenerationSummary
+  workflowProgressSummary?: WorkflowProgressSummary
   // Render mode drives both the banner copy and an in-body prominent
   // render button. In 'manual' mode the user is responsible for clicking
   // through (or swapping a candidate first); in 'auto' mode the system
@@ -166,6 +169,7 @@ const audioSegments = computed(() => asObj(outputs.value?.audio_segments))
 const finalVideo = computed(() => asObj(outputs.value?.final_video))
 
 const indeterminate = computed(() => {
+  if (props.workflowProgressSummary) return props.workflowProgressSummary.indeterminate
   if (props.finalVideoUrl) return false
   if (props.renderInFlight || finalStatus.value === 'rendering') return false
   if (workflowInFlight.value && props.workflowStatusProgress != null) {
@@ -192,6 +196,7 @@ const imageAssetCount = computed(() => {
 // this, length(image_assets.assets) reaches scene_count and assetsReady
 // flips to true, and the panel falsely shows "等待渲染 / 生成视频".
 const failedAssetCount = computed(() => {
+  if (props.imageGenerationSummary) return props.imageGenerationSummary.failedCount
   const n = asNum(imageAssets.value?.failed_count)
   const ids = imageAssets.value?.failed_scene_ids
   const assets = imageAssets.value?.assets
@@ -209,6 +214,7 @@ const failedAssetCount = computed(() => {
 })
 const hasFailedAssets = computed(() => failedAssetCount.value > 0)
 const generatedAssetCount = computed(() => {
+  if (props.imageGenerationSummary) return props.imageGenerationSummary.readyCount
   const n = asNum(imageAssets.value?.generated_count)
   if (n != null && n >= 0) return n
   return Math.max(0, imageAssetCount.value - failedAssetCount.value)
@@ -263,6 +269,9 @@ const showInternalProgress = computed(() => {
 })
 
 const assetsReady = computed(() => {
+  if (props.imageGenerationSummary) {
+    return props.imageGenerationSummary.overallState === 'ready'
+  }
   return (
     sceneCount.value > 0 &&
     generatedAssetCount.value >= sceneCount.value &&
@@ -283,6 +292,12 @@ const isStaleGenericNetworkError = computed(() => {
   ].includes(blockingErrorMessage.value)
 })
 const hasBlockingError = computed(() => {
+  const state = props.imageGenerationSummary?.overallState
+  if (state && state !== 'idle') {
+    if (isFinalVideoRenderError.value) return !props.renderInFlight
+    if (blockingErrorMessage.value.includes('workflow 输入参数')) return true
+    return false
+  }
   return Boolean(
     blockingErrorMessage.value &&
     !isStaleGenericNetworkError.value &&
@@ -302,8 +317,11 @@ const blockingErrorTitle = computed(() => {
 })
 
 const progressPct = computed(() => {
+  if (props.workflowProgressSummary?.overallPercent != null) {
+    return props.workflowProgressSummary.overallPercent
+  }
   if (props.finalVideoUrl) return 100
-  if (props.renderInFlight || finalStatus.value === 'rendering') return 90
+  if (props.renderInFlight || finalStatus.value === 'rendering') return 0
   if (workflowInFlight.value && props.workflowStatusProgress != null) {
     return Math.max(0, Math.min(100, Math.round(props.workflowStatusProgress)))
   }
@@ -329,16 +347,19 @@ const progressLabel = computed(() => {
   // a failure, and the copy should reflect that.
   if (props.cancelRequested) return '正在取消生成…'
   if (props.pausedByUser) return `候选图已暂停（${generatedAssetCount.value}/${sceneCount.value || '?'}）`
+  if (props.workflowProgressSummary?.stageLabel) {
+    return props.workflowProgressSummary.stageLabel
+  }
   if (hasBlockingError.value) {
     return isFinalVideoRenderError.value
       ? '最终视频生成失败'
-      : `候选图生成失败（${generatedAssetCount.value}/${sceneCount.value || '?'}）`
+      : '候选图生成未完成'
   }
   // Persisted per-scene failures (B1). Must come BEFORE any check that
   // counts asset length, since failed placeholders inflate the length
   // and would otherwise let the state machine cross into "等待渲染".
   if (hasFailedAssets.value && !props.refreshingImages && !props.sceneRefreshingId) {
-    return `候选图生成失败（${generatedAssetCount.value}/${sceneCount.value || '?'}）`
+    return `候选图生成完成，${failedAssetCount.value} 个场景待处理`
   }
   if (workflowInFlight.value) return '处理中…'
   if (indeterminate.value) return '准备中…'
@@ -379,7 +400,7 @@ const placeholderTitle = computed(() => {
   if (props.pausedByUser) return '候选图已暂停'
   if (hasBlockingError.value) return blockingErrorTitle.value
   if (hasFailedAssets.value && !props.refreshingImages && !props.sceneRefreshingId) {
-    return '场景图片生成失败'
+    return `候选图生成完成，${failedAssetCount.value} 个场景待处理`
   }
   if (workflowInFlight.value) return '正在生成分镜'
   if (props.renderInFlight || finalStatus.value === 'rendering') return '正在生成视频'
@@ -409,7 +430,7 @@ const placeholderDesc = computed(() => {
     return blockingErrorMessage.value
   }
   if (hasFailedAssets.value && !props.refreshingImages && !props.sceneRefreshingId) {
-    return `${failedAssetCount.value} 个场景的候选图生成失败，请点击对应场景的「重试该场景」按钮重新生成；全部成功后会自动继续合成视频。`
+    return `${generatedAssetCount.value} 个场景已就绪，${failedAssetCount.value} 个场景生成失败。请点击对应场景的「重试该场景」按钮。`
   }
   if (workflowInFlight.value) {
     return props.workflowStatusMessage || 'Workflow 已提交，后端正在生成故事与分镜。完成后会自动进入候选图与视频准备阶段。'
