@@ -59,6 +59,35 @@ class FrontendStateContractTests(unittest.TestCase):
         self.assertIn("indeterminate: true", render_branch)
         self.assertIn("overallPercent: 100", completed_branch)
 
+    def test_queued_image_progress_waits_without_indeterminate_animation(self):
+        source = (ROOT / "frontend/src/lib/workflowState.ts").read_text(encoding="utf-8")
+        self.assertIn("任务已提交，等待开始 · ${completedLabel}", source)
+        self.assertIn("const indeterminate = input.images.readyCount === 0 && hasRunning", source)
+
+    def test_running_image_progress_shows_scene_and_real_completed_count(self):
+        source = (ROOT / "frontend/src/lib/workflowState.ts").read_text(encoding="utf-8")
+        self.assertIn("正在生成场景 ${Math.min(", source)
+        self.assertIn("const completedLabel = `已完成 ${input.images.readyCount} / ${input.images.totalCount}`", source)
+        self.assertIn("const percent = indeterminate\n      ? null", source)
+
+    def test_partial_ready_progress_uses_ready_ratio(self):
+        source = (ROOT / "frontend/src/lib/workflowState.ts").read_text(encoding="utf-8")
+        image_branch = source.split(
+            "if (input.images.totalCount > 0 && input.images.overallState !== 'idle')", 1
+        )[1].split("return {\n    overallPercent: input.workflowPercent", 1)[0]
+        self.assertIn("input.images.readyCount / input.images.totalCount", image_branch)
+        self.assertIn("* 100", image_branch)
+        self.assertNotIn("* 85", image_branch)
+
+    def test_confirming_image_progress_has_confirmation_copy(self):
+        source = (ROOT / "frontend/src/lib/workflowState.ts").read_text(encoding="utf-8")
+        self.assertIn("正在确认生成结果 · ${completedLabel}", source)
+
+    def test_completed_image_progress_is_100_percent(self):
+        source = (ROOT / "frontend/src/lib/workflowState.ts").read_text(encoding="utf-8")
+        self.assertIn("候选图生成完成 · ${completedLabel}", source)
+        self.assertIn("(input.images.readyCount / input.images.totalCount) * 100", source)
+
     def test_image_refresh_uses_one_workflow_batch_polling_loop(self):
         studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
         refresh_body = studio.split("async function refreshImageReview", 1)[1].split(
