@@ -90,6 +90,112 @@ class FrontendStateContractTests(unittest.TestCase):
         self.assertIn("候选图生成完成 · ${completedLabel}", source)
         self.assertIn("(input.images.readyCount / input.images.totalCount) * 100", source)
 
+    def test_video_url_starts_loading_instead_of_ready(self):
+        source = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        video_state = source.split("type VideoPreviewLoadState", 1)[1].split(
+            "const finalVideoAudioEnabled", 1
+        )[0]
+        self.assertIn("videoPreviewLoadState.value = url ? 'loading' : 'idle'", video_state)
+        self.assertNotIn("videoPreviewLoadState.value = url ? 'ready'", video_state)
+        self.assertIn("视频已生成，正在加载预览…", video_state)
+
+    def test_loadedmetadata_marks_both_current_video_players_ready(self):
+        preview = (ROOT / "frontend/src/components/studio/StudioPreviewPanel.vue").read_text(
+            encoding="utf-8"
+        )
+        final_panel = (ROOT / "frontend/src/components/FinalVideoPanel.vue").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('@loadedmetadata="handleCurrentVideoReady"', preview)
+        self.assertIn("if (isCurrentVideo.value) emit('video-ready')", preview)
+        self.assertIn('@loadedmetadata="$emit(\'video-ready\')"', final_panel)
+
+    def test_canplay_marks_both_current_video_players_ready(self):
+        preview = (ROOT / "frontend/src/components/studio/StudioPreviewPanel.vue").read_text(
+            encoding="utf-8"
+        )
+        final_panel = (ROOT / "frontend/src/components/FinalVideoPanel.vue").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('@canplay="handleCurrentVideoReady"', preview)
+        self.assertIn('@canplay="$emit(\'video-ready\')"', final_panel)
+        self.assertIn("videoPreviewLoadState.value = 'ready'", (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8"))
+
+    def test_first_video_error_schedules_one_retry(self):
+        source = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        video_state = source.split("type VideoPreviewLoadState", 1)[1].split(
+            "const finalVideoAudioEnabled", 1
+        )[0]
+        self.assertIn("videoPreviewRetryTimer != null", video_state)
+        self.assertIn("videoPreviewRetryCount.value += 1", video_state)
+        self.assertIn("videoPreviewRetryTimer = window.setTimeout", video_state)
+
+    def test_video_auto_retry_is_limited_to_two_attempts(self):
+        source = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        self.assertIn("const VIDEO_PREVIEW_RETRY_DELAYS_MS = [1000, 2500] as const", source)
+        self.assertIn("videoPreviewRetryCount.value >= VIDEO_PREVIEW_RETRY_DELAYS_MS.length", source)
+
+    def test_video_retry_never_calls_final_video_render(self):
+        source = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        video_state = source.split("type VideoPreviewLoadState", 1)[1].split(
+            "const finalVideoAudioEnabled", 1
+        )[0]
+        self.assertNotIn("final-video/render", video_state)
+        self.assertNotIn("fetch(", video_state)
+
+    def test_video_retry_limit_enters_failed_state_with_recovery_actions(self):
+        source = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        preview = (ROOT / "frontend/src/components/studio/StudioPreviewPanel.vue").read_text(
+            encoding="utf-8"
+        )
+        final_panel = (ROOT / "frontend/src/components/FinalVideoPanel.vue").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("videoPreviewLoadState.value = 'failed'", source)
+        for component in (preview, final_panel):
+            self.assertIn("视频预览加载失败", component + source)
+            self.assertIn("重新加载", component)
+            self.assertIn("打开原视频", component)
+
+    def test_manual_video_reload_reenters_loading_with_existing_mp4(self):
+        source = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        reload_body = source.split("function reloadVideoPreviewManually", 1)[1].split(
+            "onBeforeUnmount(clearVideoPreviewRetryTimer)", 1
+        )[0]
+        self.assertIn("videoPreviewRetryVersion.value += 1", reload_body)
+        self.assertIn("videoPreviewLoadState.value = 'loading'", reload_body)
+        self.assertNotIn("Date.now", reload_body)
+
+    def test_video_url_change_clears_old_failure_and_retry_state(self):
+        source = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        url_watch = source.split("watch(finalVideoUrl", 1)[1].split(
+            "function markVideoPreviewReady", 1
+        )[0]
+        self.assertIn("clearVideoPreviewRetryTimer()", url_watch)
+        self.assertIn("videoPreviewRetryCount.value = 0", url_watch)
+        self.assertIn("videoPreviewRetryVersion.value = 0", url_watch)
+        self.assertIn("videoPreviewLoadState.value = url ? 'loading' : 'idle'", url_watch)
+
+    def test_video_retry_timer_is_cleared_on_unmount(self):
+        source = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        self.assertIn("onBeforeUnmount(clearVideoPreviewRetryTimer)", source)
+        self.assertIn("window.clearTimeout(videoPreviewRetryTimer)", source)
+
+    def test_current_video_panels_share_one_loading_state_semantics(self):
+        preview = (ROOT / "frontend/src/components/studio/StudioPreviewPanel.vue").read_text(
+            encoding="utf-8"
+        )
+        final_panel = (ROOT / "frontend/src/components/FinalVideoPanel.vue").read_text(
+            encoding="utf-8"
+        )
+        studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        for component in (preview, final_panel):
+            self.assertIn("videoLoadState", component)
+            self.assertIn("videoStatusText", component)
+            self.assertIn("video-ready", component)
+            self.assertIn("video-error", component)
+        self.assertIn(':video-load-state="videoPreviewLoadState"', studio)
+
     def test_image_refresh_uses_one_workflow_batch_polling_loop(self):
         studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
         refresh_body = studio.split("async function refreshImageReview", 1)[1].split(
