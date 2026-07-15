@@ -102,7 +102,7 @@ export function summarizeWorkflowProgress(input: {
     const indeterminate = input.images.readyCount === 0 && hasRunning
     const percent = indeterminate
       ? null
-      : Math.floor(
+      : Math.round(
           (input.images.readyCount / input.images.totalCount) * 100,
         )
     const completedLabel = `已完成 ${input.images.readyCount} / ${input.images.totalCount}`

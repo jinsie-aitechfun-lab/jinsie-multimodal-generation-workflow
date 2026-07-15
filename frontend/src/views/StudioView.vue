@@ -2690,6 +2690,21 @@ async function fetchAuthoritativeWorkflow(workflowId: string, signal?: AbortSign
   return (await response.json()) as WorkflowRunResponse
 }
 
+function getAuthoritativeReadySceneIds(data: WorkflowRunResponse): Set<string> {
+  const selectedAssets = (
+    data.outputs?.image_review as Record<string, unknown> | undefined
+  )?.selected_assets
+  return new Set(
+    (Array.isArray(selectedAssets) ? selectedAssets : [])
+      .map((item) =>
+        item && typeof item === 'object'
+          ? String((item as Record<string, unknown>).scene_id || '')
+          : '',
+      )
+      .filter(Boolean),
+  )
+}
+
 async function lookupSceneTask(
   workflowId: string,
   runId: string,
@@ -3322,6 +3337,8 @@ async function pollImageRefreshTasksForWorkflow(
   signal: AbortSignal,
 ) {
   const retriedFailedSceneIds = new Set<string>()
+  const observedSucceededSceneIds = new Set<string>()
+  const syncedSucceededSceneIds = new Set<string>()
   const submittedSceneIds = (() => {
     const existing = submittedImageTaskSceneIdsByWorkflow.get(workflowKey)
     if (existing) return existing
@@ -3368,7 +3385,10 @@ async function pollImageRefreshTasksForWorkflow(
         !retriedFailedSceneIds.has(sceneId),
       )
       const shouldCreateMissing = Boolean(
-        !task && allowCreate && !submittedSceneIds.has(sceneId),
+        !task &&
+        allowCreate &&
+        !submittedSceneIds.has(sceneId) &&
+        !observedSucceededSceneIds.has(sceneId),
       )
       if (shouldCreateMissing || shouldRetryFailed) {
         task = await createImageRefreshTask(
@@ -3395,6 +3415,8 @@ async function pollImageRefreshTasksForWorkflow(
 
     let hasActiveTask = false
     let hasSucceededTask = false
+    const newlySucceededSceneIds: string[] = []
+    const scenesNeedingResultSync: string[] = []
     const failures: string[] = []
     sceneRefreshingId.value = ''
 
@@ -3420,7 +3442,16 @@ async function pollImageRefreshTasksForWorkflow(
         markPlaceholderState(sceneId, 'refreshing')
       } else if (task.status === 'succeeded') {
         hasSucceededTask = true
-        markPlaceholderState(sceneId, 'confirming')
+        if (!observedSucceededSceneIds.has(sceneId)) {
+          observedSucceededSceneIds.add(sceneId)
+          newlySucceededSceneIds.push(sceneId)
+        }
+        if (syncedSucceededSceneIds.has(sceneId)) {
+          markPlaceholderState(sceneId, 'done')
+        } else {
+          scenesNeedingResultSync.push(sceneId)
+          markPlaceholderState(sceneId, 'confirming')
+        }
       } else {
         const message = `${sceneId} 候选图生成失败：${task.error || '服务端任务失败'}`
         failures.push(message)
@@ -3429,8 +3460,16 @@ async function pollImageRefreshTasksForWorkflow(
       }
     }
 
-    if (!hasActiveTask) {
-      if (hasSucceededTask) {
+    // A batch can report several newly succeeded scenes at once. Pull the
+    // authoritative workflow snapshot once for the whole batch, then let the
+    // existing selected_assets -> placeholders -> imageGenerationSummary chain
+    // advance readyCount. A failed/missing snapshot leaves the scenes in
+    // confirming so the next batch-poll iteration retries only this read.
+    if (
+      hasActiveTask &&
+      (newlySucceededSceneIds.length > 0 || scenesNeedingResultSync.length > 0)
+    ) {
+      try {
         const authoritative = await fetchAuthoritativeWorkflow(workflowId, signal)
         if (
           generation !== imageReviewPollingGeneration ||
@@ -3439,13 +3478,68 @@ async function pollImageRefreshTasksForWorkflow(
           throw new DOMException('Superseded', 'AbortError')
         }
         applyWorkflowResponse(authoritative)
-        for (const sceneId of sceneIds) {
-          if (taskByScene.get(sceneId)?.status === 'succeeded') {
+        const authoritativeReadySceneIds = getAuthoritativeReadySceneIds(authoritative)
+        for (const sceneId of scenesNeedingResultSync) {
+          if (authoritativeReadySceneIds.has(sceneId)) {
+            syncedSucceededSceneIds.add(sceneId)
             markPlaceholderState(sceneId, 'done')
+          } else {
+            markPlaceholderState(sceneId, 'confirming')
           }
         }
+        // applyWorkflowResponse rebuilds placeholders from persisted assets.
+        // Restore the finer task states for scenes that are still in flight.
+        for (const sceneId of sceneIds) {
+          const task = taskByScene.get(sceneId)
+          if (task?.status === 'queued') markPlaceholderState(sceneId, 'queued')
+          if (task?.status === 'running') markPlaceholderState(sceneId, 'refreshing')
+        }
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') throw error
+        for (const sceneId of scenesNeedingResultSync) {
+          markPlaceholderState(sceneId, 'confirming')
+        }
       }
-      return failures
+    }
+
+    if (!hasActiveTask) {
+      if (hasSucceededTask) {
+        try {
+          // Keep one final authoritative reconciliation after every task is
+          // terminal, even if incremental snapshots already populated scenes.
+          const authoritative = await fetchAuthoritativeWorkflow(workflowId, signal)
+          if (
+            generation !== imageReviewPollingGeneration ||
+            activeImageReviewPollingKey !== workflowKey
+          ) {
+            throw new DOMException('Superseded', 'AbortError')
+          }
+          applyWorkflowResponse(authoritative)
+          const authoritativeReadySceneIds = getAuthoritativeReadySceneIds(authoritative)
+          for (const sceneId of sceneIds) {
+            if (taskByScene.get(sceneId)?.status !== 'succeeded') continue
+            if (authoritativeReadySceneIds.has(sceneId)) {
+              syncedSucceededSceneIds.add(sceneId)
+              markPlaceholderState(sceneId, 'done')
+            } else {
+              markPlaceholderState(sceneId, 'confirming')
+            }
+          }
+          const hasUnsyncedSucceededTask = sceneIds.some(
+            (sceneId) =>
+              taskByScene.get(sceneId)?.status === 'succeeded' &&
+              !syncedSucceededSceneIds.has(sceneId),
+          )
+          if (!hasUnsyncedSucceededTask) return failures
+        } catch (error) {
+          if (error instanceof DOMException && error.name === 'AbortError') throw error
+          for (const sceneId of scenesNeedingResultSync) {
+            markPlaceholderState(sceneId, 'confirming')
+          }
+        }
+      } else {
+        return failures
+      }
     }
 
     const visibilityDelay = document.hidden ? 20000 : 5000
