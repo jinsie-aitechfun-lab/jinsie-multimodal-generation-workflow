@@ -184,6 +184,13 @@ type ImageRefreshTaskResponse = {
   error?: string
 }
 
+type ImageRefreshTaskBatchResponse = {
+  workflow_id: string
+  run_id: string
+  found: boolean
+  tasks: ImageRefreshTaskResponse[]
+}
+
 type FinalVideoRenderResponse = {
   workflow_id?: string
   session_id?: string
@@ -647,6 +654,10 @@ const imageRefreshPausedByUser = ref(false)
 let reviewAutoRefreshFiredOnce = false
 let imageReviewAutoRefreshTimer: number | null = null
 let imageReviewRefreshAbortController: AbortController | null = null
+let activeImageReviewPollingKey = ''
+let imageReviewPollingGeneration = 0
+let wakeImageReviewPolling: (() => void) | null = null
+let imageReviewVisibilityRefreshRequested = false
 type ViewTab = 'run' | 'review' | 'assets' | 'debug'
 const activeTab = ref<ViewTab>('run')
 const devMode = ref(false)
@@ -917,7 +928,10 @@ function onGlobalKeydown(event: KeyboardEvent) {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onGlobalKeydown)
+  document.removeEventListener('visibilitychange', onImageReviewVisibilityChange)
   clearImageReviewAutoRefreshTimer()
+  imageReviewPollingGeneration += 1
+  activeImageReviewPollingKey = ''
   imageReviewRefreshAbortController?.abort()
   imageReviewRefreshAbortController = null
   if (devModeToastTimer) {
@@ -1047,6 +1061,7 @@ function keepCharacterFieldsAfterTopicChange() {
 onMounted(() => {
   // Global keyboard shortcut for the dev-mode toggle (Cmd/Ctrl+Shift+D).
   window.addEventListener('keydown', onGlobalKeydown)
+  document.addEventListener('visibilitychange', onImageReviewVisibilityChange)
 
   // URL is the single source of truth for dev mode. localStorage used to
   // mirror this, but having two sources caused "remove ?dev=1 from URL,
@@ -2484,6 +2499,50 @@ function clearImageReviewAutoRefreshTimer() {
     window.clearTimeout(imageReviewAutoRefreshTimer)
     imageReviewAutoRefreshTimer = null
   }
+  wakeImageReviewPolling?.()
+  wakeImageReviewPolling = null
+}
+
+function onImageReviewVisibilityChange() {
+  if (document.hidden) return
+  imageReviewVisibilityRefreshRequested = true
+  wakeImageReviewPolling?.()
+}
+
+function waitForImageReviewBatchPoll(ms: number, signal: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'))
+      return
+    }
+
+    let settled = false
+    const finish = () => {
+      if (settled) return
+      settled = true
+      if (imageReviewAutoRefreshTimer !== null) {
+        window.clearTimeout(imageReviewAutoRefreshTimer)
+        imageReviewAutoRefreshTimer = null
+      }
+      signal.removeEventListener('abort', onAbort)
+      wakeImageReviewPolling = null
+      resolve()
+    }
+    const onAbort = () => {
+      if (settled) return
+      settled = true
+      if (imageReviewAutoRefreshTimer !== null) {
+        window.clearTimeout(imageReviewAutoRefreshTimer)
+        imageReviewAutoRefreshTimer = null
+      }
+      wakeImageReviewPolling = null
+      reject(new DOMException('Aborted', 'AbortError'))
+    }
+
+    wakeImageReviewPolling = finish
+    signal.addEventListener('abort', onAbort, { once: true })
+    imageReviewAutoRefreshTimer = window.setTimeout(finish, ms)
+  })
 }
 
 function resolveWorkflowPayloadForRender(baseResponse: WorkflowRunResponse): WorkflowRunPayload | null {
@@ -3196,6 +3255,206 @@ function performDiscardCurrentDraft() {
   activeTab.value = 'run'
 }
 
+function buildImageRefreshTaskPayload(
+  sceneId: string,
+  knownFailedSceneIds: string[],
+) {
+  if (!currentWorkflowResponse.value || !currentWorkflowPayload.value) return null
+  const outputs = currentWorkflowResponse.value.outputs || {}
+  const storyboard = outputs.storyboard
+  if (!storyboard || typeof storyboard !== 'object') return null
+
+  return {
+    workflow_id:
+      currentWorkflowResponse.value.workflow_id || currentWorkflowPayload.value.workflow_id,
+    session_id:
+      currentWorkflowResponse.value.session_id || currentWorkflowPayload.value.session_id,
+    run_id: currentWorkflowResponse.value.run_id || '',
+    scene_id: sceneId,
+    storyboard,
+    workflow_input: currentWorkflowPayload.value.input,
+    image_review:
+      outputs.image_review && typeof outputs.image_review === 'object'
+        ? outputs.image_review
+        : {},
+    character_manifest:
+      outputs.character_manifest && typeof outputs.character_manifest === 'object'
+        ? outputs.character_manifest
+        : {},
+    image_prompts:
+      outputs.image_prompts && typeof outputs.image_prompts === 'object'
+        ? outputs.image_prompts
+        : {},
+    video_provider:
+      typeof currentWorkflowPayload.value.input?.video_provider === 'string'
+        ? currentWorkflowPayload.value.input.video_provider
+        : workflowForm.value.videoProvider,
+    preserve_seed: false,
+    known_failed_scene_ids: knownFailedSceneIds,
+  }
+}
+
+async function fetchImageRefreshTaskBatch(
+  workflowId: string,
+  runId: string,
+  signal: AbortSignal,
+) {
+  const query = new URLSearchParams({ workflow_id: workflowId, run_id: runId })
+  const response = await fetch(
+    `${apiBaseUrl}/v1/image-review/refresh-scene-tasks?${query.toString()}`,
+    { signal },
+  )
+  if (!response.ok) throw new Error(`Image task batch HTTP ${response.status}`)
+  return (await response.json()) as ImageRefreshTaskBatchResponse
+}
+
+async function createImageRefreshTask(
+  sceneId: string,
+  retryFailed: boolean,
+  knownFailedSceneIds: string[],
+  signal: AbortSignal,
+) {
+  const payload = buildImageRefreshTaskPayload(sceneId, knownFailedSceneIds)
+  if (!payload) throw new Error(`Unable to build image task payload for ${sceneId}`)
+  const response = await fetch(`${apiBaseUrl}/v1/image-review/refresh-scene-task`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...payload, retry_failed: retryFailed }),
+    signal,
+  })
+  if (!response.ok) throw new Error(`Image task create HTTP ${response.status}`)
+  return (await response.json()) as ImageRefreshTaskResponse
+}
+
+async function pollImageRefreshTasksForWorkflow(
+  sceneIds: string[],
+  failedSceneIds: Set<string>,
+  allowCreate: boolean,
+  workflowId: string,
+  runId: string,
+  workflowKey: string,
+  generation: number,
+  signal: AbortSignal,
+) {
+  const retriedFailedSceneIds = new Set<string>()
+
+  while (!signal.aborted) {
+    if (
+      generation !== imageReviewPollingGeneration ||
+      activeImageReviewPollingKey !== workflowKey
+    ) {
+      throw new DOMException('Superseded', 'AbortError')
+    }
+
+    let batch: ImageRefreshTaskBatchResponse
+    try {
+      batch = await fetchImageRefreshTaskBatch(workflowId, runId, signal)
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') throw error
+      for (const sceneId of sceneIds) markPlaceholderState(sceneId, 'confirming')
+      const delay = document.hidden ? 20000 : 5000
+      await waitForImageReviewBatchPoll(delay, signal)
+      continue
+    }
+    if (
+      generation !== imageReviewPollingGeneration ||
+      activeImageReviewPollingKey !== workflowKey
+    ) {
+      throw new DOMException('Superseded', 'AbortError')
+    }
+
+    const taskByScene = new Map(batch.tasks.map((task) => [task.scene_id, task]))
+
+    for (const sceneId of sceneIds) {
+      if (signal.aborted || generation !== imageReviewPollingGeneration) {
+        throw new DOMException('Superseded', 'AbortError')
+      }
+      let task = taskByScene.get(sceneId)
+      const shouldRetryFailed = Boolean(
+        task?.status === 'failed' &&
+        failedSceneIds.has(sceneId) &&
+        !retriedFailedSceneIds.has(sceneId),
+      )
+      if ((!task && allowCreate) || shouldRetryFailed) {
+        task = await createImageRefreshTask(
+          sceneId,
+          shouldRetryFailed,
+          Array.from(failedSceneIds),
+          signal,
+        )
+        if (
+          generation !== imageReviewPollingGeneration ||
+          activeImageReviewPollingKey !== workflowKey
+        ) {
+          throw new DOMException('Superseded', 'AbortError')
+        }
+        if (shouldRetryFailed) retriedFailedSceneIds.add(sceneId)
+        taskByScene.set(sceneId, task)
+      }
+      if (task?.task_id) {
+        sceneTaskIds.value = { ...sceneTaskIds.value, [sceneId]: task.task_id }
+      }
+    }
+    persistSceneTaskIds(workflowId, runId)
+
+    let hasActiveTask = false
+    let hasSucceededTask = false
+    const failures: string[] = []
+    sceneRefreshingId.value = ''
+
+    for (const sceneId of sceneIds) {
+      const task = taskByScene.get(sceneId)
+      if (!task) {
+        markPlaceholderState(sceneId, 'waiting')
+        continue
+      }
+      if (task.status === 'queued') {
+        hasActiveTask = true
+        sceneRefreshingId.value ||= sceneId
+        markPlaceholderState(sceneId, 'queued')
+      } else if (task.status === 'running') {
+        hasActiveTask = true
+        sceneRefreshingId.value ||= sceneId
+        markPlaceholderState(sceneId, 'refreshing')
+      } else if (task.status === 'succeeded') {
+        hasSucceededTask = true
+        markPlaceholderState(sceneId, 'confirming')
+      } else {
+        const message = `${sceneId} 候选图生成失败：${task.error || '服务端任务失败'}`
+        failures.push(message)
+        failedSceneIds.add(sceneId)
+        markPlaceholderState(sceneId, 'failed', message)
+      }
+    }
+
+    if (!hasActiveTask) {
+      if (hasSucceededTask) {
+        const authoritative = await fetchAuthoritativeWorkflow(workflowId, signal)
+        if (
+          generation !== imageReviewPollingGeneration ||
+          activeImageReviewPollingKey !== workflowKey
+        ) {
+          throw new DOMException('Superseded', 'AbortError')
+        }
+        applyWorkflowResponse(authoritative)
+        for (const sceneId of sceneIds) {
+          if (taskByScene.get(sceneId)?.status === 'succeeded') {
+            markPlaceholderState(sceneId, 'done')
+          }
+        }
+      }
+      return failures
+    }
+
+    const visibilityDelay = document.hidden ? 20000 : 5000
+    const delay = imageReviewVisibilityRefreshRequested ? 0 : visibilityDelay
+    imageReviewVisibilityRefreshRequested = false
+    await waitForImageReviewBatchPoll(delay, signal)
+  }
+
+  throw new DOMException('Aborted', 'AbortError')
+}
+
 async function refreshImageReview(allowCreate = true) {
   if (!currentWorkflowResponse.value || !currentWorkflowPayload.value) {
     return
@@ -3260,44 +3519,61 @@ async function refreshImageReview(allowCreate = true) {
     }
   }
 
+  const workflowId = String(
+    currentWorkflowResponse.value.workflow_id || currentWorkflowPayload.value.workflow_id || '',
+  )
+  const runId = String(currentWorkflowResponse.value.run_id || '')
+  const workflowKey = imageTaskStorageKey(workflowId, runId)
+  if (!workflowId || !runId) {
+    refreshingImageReview.value = false
+    errorMessage.value = '当前缺少 workflow_id 或 run_id。'
+    return
+  }
+  if (activeImageReviewPollingKey === workflowKey) {
+    refreshingImageReview.value = false
+    return
+  }
+
+  imageReviewPollingGeneration += 1
+  const generation = imageReviewPollingGeneration
+  if (activeImageReviewPollingKey && activeImageReviewPollingKey !== workflowKey) {
+    imageReviewRefreshAbortController?.abort()
+  }
+  activeImageReviewPollingKey = workflowKey
+
   try {
     imageReviewRefreshAbortController = new AbortController()
     const signal = imageReviewRefreshAbortController.signal
-    await Promise.all(
-      sceneRefreshQueue.value.map(async (sceneId) => {
-        if (imageReviewRefreshCancelled.value) return
-        try {
-          await refreshImageReviewScene(
-            sceneId,
-            signal,
-            undefined,
-            false,
-            Array.from(failedSceneIds),
-            failedSceneIds.has(sceneId),
-            allowCreate,
-          )
-          failedSceneIds.delete(sceneId)
-        } catch (error) {
-          if (
-            imageReviewRefreshCancelled.value ||
-            (error instanceof DOMException && error.name === 'AbortError')
-          ) {
-            markPlaceholderState(sceneId, 'waiting')
-            return
-          }
-          const message = error instanceof Error ? error.message : '候选图分场景刷新失败'
-          failures.push(message)
-          failedSceneIds.add(sceneId)
-          markPlaceholderState(sceneId, 'failed', message)
-        }
-      }),
+    failures.push(
+      ...(await pollImageRefreshTasksForWorkflow(
+        [...sceneRefreshQueue.value],
+        failedSceneIds,
+        allowCreate,
+        workflowId,
+        runId,
+        workflowKey,
+        generation,
+        signal,
+      )),
     )
+  } catch (error) {
+    if (
+      !imageReviewRefreshCancelled.value &&
+      !(error instanceof DOMException && error.name === 'AbortError')
+    ) {
+      const message = error instanceof Error ? error.message : '候选图任务状态查询失败'
+      failures.push(message)
+    }
   } finally {
-    sceneRefreshingId.value = ''
-    sceneRefreshQueue.value = []
-    refreshingImageReview.value = false
-    imageReviewRefreshCancelled.value = false
-    imageReviewRefreshAbortController = null
+    if (generation === imageReviewPollingGeneration) {
+      sceneRefreshingId.value = ''
+      sceneRefreshQueue.value = []
+      refreshingImageReview.value = false
+      imageReviewRefreshCancelled.value = false
+      imageReviewRefreshAbortController = null
+      activeImageReviewPollingKey = ''
+      clearImageReviewAutoRefreshTimer()
+    }
   }
 
   if (failures.length > 0) {

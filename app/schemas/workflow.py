@@ -337,6 +337,25 @@ class ImageReviewRefreshSceneTaskResponse(BaseModel):
     updated_at: Optional[int] = None
 
 
+class ImageReviewRefreshSceneTaskStatus(BaseModel):
+    found: bool = True
+    task_id: Optional[str] = None
+    workflow_id: str
+    run_id: str
+    scene_id: str
+    status: Optional[Literal["queued", "running", "succeeded", "failed"]] = None
+    error: str = ""
+    created_at: Optional[int] = None
+    updated_at: Optional[int] = None
+
+
+class ImageReviewRefreshTaskBatchResponse(BaseModel):
+    workflow_id: str
+    run_id: str
+    found: bool
+    tasks: List[ImageReviewRefreshSceneTaskStatus] = Field(default_factory=list)
+
+
 class FinalVideoRenderRequest(BaseModel):
     workflow_id: str
     session_id: Optional[str] = None
