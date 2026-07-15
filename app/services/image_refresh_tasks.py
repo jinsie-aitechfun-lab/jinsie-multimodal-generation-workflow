@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import threading
 import time
@@ -11,6 +12,9 @@ from typing import Any
 
 from app.services.atomic_json_store import read_json, update_json_atomic, write_json_atomic
 from app.services.storage_ids import safe_child_dir
+
+
+logger = logging.getLogger(__name__)
 
 
 TERMINAL_TASK_STATES = {"succeeded", "failed"}
@@ -264,6 +268,7 @@ class ImageRefreshTaskManager:
         self.coordinator = coordinator
         self.queue: Queue[str] = Queue()
         self.tasks: dict[str, Path] = {}
+        self.task_ids_by_run: dict[tuple[str, str], set[str]] = {}
         self.guard = threading.RLock()
         self.started = False
         try:
@@ -287,6 +292,10 @@ class ImageRefreshTaskManager:
         )
         return workflow_dir / "image_refresh_tasks" / f"{task_id}.json"
 
+    def _register_task(self, task_id: str, path: Path, workflow_id: str, run_id: str) -> None:
+        self.tasks[task_id] = path
+        self.task_ids_by_run.setdefault((workflow_id, run_id), set()).add(task_id)
+
     def start(self) -> None:
         with self.guard:
             if self.started:
@@ -297,7 +306,12 @@ class ImageRefreshTaskManager:
                 task_id = str(task.get("task_id") or "")
                 if not task_id:
                     continue
-                self.tasks[task_id] = path
+                self._register_task(
+                    task_id,
+                    path,
+                    str(task.get("workflow_id") or ""),
+                    str(task.get("run_id") or ""),
+                )
                 if str(task.get("status") or "") in {"queued", "running"}:
                     recovered = self.coordinator.reconcile(
                         str(task.get("workflow_id") or ""),
@@ -323,7 +337,7 @@ class ImageRefreshTaskManager:
         scene_id = str(payload["scene_id"])
         task_id = self.task_id_for(workflow_id, run_id, scene_id)
         path = self._task_path(workflow_id, task_id)
-        self.tasks[task_id] = path
+        self._register_task(task_id, path, workflow_id, run_id)
 
         reconciled = self.coordinator.reconcile(workflow_id, run_id, scene_id)
         if reconciled is not None:
@@ -379,27 +393,52 @@ class ImageRefreshTaskManager:
         task = read_json(path, default=None)
         if not isinstance(task, dict):
             return None
-        if str(task.get("status") or "") == "succeeded":
-            recovered = self.coordinator.reconcile(
-                str(task.get("workflow_id") or ""),
-                str(task.get("run_id") or ""),
-                str(task.get("scene_id") or ""),
-            )
-            if recovered is None:
-                task["status"] = "failed"
-                task["error"] = "task metadata succeeded but candidate files are missing"
-            else:
-                task["result"] = recovered
-            task["updated_at"] = int(time.time())
-            write_json_atomic(path, task)
         return task
+
+    def list_for_run(self, workflow_id: str, run_id: str) -> list[dict[str, Any]]:
+        """Read all registered task summaries for one workflow/run without side effects."""
+        started_at = time.perf_counter()
+        with self.guard:
+            task_ids = tuple(self.task_ids_by_run.get((workflow_id, run_id), ()))
+            task_paths = [self.tasks[task_id] for task_id in task_ids if task_id in self.tasks]
+
+        tasks: list[dict[str, Any]] = []
+        for path in task_paths:
+            task = read_json(path, default=None)
+            if not isinstance(task, dict):
+                continue
+            if str(task.get("workflow_id") or "") != workflow_id:
+                continue
+            if str(task.get("run_id") or "") != run_id:
+                continue
+            tasks.append(
+                {
+                    "found": True,
+                    "task_id": str(task.get("task_id") or ""),
+                    "workflow_id": workflow_id,
+                    "run_id": run_id,
+                    "scene_id": str(task.get("scene_id") or ""),
+                    "status": str(task.get("status") or ""),
+                    "error": str(task.get("error") or ""),
+                    "created_at": task.get("created_at"),
+                    "updated_at": task.get("updated_at"),
+                }
+            )
+
+        tasks.sort(key=lambda item: str(item.get("scene_id") or ""))
+        logger.info(
+            "image refresh batch task read duration_ms=%.2f task_count=%d",
+            (time.perf_counter() - started_at) * 1000,
+            len(tasks),
+        )
+        return tasks
 
     def recover_status(
         self, workflow_id: str, run_id: str, scene_id: str
     ) -> dict[str, Any] | None:
         task_id = self.task_id_for(workflow_id, run_id, scene_id)
         path = self._task_path(workflow_id, task_id)
-        self.tasks[task_id] = path
+        self._register_task(task_id, path, workflow_id, run_id)
         reconciled = self.coordinator.reconcile(workflow_id, run_id, scene_id)
         if reconciled is not None:
             task = {

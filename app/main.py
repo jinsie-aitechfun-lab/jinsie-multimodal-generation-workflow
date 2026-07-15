@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import time
 from pathlib import Path
@@ -23,6 +24,7 @@ from app.schemas.workflow import (
     ImageReviewRefreshSceneResponse,
     ImageReviewRefreshSceneTaskRequest,
     ImageReviewRefreshSceneTaskResponse,
+    ImageReviewRefreshTaskBatchResponse,
     ImageReviewSelectRequest,
     ImageReviewSelectResponse,
     WorkflowRunRequest,
@@ -44,6 +46,7 @@ from app.services.image_refresh_tasks import (
 from app.services.storage_ids import safe_child_dir, sanitize_storage_id
 
 app = FastAPI(title="jinsie-multimodal-generation-workflow", version="0.1.0")
+logger = logging.getLogger(__name__)
 
 DEFAULT_CORS_ALLOW_ORIGINS = [
     "http://localhost:5173",
@@ -734,6 +737,31 @@ def create_image_review_scene_task(req: ImageReviewRefreshSceneTaskRequest):
         return ImageReviewRefreshSceneTaskResponse(**task)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.get(
+    "/v1/image-review/refresh-scene-tasks",
+    response_model=ImageReviewRefreshTaskBatchResponse,
+)
+def list_image_review_scene_tasks(workflow_id: str, run_id: str):
+    started_at = time.perf_counter()
+    normalized_workflow_id = _require_workflow_id(workflow_id)
+    normalized_run_id = _require_storage_id(run_id, "run_id")
+    tasks = _image_refresh_tasks.list_for_run(
+        normalized_workflow_id, normalized_run_id
+    )
+    response = ImageReviewRefreshTaskBatchResponse(
+        workflow_id=normalized_workflow_id,
+        run_id=normalized_run_id,
+        found=bool(tasks),
+        tasks=tasks,
+    )
+    logger.info(
+        "image refresh batch endpoint duration_ms=%.2f task_count=%d",
+        (time.perf_counter() - started_at) * 1000,
+        len(tasks),
+    )
+    return response
 
 
 @app.get(
