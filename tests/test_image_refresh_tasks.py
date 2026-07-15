@@ -294,6 +294,123 @@ class ImageRefreshReliabilityTests(unittest.TestCase):
         self.assertEqual(outputs_before, self.outputs_path.read_bytes())
         self.assertEqual(task_before, task_path.read_bytes())
 
+    def _task_payload(self, scene_id: str):
+        return {
+            "workflow_id": self.workflow_id,
+            "run_id": self.run_id,
+            "scene_id": scene_id,
+            "storyboard": {"scenes": self.scenes},
+            "workflow_input": {},
+            "image_review": {},
+        }
+
+    def test_persistent_index_survives_empty_memory_cache_and_new_manager(self):
+        manager = ImageRefreshTaskManager(self.assets_dir, self.coordinator)
+        for scene in self.scenes:
+            manager.submit(self._task_payload(scene["scene_id"]))
+
+        manager.tasks.clear()
+        manager.task_ids_by_run.clear()
+        statuses = manager.list_for_run(self.workflow_id, self.run_id)
+        self.assertEqual(6, len(statuses))
+
+        replacement = ImageRefreshTaskManager(self.assets_dir, self.coordinator)
+        replacement_statuses = replacement.list_for_run(
+            self.workflow_id, self.run_id
+        )
+        self.assertEqual(6, len(replacement_statuses))
+
+    def test_missing_index_recovers_only_current_workflow_task_directory(self):
+        manager = ImageRefreshTaskManager(self.assets_dir, self.coordinator)
+        for scene in self.scenes[:2]:
+            manager.submit(self._task_payload(scene["scene_id"]))
+        manager._task_index_path(self.workflow_id).unlink()
+        manager.tasks.clear()
+        manager.task_ids_by_run.clear()
+
+        statuses = manager.list_for_run(self.workflow_id, self.run_id)
+
+        self.assertEqual(
+            ["scene_01", "scene_02"],
+            [item["scene_id"] for item in statuses],
+        )
+        self.assertFalse(manager._task_index_path(self.workflow_id).exists())
+
+    def test_corrupt_indexed_task_is_reported_without_failing_batch(self):
+        manager = ImageRefreshTaskManager(self.assets_dir, self.coordinator)
+        task, _ = manager.submit(self._task_payload("scene_01"))
+        manager._task_path(self.workflow_id, task["task_id"]).write_text(
+            "{not-json", encoding="utf-8"
+        )
+
+        statuses = manager.list_for_run(self.workflow_id, self.run_id)
+
+        self.assertEqual(1, len(statuses))
+        self.assertFalse(statuses[0]["found"])
+        self.assertIsNone(statuses[0]["status"])
+        self.assertIn("corrupt", statuses[0]["error"])
+
+    def test_partial_index_is_completed_from_current_workflow_task_files(self):
+        manager = ImageRefreshTaskManager(self.assets_dir, self.coordinator)
+        first, _ = manager.submit(self._task_payload("scene_01"))
+        manager.submit(self._task_payload("scene_02"))
+        manager._task_index_path(self.workflow_id).write_text(
+            json.dumps(
+                {
+                    "workflow_id": self.workflow_id,
+                    "runs": {self.run_id: {"scene_01": first["task_id"]}},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        statuses = manager.list_for_run(self.workflow_id, self.run_id)
+
+        self.assertEqual(
+            ["scene_01", "scene_02"],
+            [item["scene_id"] for item in statuses],
+        )
+
+    def test_index_upserts_preserve_sequential_and_concurrent_scenes(self):
+        manager = ImageRefreshTaskManager(self.assets_dir, self.coordinator)
+        manager.submit(self._task_payload("scene_01"))
+        manager.submit(self._task_payload("scene_02"))
+
+        threads = [
+            threading.Thread(
+                target=manager._upsert_task_index,
+                args=(
+                    self.workflow_id,
+                    self.run_id,
+                    f"scene_{index:02d}",
+                    manager.task_id_for(
+                        self.workflow_id, self.run_id, f"scene_{index:02d}"
+                    ),
+                ),
+            )
+            for index in (3, 4)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        index = json.loads(
+            manager._task_index_path(self.workflow_id).read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            {"scene_01", "scene_02", "scene_03", "scene_04"},
+            set(index["runs"][self.run_id]),
+        )
+
+    def test_duplicate_queued_submit_does_not_enqueue_twice(self):
+        manager = ImageRefreshTaskManager(self.assets_dir, self.coordinator)
+        first, _ = manager.submit(self._task_payload("scene_01"))
+        second, _ = manager.submit(self._task_payload("scene_01"))
+
+        self.assertEqual(first["task_id"], second["task_id"])
+        self.assertEqual(1, manager.queue.qsize())
+
 
 if __name__ == "__main__":
     unittest.main()
