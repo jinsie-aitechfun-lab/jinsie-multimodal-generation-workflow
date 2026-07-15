@@ -78,6 +78,8 @@ class FrontendStateContractTests(unittest.TestCase):
         self.assertIn("input.images.readyCount / input.images.totalCount", image_branch)
         self.assertIn("* 100", image_branch)
         self.assertNotIn("* 85", image_branch)
+        self.assertIn("Math.round(", image_branch)
+        self.assertEqual(17, round((1 / 6) * 100))
 
     def test_confirming_image_progress_has_confirmation_copy(self):
         source = (ROOT / "frontend/src/lib/workflowState.ts").read_text(encoding="utf-8")
@@ -116,11 +118,75 @@ class FrontendStateContractTests(unittest.TestCase):
         self.assertIn("generation !== imageReviewPollingGeneration", polling_body)
         self.assertIn("document.hidden ? 20000 : 5000", polling_body)
         self.assertIn("if (!hasActiveTask)", polling_body)
-        self.assertEqual(1, polling_body.count("fetchAuthoritativeWorkflow(workflowId, signal)"))
+        self.assertEqual(2, polling_body.count("fetchAuthoritativeWorkflow(workflowId, signal)"))
         terminal_block = polling_body.split("if (!hasActiveTask)", 1)[1]
         self.assertLess(terminal_block.index("return failures"), terminal_block.index("visibilityDelay"))
         self.assertIn("imageReviewRefreshAbortController?.abort()", unmount_body)
         self.assertIn("imageReviewPollingGeneration += 1", unmount_body)
+
+    def test_succeeded_scenes_sync_incrementally_before_all_tasks_finish(self):
+        studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        polling_body = studio.split(
+            "async function pollImageRefreshTasksForWorkflow", 1
+        )[1].split("async function refreshImageReview", 1)[0]
+        incremental_sync = polling_body.split(
+            "if (\n      hasActiveTask &&", 1
+        )[1].split("if (!hasActiveTask)", 1)[0]
+
+        self.assertIn("newlySucceededSceneIds.push(sceneId)", polling_body)
+        self.assertIn("scenesNeedingResultSync.push(sceneId)", polling_body)
+        self.assertIn("fetchAuthoritativeWorkflow(workflowId, signal)", incremental_sync)
+        self.assertIn("applyWorkflowResponse(authoritative)", incremental_sync)
+        self.assertIn("markPlaceholderState(sceneId, 'done')", incremental_sync)
+
+    def test_first_and_second_succeeded_scenes_advance_ready_count(self):
+        studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        summary = studio.split(
+            "const imageGenerationSummary", 1
+        )[1].split("const isWorkflowReadyForRender", 1)[0]
+        polling_body = studio.split(
+            "async function pollImageRefreshTasksForWorkflow", 1
+        )[1].split("async function refreshImageReview", 1)[0]
+
+        self.assertIn("item.state === 'done'\n          ? 'ready'", summary)
+        self.assertIn("syncedSucceededSceneIds.add(sceneId)", polling_body)
+        self.assertIn("markPlaceholderState(sceneId, 'done')", polling_body)
+
+    def test_succeeded_scene_is_not_synchronized_twice_after_success(self):
+        studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        polling_body = studio.split(
+            "async function pollImageRefreshTasksForWorkflow", 1
+        )[1].split("async function refreshImageReview", 1)[0]
+
+        self.assertIn("const syncedSucceededSceneIds = new Set<string>()", polling_body)
+        self.assertIn("if (syncedSucceededSceneIds.has(sceneId))", polling_body)
+        self.assertIn("!syncedSucceededSceneIds.has(sceneId)", polling_body)
+
+    def test_failed_result_sync_stays_confirming_without_reposting(self):
+        studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        polling_body = studio.split(
+            "async function pollImageRefreshTasksForWorkflow", 1
+        )[1].split("async function refreshImageReview", 1)[0]
+        create_guard = polling_body.split("const shouldCreateMissing", 1)[1].split(")\n      if", 1)[0]
+        incremental_sync = polling_body.split(
+            "if (\n      hasActiveTask &&", 1
+        )[1].split("if (!hasActiveTask)", 1)[0]
+
+        self.assertIn("!observedSucceededSceneIds.has(sceneId)", create_guard)
+        self.assertIn("catch (error)", incremental_sync)
+        self.assertIn("markPlaceholderState(sceneId, 'confirming')", incremental_sync)
+        self.assertNotIn("createImageRefreshTask(", incremental_sync)
+
+    def test_all_terminal_still_performs_final_authoritative_reconciliation(self):
+        studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        polling_body = studio.split(
+            "async function pollImageRefreshTasksForWorkflow", 1
+        )[1].split("async function refreshImageReview", 1)[0]
+        terminal_block = polling_body.split("if (!hasActiveTask)", 1)[1]
+
+        self.assertIn("final authoritative reconciliation", terminal_block)
+        self.assertIn("fetchAuthoritativeWorkflow(workflowId, signal)", terminal_block)
+        self.assertIn("applyWorkflowResponse(authoritative)", terminal_block)
 
     def test_missing_batch_tasks_are_submitted_once_per_workflow(self):
         studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
