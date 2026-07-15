@@ -321,6 +321,22 @@ class ImageReviewRefreshSceneResponse(BaseModel):
         )
 
 
+class ImageReviewRefreshSceneTaskRequest(ImageReviewRefreshSceneRequest):
+    retry_failed: bool = Field(default=False)
+
+
+class ImageReviewRefreshSceneTaskResponse(BaseModel):
+    task_id: str
+    workflow_id: str
+    run_id: str
+    scene_id: str
+    status: Literal["queued", "running", "succeeded", "failed"]
+    result: Dict[str, Any] = Field(default_factory=dict)
+    error: str = ""
+    created_at: Optional[int] = None
+    updated_at: Optional[int] = None
+
+
 class FinalVideoRenderRequest(BaseModel):
     workflow_id: str
     session_id: Optional[str] = None
