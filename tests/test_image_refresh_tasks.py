@@ -218,6 +218,82 @@ class ImageRefreshReliabilityTests(unittest.TestCase):
             else:
                 os.environ["IMAGE_TASK_CONCURRENCY"] = old
 
+    def test_batch_status_read_is_lightweight_and_does_not_reconcile(self):
+        manager = ImageRefreshTaskManager(self.assets_dir, self.coordinator)
+        task_id = manager.task_id_for(
+            self.workflow_id, self.run_id, "scene_01"
+        )
+        task_path = manager._task_path(self.workflow_id, task_id)
+        task_path.parent.mkdir(parents=True, exist_ok=True)
+        task = {
+            "task_id": task_id,
+            "workflow_id": self.workflow_id,
+            "run_id": self.run_id,
+            "scene_id": "scene_01",
+            "status": "succeeded",
+            "result": {"large": "payload is intentionally omitted"},
+            "error": "",
+            "updated_at": 123,
+        }
+        task_path.write_text(json.dumps(task), encoding="utf-8")
+        manager._register_task(task_id, task_path, self.workflow_id, self.run_id)
+        outputs_before = self.outputs_path.read_bytes()
+        task_before = task_path.read_bytes()
+
+        original_reconcile = self.coordinator.reconcile
+        self.coordinator.reconcile = lambda *args, **kwargs: self.fail(
+            "batch status read must not reconcile"
+        )
+        try:
+            statuses = manager.list_for_run(self.workflow_id, self.run_id)
+        finally:
+            self.coordinator.reconcile = original_reconcile
+
+        self.assertEqual(1, len(statuses))
+        self.assertEqual("scene_01", statuses[0]["scene_id"])
+        self.assertNotIn("result", statuses[0])
+        self.assertEqual(outputs_before, self.outputs_path.read_bytes())
+        self.assertEqual(task_before, task_path.read_bytes())
+
+    def test_single_task_get_is_read_only_after_success(self):
+        manager = ImageRefreshTaskManager(self.assets_dir, self.coordinator)
+        task_id = manager.task_id_for(
+            self.workflow_id, self.run_id, "scene_02"
+        )
+        task_path = manager._task_path(self.workflow_id, task_id)
+        task_path.parent.mkdir(parents=True, exist_ok=True)
+        task_path.write_text(
+            json.dumps(
+                {
+                    "task_id": task_id,
+                    "workflow_id": self.workflow_id,
+                    "run_id": self.run_id,
+                    "scene_id": "scene_02",
+                    "status": "succeeded",
+                    "result": {},
+                    "error": "",
+                    "updated_at": 456,
+                }
+            ),
+            encoding="utf-8",
+        )
+        manager.tasks[task_id] = task_path
+        outputs_before = self.outputs_path.read_bytes()
+        task_before = task_path.read_bytes()
+
+        original_reconcile = self.coordinator.reconcile
+        self.coordinator.reconcile = lambda *args, **kwargs: self.fail(
+            "ordinary task GET must not reconcile"
+        )
+        try:
+            task = manager.get(task_id)
+        finally:
+            self.coordinator.reconcile = original_reconcile
+
+        self.assertEqual("succeeded", task["status"])
+        self.assertEqual(outputs_before, self.outputs_path.read_bytes())
+        self.assertEqual(task_before, task_path.read_bytes())
+
 
 if __name__ == "__main__":
     unittest.main()
