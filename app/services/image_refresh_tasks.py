@@ -292,26 +292,88 @@ class ImageRefreshTaskManager:
         )
         return workflow_dir / "image_refresh_tasks" / f"{task_id}.json"
 
+    def _task_index_path(self, workflow_id: str) -> Path:
+        workflow_dir = safe_child_dir(
+            self.mock_root, workflow_id, field_name="workflow_id"
+        )
+        return workflow_dir / "image_refresh_tasks" / "index.json"
+
+    @staticmethod
+    def _read_json_safely(path: Path) -> Any:
+        try:
+            return read_json(path, default=None)
+        except (OSError, ValueError, TypeError):
+            return None
+
     def _register_task(self, task_id: str, path: Path, workflow_id: str, run_id: str) -> None:
         self.tasks[task_id] = path
         self.task_ids_by_run.setdefault((workflow_id, run_id), set()).add(task_id)
+
+    def _upsert_task_index(
+        self, workflow_id: str, run_id: str, scene_id: str, task_id: str
+    ) -> None:
+        index_path = self._task_index_path(workflow_id)
+
+        def upsert(document: Any) -> Any:
+            index = dict(document) if isinstance(document, dict) else {}
+            runs = dict(index.get("runs")) if isinstance(index.get("runs"), dict) else {}
+            run_tasks = (
+                dict(runs.get(run_id)) if isinstance(runs.get(run_id), dict) else {}
+            )
+            run_tasks[scene_id] = task_id
+            runs[run_id] = run_tasks
+            index["workflow_id"] = workflow_id
+            index["runs"] = runs
+            return index
+
+        update_json_atomic(index_path, upsert, default={})
+        logger.info(
+            "task_index_upserted workflow_id=%s run_id=%s task_count=1",
+            workflow_id,
+            run_id,
+        )
+
+    def _write_rebuilt_indexes(
+        self, indexes: dict[str, dict[str, dict[str, str]]]
+    ) -> None:
+        for workflow_id, runs in indexes.items():
+            write_json_atomic(
+                self._task_index_path(workflow_id),
+                {"workflow_id": workflow_id, "runs": runs},
+            )
+            logger.info(
+                "task_index_rebuilt workflow_id=%s run_id=%s task_count=%d",
+                workflow_id,
+                "*",
+                sum(len(tasks) for tasks in runs.values()),
+            )
 
     def start(self) -> None:
         with self.guard:
             if self.started:
                 return
             self.started = True
+            rebuilt_indexes: dict[str, dict[str, dict[str, str]]] = {}
             for path in self.mock_root.glob("*/image_refresh_tasks/*.json"):
-                task = read_json(path, default={}) or {}
+                if path.name == "index.json":
+                    continue
+                task = self._read_json_safely(path) or {}
                 task_id = str(task.get("task_id") or "")
                 if not task_id:
                     continue
+                workflow_id = str(task.get("workflow_id") or "")
+                run_id = str(task.get("run_id") or "")
+                scene_id = str(task.get("scene_id") or "")
                 self._register_task(
                     task_id,
                     path,
-                    str(task.get("workflow_id") or ""),
-                    str(task.get("run_id") or ""),
+                    workflow_id,
+                    run_id,
                 )
+                if workflow_id and run_id and scene_id:
+                    rebuilt_indexes.setdefault(workflow_id, {}).setdefault(
+                        run_id, {}
+                    )[scene_id] = task_id
                 if str(task.get("status") or "") in {"queued", "running"}:
                     recovered = self.coordinator.reconcile(
                         str(task.get("workflow_id") or ""),
@@ -324,12 +386,21 @@ class ImageRefreshTaskManager:
                     task["updated_at"] = int(time.time())
                     write_json_atomic(path, task)
 
+            self._write_rebuilt_indexes(rebuilt_indexes)
+
             for index in range(self.concurrency):
-                threading.Thread(
+                worker = threading.Thread(
                     target=self._worker,
                     daemon=True,
                     name=f"ImageRefreshWorker-{index + 1}",
-                ).start()
+                )
+                worker.start()
+                logger.info("worker_started worker_name=%s", worker.name)
+            logger.info(
+                "manager_started worker_count=%d task_count=%d",
+                self.concurrency,
+                len(self.tasks),
+            )
 
     def submit(self, payload: dict[str, Any], *, retry_failed: bool = False) -> tuple[dict[str, Any], bool]:
         workflow_id = str(payload["workflow_id"])
@@ -352,6 +423,7 @@ class ImageRefreshTaskManager:
                 "updated_at": int(time.time()),
             }
             write_json_atomic(path, task)
+            self._upsert_task_index(workflow_id, run_id, scene_id, task_id)
             return task, False
 
         with self.guard:
@@ -359,6 +431,7 @@ class ImageRefreshTaskManager:
             if isinstance(existing, dict):
                 status = str(existing.get("status") or "")
                 if status in {"queued", "running"}:
+                    self._upsert_task_index(workflow_id, run_id, scene_id, task_id)
                     return existing, False
                 if status == "succeeded":
                     existing["status"] = "failed"
@@ -383,7 +456,15 @@ class ImageRefreshTaskManager:
                 "updated_at": now,
             }
             write_json_atomic(path, task)
+            self._upsert_task_index(workflow_id, run_id, scene_id, task_id)
             self.queue.put(task_id)
+            logger.info(
+                "task_enqueued task_id=%s workflow_id=%s run_id=%s scene_id=%s",
+                task_id,
+                workflow_id,
+                run_id,
+                scene_id,
+            )
             return task, True
 
     def get(self, task_id: str) -> dict[str, Any] | None:
@@ -398,19 +479,79 @@ class ImageRefreshTaskManager:
     def list_for_run(self, workflow_id: str, run_id: str) -> list[dict[str, Any]]:
         """Read all registered task summaries for one workflow/run without side effects."""
         started_at = time.perf_counter()
-        with self.guard:
-            task_ids = tuple(self.task_ids_by_run.get((workflow_id, run_id), ()))
-            task_paths = [self.tasks[task_id] for task_id in task_ids if task_id in self.tasks]
+        index_path = self._task_index_path(workflow_id)
+        index = self._read_json_safely(index_path)
+        indexed_run = (
+            ((index.get("runs") or {}).get(run_id) or {})
+            if isinstance(index, dict)
+            else {}
+        )
+        scene_task_ids = (
+            dict(indexed_run) if isinstance(indexed_run, dict) else {}
+        )
+        if scene_task_ids:
+            logger.info(
+                "task_index_loaded workflow_id=%s run_id=%s task_count=%d",
+                workflow_id,
+                run_id,
+                len(scene_task_ids),
+            )
+        recovered_count = 0
+        task_dir = index_path.parent
+        if task_dir.is_dir():
+            for path in task_dir.glob("*.json"):
+                if path.name == "index.json":
+                    continue
+                task = self._read_json_safely(path)
+                if not isinstance(task, dict):
+                    logger.warning(
+                        "task_index_recovery_skipped_corrupt workflow_id=%s run_id=%s task_id=%s",
+                        workflow_id,
+                        run_id,
+                        path.stem,
+                    )
+                    continue
+                if str(task.get("workflow_id") or "") != workflow_id:
+                    continue
+                if str(task.get("run_id") or "") != run_id:
+                    continue
+                scene_id = str(task.get("scene_id") or "")
+                task_id = str(task.get("task_id") or path.stem)
+                if scene_id and task_id and scene_task_ids.get(scene_id) != task_id:
+                    scene_task_ids[scene_id] = task_id
+                    recovered_count += 1
+            if recovered_count:
+                logger.info(
+                    "task_index_rebuilt workflow_id=%s run_id=%s task_count=%d",
+                    workflow_id,
+                    run_id,
+                    recovered_count,
+                )
 
         tasks: list[dict[str, Any]] = []
-        for path in task_paths:
-            task = read_json(path, default=None)
+        for scene_id, task_id in sorted(scene_task_ids.items()):
+            path = self._task_path(workflow_id, str(task_id))
+            task = self._read_json_safely(path)
             if not isinstance(task, dict):
+                tasks.append(
+                    {
+                        "found": False,
+                        "task_id": str(task_id),
+                        "workflow_id": workflow_id,
+                        "run_id": run_id,
+                        "scene_id": str(scene_id),
+                        "status": None,
+                        "error": "task metadata missing or corrupt",
+                        "created_at": None,
+                        "updated_at": None,
+                    }
+                )
                 continue
             if str(task.get("workflow_id") or "") != workflow_id:
                 continue
             if str(task.get("run_id") or "") != run_id:
                 continue
+            self._register_task(str(task_id), path, workflow_id, run_id)
             tasks.append(
                 {
                     "found": True,
@@ -427,9 +568,12 @@ class ImageRefreshTaskManager:
 
         tasks.sort(key=lambda item: str(item.get("scene_id") or ""))
         logger.info(
-            "image refresh batch task read duration_ms=%.2f task_count=%d",
-            (time.perf_counter() - started_at) * 1000,
+            "batch_tasks_%s workflow_id=%s run_id=%s task_count=%d batch_read_duration_ms=%.2f",
+            "found" if tasks else "missing",
+            workflow_id,
+            run_id,
             len(tasks),
+            (time.perf_counter() - started_at) * 1000,
         )
         return tasks
 
@@ -452,6 +596,7 @@ class ImageRefreshTaskManager:
                 "updated_at": int(time.time()),
             }
             write_json_atomic(path, task)
+            self._upsert_task_index(workflow_id, run_id, scene_id, task_id)
             return task
         existing = self.get(task_id)
         if existing and str(existing.get("status") or "") == "succeeded":
@@ -472,8 +617,34 @@ class ImageRefreshTaskManager:
                 task["status"] = "running"
                 task["updated_at"] = int(time.time())
                 write_json_atomic(path, task)
+                workflow_id = str(task.get("workflow_id") or "")
+                run_id = str(task.get("run_id") or "")
+                scene_id = str(task.get("scene_id") or "")
+                task_started_at = time.perf_counter()
+                logger.info(
+                    "task_dequeued task_id=%s workflow_id=%s run_id=%s scene_id=%s",
+                    task_id,
+                    workflow_id,
+                    run_id,
+                    scene_id,
+                )
                 try:
+                    logger.info(
+                        "provider_started task_id=%s workflow_id=%s run_id=%s scene_id=%s",
+                        task_id,
+                        workflow_id,
+                        run_id,
+                        scene_id,
+                    )
                     result = self.coordinator.generate_and_merge(task.get("payload") or {})
+                    logger.info(
+                        "provider_finished task_id=%s workflow_id=%s run_id=%s scene_id=%s duration_ms=%.2f",
+                        task_id,
+                        workflow_id,
+                        run_id,
+                        scene_id,
+                        (time.perf_counter() - task_started_at) * 1000,
+                    )
                     task["status"] = "succeeded"
                     task["result"] = result
                     task["error"] = ""
@@ -499,5 +670,14 @@ class ImageRefreshTaskManager:
                 task["updated_at"] = int(time.time())
                 task.pop("payload", None)
                 write_json_atomic(path, task)
+                logger.info(
+                    "task_%s task_id=%s workflow_id=%s run_id=%s scene_id=%s duration_ms=%.2f",
+                    task["status"],
+                    task_id,
+                    workflow_id,
+                    run_id,
+                    scene_id,
+                    (time.perf_counter() - task_started_at) * 1000,
+                )
             finally:
                 self.queue.task_done()

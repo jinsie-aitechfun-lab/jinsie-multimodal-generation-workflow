@@ -93,6 +93,19 @@ class FrontendStateContractTests(unittest.TestCase):
         self.assertIn("imageReviewRefreshAbortController?.abort()", unmount_body)
         self.assertIn("imageReviewPollingGeneration += 1", unmount_body)
 
+    def test_missing_batch_tasks_are_submitted_once_per_workflow(self):
+        studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        polling_body = studio.split(
+            "async function pollImageRefreshTasksForWorkflow", 1
+        )[1].split("async function refreshImageReview", 1)[0]
+
+        self.assertIn("submittedImageTaskSceneIdsByWorkflow", studio)
+        self.assertIn("submittedSceneIds.has(sceneId)", polling_body)
+        self.assertIn("submittedSceneIds.add(sceneId)", polling_body)
+        self.assertIn("!submittedSceneIds.has(sceneId)", polling_body)
+        self.assertIn("markPlaceholderState(sceneId, 'confirming')", polling_body)
+        self.assertIn("submittedImageTaskSceneIdsByWorkflow.get(workflowKey)", polling_body)
+
 
 if __name__ == "__main__":
     unittest.main()
