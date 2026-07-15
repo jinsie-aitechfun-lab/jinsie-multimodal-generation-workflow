@@ -658,6 +658,7 @@ let activeImageReviewPollingKey = ''
 let imageReviewPollingGeneration = 0
 let wakeImageReviewPolling: (() => void) | null = null
 let imageReviewVisibilityRefreshRequested = false
+const submittedImageTaskSceneIdsByWorkflow = new Map<string, Set<string>>()
 type ViewTab = 'run' | 'review' | 'assets' | 'debug'
 const activeTab = ref<ViewTab>('run')
 const devMode = ref(false)
@@ -3337,6 +3338,13 @@ async function pollImageRefreshTasksForWorkflow(
   signal: AbortSignal,
 ) {
   const retriedFailedSceneIds = new Set<string>()
+  const submittedSceneIds = (() => {
+    const existing = submittedImageTaskSceneIdsByWorkflow.get(workflowKey)
+    if (existing) return existing
+    const created = new Set<string>()
+    submittedImageTaskSceneIdsByWorkflow.set(workflowKey, created)
+    return created
+  })()
 
   while (!signal.aborted) {
     if (
@@ -3375,7 +3383,10 @@ async function pollImageRefreshTasksForWorkflow(
         failedSceneIds.has(sceneId) &&
         !retriedFailedSceneIds.has(sceneId),
       )
-      if ((!task && allowCreate) || shouldRetryFailed) {
+      const shouldCreateMissing = Boolean(
+        !task && allowCreate && !submittedSceneIds.has(sceneId),
+      )
+      if (shouldCreateMissing || shouldRetryFailed) {
         task = await createImageRefreshTask(
           sceneId,
           shouldRetryFailed,
@@ -3389,6 +3400,7 @@ async function pollImageRefreshTasksForWorkflow(
           throw new DOMException('Superseded', 'AbortError')
         }
         if (shouldRetryFailed) retriedFailedSceneIds.add(sceneId)
+        submittedSceneIds.add(sceneId)
         taskByScene.set(sceneId, task)
       }
       if (task?.task_id) {
@@ -3405,7 +3417,13 @@ async function pollImageRefreshTasksForWorkflow(
     for (const sceneId of sceneIds) {
       const task = taskByScene.get(sceneId)
       if (!task) {
-        markPlaceholderState(sceneId, 'waiting')
+        if (submittedSceneIds.has(sceneId)) {
+          hasActiveTask = true
+          sceneRefreshingId.value ||= sceneId
+          markPlaceholderState(sceneId, 'confirming')
+        } else {
+          markPlaceholderState(sceneId, 'waiting')
+        }
         continue
       }
       if (task.status === 'queued') {
