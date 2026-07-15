@@ -97,24 +97,38 @@ export function summarizeWorkflowProgress(input: {
     }
   }
   if (input.images.totalCount > 0 && input.images.overallState !== 'idle') {
-    const percent = Math.floor(
-      (input.images.readyCount / input.images.totalCount) * 85,
-    )
+    const hasRunning = input.images.generatingCount > 0
+    const hasQueued = input.images.queuedCount > 0
+    const indeterminate = input.images.readyCount === 0 && hasRunning
+    const percent = indeterminate
+      ? null
+      : Math.floor(
+          (input.images.readyCount / input.images.totalCount) * 100,
+        )
+    const completedLabel = `已完成 ${input.images.readyCount} / ${input.images.totalCount}`
     const label =
       input.images.overallState === 'confirming'
-        ? `候选图结果确认中（${input.images.readyCount}/${input.images.totalCount}）`
+        ? `正在确认生成结果 · ${completedLabel}`
         : input.images.overallState === 'ready'
-          ? `候选图已就绪（${input.images.readyCount}/${input.images.totalCount}）`
+          ? `候选图生成完成 · ${completedLabel}`
           : input.images.failedCount > 0 &&
-              input.images.queuedCount + input.images.generatingCount === 0
+              !hasQueued &&
+              !hasRunning
             ? `候选图生成完成，${input.images.failedCount} 个场景待处理`
-            : `候选图生成中（${input.images.readyCount}/${input.images.totalCount}）`
+            : hasRunning
+              ? `正在生成场景 ${Math.min(
+                  input.images.readyCount + 1,
+                  input.images.totalCount,
+                )} / ${input.images.totalCount} · ${completedLabel}`
+              : hasQueued
+                ? `任务已提交，等待开始 · ${completedLabel}`
+                : completedLabel
     return {
       overallPercent: percent,
       currentStage: 'image_generation',
       stageLabel: label,
       stagePercent: percent,
-      indeterminate: false,
+      indeterminate,
       completed: false,
     }
   }

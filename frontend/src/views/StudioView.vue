@@ -1748,25 +1748,9 @@ const reviewRefreshProgress = computed(() => {
     }
   }
 
-  const summary = imageGenerationSummary.value
-  const currentPlaceholder = reviewPlaceholders.value.find(
-    (item) => item.scene_id === summary.currentScene,
-  )
-  const currentSceneTitle = currentPlaceholder?.scene_title || summary.currentScene
-  const confirmingOnly =
-    summary.confirmingCount > 0 && summary.queuedCount + summary.generatingCount === 0
-
   return {
-    text: `${confirmingOnly ? '候选图结果确认中' : '候选图生成中'}：${summary.readyCount}/${summary.totalCount}${
-      currentSceneTitle ? ` · ${currentSceneTitle}` : ''
-    }`,
-    percent: Math.max(
-      5,
-      Math.min(
-        100,
-        Math.round((summary.readyCount / Math.max(1, summary.totalCount)) * 100),
-      ),
-    ),
+    text: workflowProgressSummary.value.stageLabel,
+    percent: workflowProgressSummary.value.stagePercent ?? 0,
   }
 })
 
