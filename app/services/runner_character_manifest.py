@@ -4,6 +4,9 @@ import re
 from typing import Any, Dict, List, Optional
 
 from app.schemas.workflow import WorkflowInput
+from app.services.character_visual_disambiguation import (
+    character_visual_disambiguation,
+)
 
 
 class RunnerCharacterManifestSupport:
@@ -225,6 +228,17 @@ class RunnerCharacterManifestSupport:
             signature_traits = enriched_item.get("signature_traits") or []
             if not isinstance(signature_traits, list):
                 signature_traits = self._split_trait_text(str(signature_traits))
+            forbidden_traits = enriched_item.get("forbidden_traits") or []
+            if not isinstance(forbidden_traits, list):
+                forbidden_traits = self._split_trait_text(str(forbidden_traits))
+
+            visual_disambiguation = character_visual_disambiguation(enriched_item)
+            for trait in visual_disambiguation.get("signature_traits") or []:
+                if trait not in signature_traits:
+                    signature_traits.append(trait)
+            for trait in visual_disambiguation.get("forbidden_traits") or []:
+                if trait not in forbidden_traits:
+                    forbidden_traits.append(trait)
 
             fallback_traits = [
                 f"exact canonical character identity: {canonical_identity}",
@@ -238,14 +252,22 @@ class RunnerCharacterManifestSupport:
                     signature_traits.append(trait)
 
             enriched_item["signature_traits"] = signature_traits
+            enriched_item["forbidden_traits"] = forbidden_traits
             if not str(enriched_item.get("visual_identity") or "").strip():
                 enriched_item["visual_identity"] = (
-                    f"{canonical_identity} is the exact canonical character identity. "
-                    f"Keep {species or canonical_identity} as the same subject in every scene, "
-                    "including scenes that refer to the character only by a pronoun or nickname. "
-                    "Do not replace, shorten, or reinterpret the full identity."
+                    str(visual_disambiguation.get("visual_identity") or "").strip()
+                    or (
+                        f"{canonical_identity} is the exact canonical character identity. "
+                        f"Keep {species or canonical_identity} as the same subject in every scene, "
+                        "including scenes that refer to the character only by a pronoun or nickname. "
+                        "Do not replace, shorten, or reinterpret the full identity."
+                    )
                 )
-                enriched_item["profile_source"] = "manifest_fallback_identity"
+                enriched_item["profile_source"] = (
+                    "manifest_visual_disambiguation"
+                    if visual_disambiguation
+                    else "manifest_fallback_identity"
+                )
 
             enriched_manifest.append(enriched_item)
 
