@@ -405,13 +405,16 @@ const recentFinalVideoUrls = ref<string[]>([])
 // simple — they only deal with URLs. Hover labels, card subtitles and
 // future analytics read from this map.
 //
-// Schema (per URL): { title?: 故事标题, topic?: 用户输入主题, createdAt?: ISO ts }
+// Schema (per URL): { title?, topic?, createdAt?, posterUrl?, workflowId?, runId? }
 // All fields optional — old entries from before this commit have no
 // metadata and gracefully fall back to "视频 N".
 export interface RecentVideoMeta {
   title?: string
   topic?: string
   createdAt?: string
+  posterUrl?: string
+  workflowId?: string
+  runId?: string
 }
 const recentVideoMetadata = ref<Record<string, RecentVideoMeta>>({})
 
@@ -428,17 +431,22 @@ function pushRecentFinalVideoUrl(url: string, meta?: RecentVideoMeta) {
     ...recentFinalVideoUrls.value.filter((item) => item !== u),
   ].slice(0, 10)
 
-  // First-write-wins: metadata is set ONLY when a URL is brand new in
-  // the map. Re-applies of the same workflow (e.g. tab nav, SPA mount
-  // restoration) must not overwrite the topic with whatever the form
-  // currently holds — otherwise a user who generated 「小海豹」then
-  // edited the form to 「小兔子」would see the seal card's tooltip
-  // suddenly say "rabbit". The topic-at-time-of-generation is what
-  // history wants to preserve, not the live form value.
-  if (meta && !recentVideoMetadata.value[u]) {
+  // Existing values win so a later SPA restore cannot overwrite the
+  // generation-time title/topic. Newly available fields (notably posterUrl
+  // for records written by older builds) are still allowed to backfill.
+  if (meta) {
+    const existing = recentVideoMetadata.value[u]
     recentVideoMetadata.value = {
       ...recentVideoMetadata.value,
-      [u]: meta,
+      [u]: existing
+        ? {
+            ...meta,
+            ...existing,
+            posterUrl: existing.posterUrl || meta.posterUrl,
+            workflowId: existing.workflowId || meta.workflowId,
+            runId: existing.runId || meta.runId,
+          }
+        : meta,
     }
   }
   // Drop metadata entries whose URL is no longer in the list so the
@@ -482,11 +490,42 @@ function deriveVideoMeta(response: WorkflowRunResponse | null | undefined): Rece
   const title =
     story && typeof story.title === 'string' ? story.title.trim() : ''
   const topic = (workflowForm.value?.topic || '').trim()
-  if (!title && !topic) return undefined
+  const storyboard = response.outputs?.storyboard as Record<string, unknown> | undefined
+  const scenes = Array.isArray(storyboard?.scenes) ? storyboard.scenes : []
+  const firstSceneId = scenes.length > 0 && scenes[0] && typeof scenes[0] === 'object'
+    ? String((scenes[0] as Record<string, unknown>).scene_id || '')
+    : ''
+  const imageReview = response.outputs?.image_review as Record<string, unknown> | undefined
+  const selectedAssets = Array.isArray(imageReview?.selected_assets)
+    ? imageReview.selected_assets
+    : []
+  const firstSelected = selectedAssets.find(
+    (item) =>
+      item &&
+      typeof item === 'object' &&
+      String((item as Record<string, unknown>).scene_id || '') === firstSceneId,
+  ) || selectedAssets[0]
+  const selectedAssetRef = firstSelected && typeof firstSelected === 'object'
+    ? (firstSelected as Record<string, unknown>).selected_asset_ref
+    : undefined
+  const posterPath = selectedAssetRef && typeof selectedAssetRef === 'object'
+    ? String(
+        (selectedAssetRef as Record<string, unknown>).public_url ||
+        (selectedAssetRef as Record<string, unknown>).relative_path ||
+        '',
+      )
+    : ''
+  const posterUrl = toAssetHref(posterPath)
+  if (!title && !topic && !posterUrl && !response.workflow_id && !response.run_id) {
+    return undefined
+  }
   return {
     title: title || undefined,
     topic: topic || undefined,
     createdAt: new Date().toISOString(),
+    posterUrl: posterUrl || undefined,
+    workflowId: response.workflow_id || undefined,
+    runId: response.run_id || undefined,
   }
 }
 
