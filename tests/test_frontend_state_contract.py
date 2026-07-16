@@ -412,5 +412,61 @@ class FrontendStateContractTests(unittest.TestCase):
         self.assertIn("submittedImageTaskSceneIdsByWorkflow.get(workflowKey)", polling_body)
 
 
+    def test_studio_shell_flex_items_can_shrink_to_mobile_viewport(self):
+        layout = (ROOT / "frontend/src/components/studio/StudioLayout.vue").read_text(
+            encoding="utf-8"
+        )
+        content = layout.split(".s-content {", 1)[1].split("}", 1)[0]
+        main = layout.split(".s-main {", 1)[1].split("}", 1)[0]
+        root = layout.split(".s-root {", 1)[1].split("}", 1)[0]
+        self.assertIn("min-width: 0", root)
+        self.assertIn("max-width: 100%", root)
+        self.assertIn("min-width: 0", content)
+        self.assertIn("max-width: calc(100% - 88px)", content)
+        self.assertIn("min-width: 0", main)
+        self.assertNotIn("overflow-x: hidden", content)
+
+    def test_studio_home_grid_tracks_and_children_have_zero_minimums(self):
+        studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        grid = studio.split(".studio-home-grid {", 1)[1].split("}", 1)[0]
+        children = studio.split(".studio-home-grid > * {", 1)[1].split("}", 1)[0]
+        self.assertIn("grid-template-columns: minmax(0, 420px) minmax(0, 1fr)", grid)
+        self.assertIn("max-width: 100%", grid)
+        self.assertIn("min-width: 0", grid)
+        self.assertIn("min-width: 0", children)
+        self.assertIn("max-width: 100%", children)
+        self.assertIn("grid-template-columns: minmax(0, 1fr)", studio)
+
+    def test_landing_hero_navigation_has_immediate_loading_feedback(self):
+        landing = (ROOT / "frontend/src/components/landing/LandingPage.vue").read_text(
+            encoding="utf-8"
+        )
+        hero_button = landing.split('<div class="hero-cta-row">', 1)[1].split(
+            "</button>", 1
+        )[0]
+        navigation = landing.split("async function goStudioFromHero", 1)[1].split(
+            "/* ── Showcase", 1
+        )[0]
+        self.assertIn(':disabled="heroNavigating"', hero_button)
+        self.assertIn(':aria-busy="heroNavigating"', hero_button)
+        self.assertIn('@click="goStudioFromHero"', hero_button)
+        self.assertIn("正在进入工作台...", hero_button)
+        self.assertIn("hero-primary-spinner", hero_button)
+        self.assertIn("if (heroNavigating.value) return", navigation)
+        self.assertLess(
+            navigation.index("heroNavigating.value = true"),
+            navigation.index("await goStudio()"),
+        )
+        self.assertIn("finally", navigation)
+        self.assertIn("heroNavigating.value = false", navigation)
+
+    def test_landing_loading_is_scoped_to_the_hero_button(self):
+        landing = (ROOT / "frontend/src/components/landing/LandingPage.vue").read_text(
+            encoding="utf-8"
+        )
+        self.assertEqual(1, landing.count('@click="goStudioFromHero"'))
+        self.assertGreaterEqual(landing.count('@click="goStudio"'), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

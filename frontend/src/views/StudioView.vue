@@ -4886,9 +4886,17 @@ async function executeRunWorkflow() {
 /* ── Homepage 2-column grid ── */
 .studio-home-grid {
   display: grid;
-  grid-template-columns: 420px 1fr;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  grid-template-columns: minmax(0, 420px) minmax(0, 1fr);
   gap: 1.5rem;
   align-items: start;
+}
+
+.studio-home-grid > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* Right column (preview panel) stays visible while form scrolls.
@@ -4905,7 +4913,7 @@ async function executeRunWorkflow() {
 
 @media (max-width: 960px) {
   .studio-home-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .studio-home-grid > :nth-child(2) {
     position: static;

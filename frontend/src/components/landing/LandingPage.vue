@@ -69,9 +69,20 @@
           </p>
 
           <div class="hero-cta-row">
-            <button type="button" class="hero-primary" @click="goStudio">
-              <span class="hero-primary-icon" aria-hidden="true">✦</span>
-              开始创作
+            <button
+              type="button"
+              class="hero-primary"
+              :disabled="heroNavigating"
+              :aria-busy="heroNavigating"
+              @click="goStudioFromHero"
+            >
+              <span
+                v-if="heroNavigating"
+                class="hero-primary-spinner"
+                aria-hidden="true"
+              ></span>
+              <span v-else class="hero-primary-icon" aria-hidden="true">✦</span>
+              <span>{{ heroNavigating ? '正在进入工作台...' : '开始创作' }}</span>
             </button>
             <button
               type="button"
@@ -694,6 +705,7 @@ function onHeroPointerLeave() {
 // reload.
 const STUDIO_TAB_STORAGE_KEY = 'jinsie_active_tab'
 const STUDIO_DEFAULT_TAB = 'run'
+const heroNavigating = ref(false)
 
 function goStudio() {
   try {
@@ -701,7 +713,17 @@ function goStudio() {
   } catch {
     /* localStorage unavailable — fall through; StudioView's default is also 'run' */
   }
-  router.push('/studio')
+  return router.push('/studio')
+}
+
+async function goStudioFromHero() {
+  if (heroNavigating.value) return
+  heroNavigating.value = true
+  try {
+    await goStudio()
+  } finally {
+    heroNavigating.value = false
+  }
 }
 
 /* ── Showcase video preview modal ──
@@ -1754,6 +1776,30 @@ function starStyle(i: number) {
 .hero-primary-icon {
   color: var(--arc-300);
   font-size: 0.85em;
+}
+.hero-primary-spinner {
+  width: 0.9em;
+  height: 0.9em;
+  flex: 0 0 auto;
+  border: 1.5px solid color-mix(in srgb, currentColor 34%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: hero-primary-spin 0.7s linear infinite;
+}
+.hero-primary:disabled {
+  cursor: wait;
+  transform: none;
+  opacity: 0.82;
+}
+.hero-primary:disabled::after {
+  display: none;
+}
+@keyframes hero-primary-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-primary-spinner { animation: none; }
 }
 
 .hero-secondary {

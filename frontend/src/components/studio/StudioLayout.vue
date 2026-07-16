@@ -297,6 +297,9 @@ watch(
 ══════════════════════════════════════════════════ */
 .s-root {
   position: relative;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 100vh;
   background: transparent;
   overflow-x: hidden;
@@ -664,6 +667,8 @@ watch(
 .s-content {
   margin-left: 88px;
   flex: 1;
+  min-width: 0;
+  max-width: calc(100% - 88px);
   display: flex;
   flex-direction: column;
   min-height: 100vh;
@@ -680,11 +685,14 @@ watch(
   z-index: 40;
   background: transparent;
   flex-shrink: 0;
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* Main content */
 .s-main {
   flex: 1;
+  min-width: 0;
   /* Tighter left padding so cards sit closer to the sidebar.
      Pearl theme's lighter bg makes any whitespace look bigger; this
      also subtly tightens dark themes (1.75rem → 1.25rem). */
@@ -1104,6 +1112,9 @@ watch(
 
   .s-content {
     margin-left: 0;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
     min-height: 100dvh;
     padding-top: 42px;
     padding-bottom: calc(68px + env(safe-area-inset-bottom, 0px));
@@ -1160,6 +1171,7 @@ watch(
 
   .s-main {
     max-width: none;
+    min-width: 0;
     padding: 0.75rem;
   }
 }
