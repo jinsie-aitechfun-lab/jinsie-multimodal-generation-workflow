@@ -196,6 +196,47 @@ class FrontendStateContractTests(unittest.TestCase):
             self.assertIn("video-error", component)
         self.assertIn(':video-load-state="videoPreviewLoadState"', studio)
 
+    def test_history_video_metadata_persists_first_selected_asset_as_poster(self):
+        studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        derive_meta = studio.split("function deriveVideoMeta", 1)[1].split(
+            "History video delete", 1
+        )[0]
+        self.assertIn("imageReview?.selected_assets", derive_meta)
+        self.assertIn("selected_asset_ref", derive_meta)
+        self.assertIn("posterUrl: posterUrl || undefined", derive_meta)
+        self.assertIn("workflowId: response.workflow_id", derive_meta)
+        self.assertIn("runId: response.run_id", derive_meta)
+        self.assertIn("STORAGE_KEY_RECENT_VIDEO_META", studio)
+
+    def test_history_cards_do_not_load_full_mp4_for_covers(self):
+        preview = (ROOT / "frontend/src/components/studio/StudioPreviewPanel.vue").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn('<video class="pp-thumb-video"', preview)
+        self.assertNotIn('<video class="pp-hist-card-video"', preview)
+        self.assertEqual(1, preview.count('<video\n            :src="currentPlayerUrl"'))
+
+    def test_history_cards_use_poster_images_with_consistent_fallback(self):
+        preview = (ROOT / "frontend/src/components/studio/StudioPreviewPanel.vue").read_text(
+            encoding="utf-8"
+        )
+        self.assertEqual(3, preview.count('v-if="historyPosterUrl(url)"'))
+        self.assertEqual(3, preview.count('loading="lazy"'))
+        self.assertEqual(3, preview.count('aria-label="视频封面暂不可用"'))
+        self.assertIn("markHistoryPosterFailed(url)", preview)
+        self.assertIn(".pp-poster-placeholder", preview)
+
+    def test_clicking_history_card_only_selects_existing_video_url(self):
+        preview = (ROOT / "frontend/src/components/studio/StudioPreviewPanel.vue").read_text(
+            encoding="utf-8"
+        )
+        select_body = preview.split("function selectVideo", 1)[1].split(
+            "function shortUrl", 1
+        )[0]
+        self.assertIn("selectedUrl.value = url", select_body)
+        self.assertNotIn("fetch(", select_body)
+        self.assertNotIn("final-video/render", select_body)
+
     def test_image_refresh_uses_one_workflow_batch_polling_loop(self):
         studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
         refresh_body = studio.split("async function refreshImageReview", 1)[1].split(

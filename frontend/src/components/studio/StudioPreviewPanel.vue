@@ -131,7 +131,18 @@
                 :title="historyVideoTooltip(url, idx)"
                 @click="selectVideo(url)"
               >
-                <video class="pp-thumb-video" :src="url" preload="metadata" :muted="true"/>
+                <img
+                  v-if="historyPosterUrl(url)"
+                  class="pp-thumb-video"
+                  :src="historyPosterUrl(url)"
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  @error="markHistoryPosterFailed(url)"
+                />
+                <div v-else class="pp-thumb-video pp-poster-placeholder" aria-label="视频封面暂不可用">
+                  <span aria-hidden="true">◇</span>
+                </div>
                 <div class="pp-thumb-overlay"><span class="pp-thumb-play">▶</span></div>
                 <div class="pp-thumb-index">{{ historyVideoIndex(idx) }}</div>
                 <div class="pp-thumb-caption">{{ historyVideoLabel(url, idx) }}</div>
@@ -216,7 +227,18 @@
                 @click="selectVideo(url)"
               >
                 <div class="pp-hist-card-frame">
-                  <video class="pp-hist-card-video" :src="url" preload="metadata" :muted="true"/>
+                  <img
+                    v-if="historyPosterUrl(url)"
+                    class="pp-hist-card-video"
+                    :src="historyPosterUrl(url)"
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                    @error="markHistoryPosterFailed(url)"
+                  />
+                  <div v-else class="pp-hist-card-video pp-poster-placeholder" aria-label="视频封面暂不可用">
+                    <span aria-hidden="true">◇</span>
+                  </div>
                   <div class="pp-hist-card-chrome" aria-hidden="true">
                     <span class="pp-hist-card-index">{{ historyVideoIndex(idx) }}</span>
                   </div>
@@ -309,7 +331,18 @@
               @click="selectVideo(url)"
             >
               <div class="pp-hist-card-frame">
-                <video class="pp-hist-card-video" :src="url" preload="metadata" :muted="true"/>
+                <img
+                  v-if="historyPosterUrl(url)"
+                  class="pp-hist-card-video"
+                  :src="historyPosterUrl(url)"
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  @error="markHistoryPosterFailed(url)"
+                />
+                <div v-else class="pp-hist-card-video pp-poster-placeholder" aria-label="视频封面暂不可用">
+                  <span aria-hidden="true">◇</span>
+                </div>
                 <div class="pp-hist-card-chrome" aria-hidden="true">
                   <span class="pp-hist-card-index">{{ historyVideoIndex(idx) }}</span>
                 </div>
@@ -464,6 +497,9 @@ interface RecentVideoMeta {
   title?: string
   topic?: string
   createdAt?: string
+  posterUrl?: string
+  workflowId?: string
+  runId?: string
 }
 
 const props = defineProps<{
@@ -531,6 +567,19 @@ function historyVideoIndex(fallbackIndex: number): string {
 
 function historyVideoStatus(url: string): string {
   return url === props.finalVideoUrl ? '当前作品' : '已完成'
+}
+
+const failedPosterUrls = ref<Record<string, string>>({})
+
+function historyPosterUrl(url: string): string {
+  const posterUrl = props.recentVideoMetadata?.[url]?.posterUrl || ''
+  return failedPosterUrls.value[url] === posterUrl ? '' : posterUrl
+}
+
+function markHistoryPosterFailed(url: string) {
+  const posterUrl = props.recentVideoMetadata?.[url]?.posterUrl || ''
+  if (!posterUrl) return
+  failedPosterUrls.value = { ...failedPosterUrls.value, [url]: posterUrl }
 }
 
 /* History card label — the human-readable subtitle shown beneath the
@@ -1169,7 +1218,7 @@ const doneCount = computed(
   border-radius: 10px;
   overflow: hidden;
   border: 1.5px solid rgba(255,255,255,0.08);
-  background: #000;
+  background: var(--surface-overlay-strong);
   transition: border-color 0.18s, box-shadow 0.18s;
 }
 
@@ -1234,6 +1283,17 @@ const doneCount = computed(
   object-fit: cover;
   display: block;
   pointer-events: none;
+}
+
+.pp-poster-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(circle at 50% 35%, rgba(245,158,11,0.14), transparent 48%),
+    var(--surface-overlay-strong);
+  color: var(--arc-300);
+  font-size: 1.35rem;
 }
 
 .pp-hist-card-overlay {
@@ -1728,7 +1788,7 @@ const doneCount = computed(
   border-radius: 8px;
   overflow: hidden;
   border: 1.5px solid rgba(255,255,255,0.08);
-  background: #000;
+  background: var(--surface-overlay-strong);
   transition: border-color 0.18s, box-shadow 0.18s, transform 0.18s;
 }
 .pp-thumb-main {
