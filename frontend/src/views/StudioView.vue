@@ -64,6 +64,15 @@ type ImageAssetRef = {
   mime_type?: string
   provider?: string
   version?: string | number
+  thumbnail_url?: string
+  thumbnail_path?: string
+  thumbnail_version?: string | number
+  width?: number
+  height?: number
+  size_bytes?: number
+  thumbnail_width?: number
+  thumbnail_height?: number
+  thumbnail_size_bytes?: number
 }
 
 type ImageReviewSelectedAsset = {
@@ -510,12 +519,23 @@ function deriveVideoMeta(response: WorkflowRunResponse | null | undefined): Rece
     : undefined
   const posterPath = selectedAssetRef && typeof selectedAssetRef === 'object'
     ? String(
+        (selectedAssetRef as Record<string, unknown>).thumbnail_url ||
+        (selectedAssetRef as Record<string, unknown>).thumbnail_path ||
         (selectedAssetRef as Record<string, unknown>).public_url ||
         (selectedAssetRef as Record<string, unknown>).relative_path ||
         '',
       )
     : ''
-  const posterUrl = toAssetHref(posterPath)
+  const posterVersion = selectedAssetRef && typeof selectedAssetRef === 'object'
+    ? (
+        (selectedAssetRef as Record<string, unknown>).thumbnail_version ||
+        (selectedAssetRef as Record<string, unknown>).version
+      )
+    : undefined
+  const posterBaseUrl = toAssetHref(posterPath)
+  const posterUrl = posterBaseUrl && posterVersion != null
+    ? `${posterBaseUrl}${posterBaseUrl.includes('?') ? '&' : '?'}v=${encodeURIComponent(String(posterVersion))}`
+    : posterBaseUrl
   if (!title && !topic && !posterUrl && !response.workflow_id && !response.run_id) {
     return undefined
   }

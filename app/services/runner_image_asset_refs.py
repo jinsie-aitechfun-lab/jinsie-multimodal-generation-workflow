@@ -1,11 +1,19 @@
 from __future__ import annotations
 
-import shutil
+import logging
+import os
+from contextlib import suppress
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from uuid import uuid4
+
+from PIL import Image, ImageOps
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+logger = logging.getLogger(__name__)
+THUMBNAIL_MAX_SIZE = (480, 270)
+THUMBNAIL_WEBP_QUALITY = 80
 
 
 class RunnerImageAssetRefsSupport:
@@ -18,6 +26,143 @@ class RunnerImageAssetRefsSupport:
 
     def __init__(self, runner: Any) -> None:
         self._runner = runner
+
+    @staticmethod
+    def _atomic_write_bytes(path: Path, payload: bytes) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = path.parent / f".{path.name}.{uuid4().hex}.tmp"
+        try:
+            with temp_path.open("wb") as handle:
+                handle.write(payload)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temp_path, path)
+        except Exception:
+            with suppress(FileNotFoundError):
+                temp_path.unlink()
+            raise
+
+    @staticmethod
+    def _thumbnail_value(value: Any) -> str:
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        stem, separator, _extension = text.rpartition(".")
+        return f"{stem}.thumb.webp" if separator else f"{text}.thumb.webp"
+
+    @staticmethod
+    def _thumbnail_dimensions(
+        width: int, height: int
+    ) -> tuple[int, int, tuple[int, int, int, int]]:
+        target_ratio = 16 / 9
+        source_ratio = width / max(1, height)
+        if source_ratio > target_ratio:
+            crop_height = height
+            crop_width = max(1, round(height * target_ratio))
+            left = max(0, (width - crop_width) // 2)
+            crop_box = (left, 0, left + crop_width, height)
+        else:
+            crop_width = width
+            crop_height = max(1, round(width / target_ratio))
+            top = max(0, (height - crop_height) // 2)
+            crop_box = (0, top, width, top + crop_height)
+
+        scale = min(
+            1.0,
+            THUMBNAIL_MAX_SIZE[0] / max(1, crop_width),
+            THUMBNAIL_MAX_SIZE[1] / max(1, crop_height),
+        )
+        target_width = max(1, round(crop_width * scale))
+        target_height = max(1, round(target_width * 9 / 16))
+        if target_height > THUMBNAIL_MAX_SIZE[1]:
+            target_height = THUMBNAIL_MAX_SIZE[1]
+            target_width = max(1, round(target_height * 16 / 9))
+        return target_width, target_height, crop_box
+
+    def _write_thumbnail_atomic(
+        self, source_path: Path, thumbnail_path: Path
+    ) -> tuple[int, int]:
+        temp_path = thumbnail_path.parent / f".{thumbnail_path.name}.{uuid4().hex}.tmp"
+        try:
+            with Image.open(source_path) as source:
+                image = ImageOps.exif_transpose(source)
+                width, height = image.size
+                target_width, target_height, crop_box = self._thumbnail_dimensions(
+                    width, height
+                )
+                image = image.crop(crop_box)
+                if image.size != (target_width, target_height):
+                    image = image.resize((target_width, target_height), Image.Resampling.LANCZOS)
+                thumbnail_path.parent.mkdir(parents=True, exist_ok=True)
+                with temp_path.open("wb") as handle:
+                    image.save(
+                        handle,
+                        format="WEBP",
+                        quality=THUMBNAIL_WEBP_QUALITY,
+                        method=6,
+                    )
+                    handle.flush()
+                    os.fsync(handle.fileno())
+            os.replace(temp_path, thumbnail_path)
+            return target_width, target_height
+        except Exception:
+            with suppress(FileNotFoundError):
+                temp_path.unlink()
+            raise
+
+    def enrich_existing_image_ref(
+        self,
+        path: Path,
+        asset_ref: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        ref = dict(asset_ref)
+        if not path.is_file() or path.stat().st_size <= 0:
+            return ref
+
+        original_stat = path.stat()
+        ref["version"] = str(original_stat.st_mtime_ns)
+        ref["size_bytes"] = original_stat.st_size
+        try:
+            with Image.open(path) as source:
+                ref["width"], ref["height"] = source.size
+        except Exception as error:
+            logger.warning("image metadata read failed for %s: %s", path, error)
+            return ref
+
+        thumbnail_path = path.with_name(f"{path.stem}.thumb.webp")
+        try:
+            thumbnail_is_current = (
+                thumbnail_path.is_file()
+                and thumbnail_path.stat().st_size > 0
+                and thumbnail_path.stat().st_mtime_ns >= original_stat.st_mtime_ns
+            )
+            if not thumbnail_is_current:
+                self._write_thumbnail_atomic(path, thumbnail_path)
+            with Image.open(thumbnail_path) as thumbnail:
+                thumbnail_width, thumbnail_height = thumbnail.size
+            thumbnail_stat = thumbnail_path.stat()
+            ref.update(
+                {
+                    "thumbnail_url": self._thumbnail_value(ref.get("public_url")),
+                    "thumbnail_path": self._thumbnail_value(ref.get("relative_path")),
+                    "thumbnail_version": str(thumbnail_stat.st_mtime_ns),
+                    "thumbnail_width": thumbnail_width,
+                    "thumbnail_height": thumbnail_height,
+                    "thumbnail_size_bytes": thumbnail_stat.st_size,
+                }
+            )
+        except Exception as error:
+            logger.warning("thumbnail generation failed for %s: %s", path, error)
+        return ref
+
+    def persist_image_asset(
+        self,
+        output_path: Path,
+        image_bytes: bytes,
+        asset_ref: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        self._atomic_write_bytes(output_path, image_bytes)
+        return self.enrich_existing_image_ref(output_path, asset_ref)
 
     def image_asset_by_scene_id(
         self, outputs: Dict[str, Any]
@@ -53,7 +198,12 @@ class RunnerImageAssetRefsSupport:
         # — older candidates won't show a badge, just default tier.
         if "quality_tier" in item:
             ref["quality_tier"] = item["quality_tier"]
-        return ref
+        relative_path = str(ref.get("relative_path") or "").strip()
+        return (
+            self.enrich_existing_image_ref(PROJECT_ROOT / relative_path, ref)
+            if relative_path
+            else ref
+        )
 
     def build_mock_candidate_asset_refs(
         self,
@@ -99,6 +249,7 @@ class RunnerImageAssetRefsSupport:
         }
 
         self.ensure_mock_candidate_asset_file(primary_ref, mock_ref)
+        mock_ref = self.enrich_existing_image_ref(PROJECT_ROOT / mock_relative_path, mock_ref)
 
         return [primary_ref, mock_ref]
 
@@ -122,7 +273,7 @@ class RunnerImageAssetRefsSupport:
         target_path.parent.mkdir(parents=True, exist_ok=True)
 
         if not target_path.exists():
-            shutil.copyfile(source_path, target_path)
+            self._atomic_write_bytes(target_path, source_path.read_bytes())
 
     def scene_index_by_id(
         self,

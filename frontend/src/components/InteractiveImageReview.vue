@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import InlineStatusPulse from './studio/InlineStatusPulse.vue'
 
 type ImageAssetRef = {
@@ -10,6 +10,15 @@ type ImageAssetRef = {
   mime_type?: string
   provider?: string
   version?: string | number
+  thumbnail_url?: string
+  thumbnail_path?: string
+  thumbnail_version?: string | number
+  width?: number
+  height?: number
+  size_bytes?: number
+  thumbnail_width?: number
+  thumbnail_height?: number
+  thumbnail_size_bytes?: number
 }
 
 type ImageReviewSelectedAsset = {
@@ -107,7 +116,12 @@ const props = defineProps<{
   sceneNarrationMap?: Record<string, string>
 }>()
 
+type ImageLoadState = 'loading' | 'ready' | 'retrying' | 'failed'
+const IMAGE_RETRY_DELAYS_MS = [500, 1000, 2000] as const
 const imageRetryAttempts = ref<Record<string, number>>({})
+const imageRetryVersions = ref<Record<string, number>>({})
+const imageLoadStates = ref<Record<string, ImageLoadState>>({})
+const imageRetryTimers = new Map<string, number>()
 
 // A scene's candidates are locked when:
 //   • the final video already exists for this run (any swap would let
@@ -167,7 +181,12 @@ const emit = defineEmits<{
   (e: 'cancel-workflow'): void
 }>()
 
-function toAssetHref(path?: string, sceneId?: string): string {
+function toAssetHref(
+  path?: string,
+  sceneId?: string,
+  stableVersion?: string | number,
+  retryVersion = 0,
+): string {
   if (!path) {
     return ''
   }
@@ -189,28 +208,15 @@ function toAssetHref(path?: string, sceneId?: string): string {
   // showing the cached old image. The parent bumps the per-scene
   // version after each successful refresh; absent / zero versions
   // are treated as "no bust needed" so unchanged scenes don't refetch.
-  const version = sceneId ? props.sceneImageVersions?.[sceneId] : undefined
-  const retryAttempt = imageRetryAttempts.value[`${sceneId || ''}:${trimmed}`] || 0
+  const version = stableVersion ?? (sceneId ? props.sceneImageVersions?.[sceneId] : undefined)
   const queryParts: string[] = []
   if (version != null && String(version).length > 0 && String(version) !== '0') {
     queryParts.push(`v=${encodeURIComponent(String(version))}`)
   }
-  if (retryAttempt > 0) queryParts.push(`retry=${retryAttempt}`)
+  if (retryVersion > 0) queryParts.push(`retry=${retryVersion}`)
   if (queryParts.length === 0) return `${normalizedBase}${normalizedPath}`
   const separator = normalizedPath.includes('?') ? '&' : '?'
   return `${normalizedBase}${normalizedPath}${separator}${queryParts.join('&')}`
-}
-
-function retryImageGet(path: string, sceneId: string) {
-  const key = `${sceneId}:${path}`
-  const current = imageRetryAttempts.value[key] || 0
-  if (current >= 3) return
-  window.setTimeout(() => {
-    imageRetryAttempts.value = {
-      ...imageRetryAttempts.value,
-      [key]: current + 1,
-    }
-  }, 500 * 2 ** current)
 }
 
 function assetRefPath(assetRef?: ImageAssetRef): string {
@@ -219,6 +225,121 @@ function assetRefPath(assetRef?: ImageAssetRef): string {
   }
   return assetRef.public_url || assetRef.relative_path || ''
 }
+
+function cardAssetPath(assetRef?: ImageAssetRef): string {
+  if (!assetRef) return ''
+  return (
+    assetRef.thumbnail_url ||
+    assetRef.thumbnail_path ||
+    assetRef.public_url ||
+    assetRef.relative_path ||
+    ''
+  )
+}
+
+function cardAssetVersion(assetRef?: ImageAssetRef): string | number | undefined {
+  if (!assetRef) return undefined
+  return assetRef.thumbnail_url || assetRef.thumbnail_path
+    ? assetRef.thumbnail_version
+    : assetRef.version
+}
+
+function imageLoadKey(assetRef: ImageAssetRef | undefined, sceneId: string): string {
+  return `${sceneId}:${cardAssetPath(assetRef)}:${cardAssetVersion(assetRef) || ''}`
+}
+
+function imageLoadState(assetRef: ImageAssetRef | undefined, sceneId: string): ImageLoadState {
+  return imageLoadStates.value[imageLoadKey(assetRef, sceneId)] || 'loading'
+}
+
+function cardAssetHref(assetRef: ImageAssetRef | undefined, sceneId: string): string {
+  const key = imageLoadKey(assetRef, sceneId)
+  return toAssetHref(
+    cardAssetPath(assetRef),
+    sceneId,
+    cardAssetVersion(assetRef),
+    imageRetryVersions.value[key] || 0,
+  )
+}
+
+function originalAssetHref(assetRef: ImageAssetRef | undefined, sceneId: string): string {
+  return toAssetHref(assetRefPath(assetRef), sceneId, assetRef?.version)
+}
+
+function setImageLoadState(key: string, state: ImageLoadState) {
+  imageLoadStates.value = { ...imageLoadStates.value, [key]: state }
+}
+
+function clearImageRetryTimer(key: string) {
+  const timer = imageRetryTimers.get(key)
+  if (timer == null) return
+  window.clearTimeout(timer)
+  imageRetryTimers.delete(key)
+}
+
+function markImageReady(assetRef: ImageAssetRef | undefined, sceneId: string) {
+  const key = imageLoadKey(assetRef, sceneId)
+  clearImageRetryTimer(key)
+  setImageLoadState(key, 'ready')
+}
+
+function retryImageGet(assetRef: ImageAssetRef | undefined, sceneId: string) {
+  const key = imageLoadKey(assetRef, sceneId)
+  if (!cardAssetPath(assetRef) || imageRetryTimers.has(key)) return
+  const current = imageRetryAttempts.value[key] || 0
+  if (current >= IMAGE_RETRY_DELAYS_MS.length) {
+    setImageLoadState(key, 'failed')
+    return
+  }
+  setImageLoadState(key, 'retrying')
+  const timer = window.setTimeout(() => {
+    imageRetryTimers.delete(key)
+    imageRetryAttempts.value = { ...imageRetryAttempts.value, [key]: current + 1 }
+    imageRetryVersions.value = {
+      ...imageRetryVersions.value,
+      [key]: (imageRetryVersions.value[key] || 0) + 1,
+    }
+    setImageLoadState(key, 'loading')
+  }, IMAGE_RETRY_DELAYS_MS[current])
+  imageRetryTimers.set(key, timer)
+}
+
+function reloadImageManually(assetRef: ImageAssetRef | undefined, sceneId: string) {
+  const key = imageLoadKey(assetRef, sceneId)
+  if (!cardAssetPath(assetRef)) return
+  clearImageRetryTimer(key)
+  imageRetryAttempts.value = { ...imageRetryAttempts.value, [key]: 0 }
+  imageRetryVersions.value = {
+    ...imageRetryVersions.value,
+    [key]: (imageRetryVersions.value[key] || 0) + 1,
+  }
+  setImageLoadState(key, 'loading')
+}
+
+function openOriginalAsset(assetRef: ImageAssetRef | undefined, sceneId: string) {
+  const href = originalAssetHref(assetRef, sceneId)
+  if (href) window.open(href, '_blank', 'noopener,noreferrer')
+}
+
+const assetVersionSignature = computed(() =>
+  props.items
+    .flatMap((item) => [item.selected_asset_ref, ...(item.candidate_asset_refs || [])])
+    .map((assetRef) => `${cardAssetPath(assetRef)}:${cardAssetVersion(assetRef) || ''}`)
+    .join('|'),
+)
+
+watch(assetVersionSignature, () => {
+  for (const timer of imageRetryTimers.values()) window.clearTimeout(timer)
+  imageRetryTimers.clear()
+  imageRetryAttempts.value = {}
+  imageRetryVersions.value = {}
+  imageLoadStates.value = {}
+})
+
+onBeforeUnmount(() => {
+  for (const timer of imageRetryTimers.values()) window.clearTimeout(timer)
+  imageRetryTimers.clear()
+})
 
 function assetRefDebugPath(assetRef?: ImageAssetRef): string {
   if (!assetRef) {
@@ -668,12 +789,50 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
             <div class="preview-card preview-card-selected">
               <div class="preview-visual-frame">
                 <img
-                  v-if="isImageAsset(assetRefPath(entry.item.selected_asset_ref))"
+                  v-if="
+                    isImageAsset(cardAssetPath(entry.item.selected_asset_ref)) &&
+                    ['loading', 'ready'].includes(
+                      imageLoadState(entry.item.selected_asset_ref, entry.sceneId),
+                    )
+                  "
                   class="preview-visual-image"
-                  :src="toAssetHref(assetRefPath(entry.item.selected_asset_ref), entry.sceneId)"
+                  :src="cardAssetHref(entry.item.selected_asset_ref, entry.sceneId)"
                   :alt="entry.sceneTitle || 'selected-image'"
-                  @error="retryImageGet(assetRefPath(entry.item.selected_asset_ref), entry.sceneId)"
+                  :width="entry.item.selected_asset_ref?.thumbnail_width || 480"
+                  :height="entry.item.selected_asset_ref?.thumbnail_height || 270"
+                  loading="eager"
+                  decoding="async"
+                  fetchpriority="high"
+                  @load="markImageReady(entry.item.selected_asset_ref, entry.sceneId)"
+                  @error="retryImageGet(entry.item.selected_asset_ref, entry.sceneId)"
                 />
+                <div
+                  v-else-if="isImageAsset(cardAssetPath(entry.item.selected_asset_ref))"
+                  class="placeholder-card image-load-placeholder"
+                >
+                  <div class="image-load-message">
+                    <span>
+                      {{
+                        imageLoadState(entry.item.selected_asset_ref, entry.sceneId) === 'retrying'
+                          ? '图片加载重试中…'
+                          : '图片暂时加载失败'
+                      }}
+                    </span>
+                    <div
+                      v-if="imageLoadState(entry.item.selected_asset_ref, entry.sceneId) === 'failed'"
+                      class="image-load-actions"
+                    >
+                      <button
+                        type="button"
+                        @click.stop="reloadImageManually(entry.item.selected_asset_ref, entry.sceneId)"
+                      >重新加载</button>
+                      <button
+                        type="button"
+                        @click.stop="openOriginalAsset(entry.item.selected_asset_ref, entry.sceneId)"
+                      >查看原图</button>
+                    </div>
+                  </div>
+                </div>
                 <div v-else class="placeholder-card">
                   <div class="placeholder-art">
                     <div class="placeholder-badge">PLACEHOLDER</div>
@@ -724,7 +883,7 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                   <a
                     v-if="isImageAsset(assetRefPath(entry.item.selected_asset_ref))"
                     class="selected-open-link"
-                    :href="toAssetHref(assetRefPath(entry.item.selected_asset_ref), entry.sceneId)"
+                    :href="originalAssetHref(entry.item.selected_asset_ref, entry.sceneId)"
                     target="_blank"
                     rel="noreferrer"
                   >
@@ -787,12 +946,51 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
                 <div class="preview-card preview-card-candidate">
                   <div class="preview-visual-frame preview-visual-frame-candidate">
                     <img
-                      v-if="isImageAsset(assetRefPath(candidate))"
+                      v-if="
+                        isImageAsset(cardAssetPath(candidate)) &&
+                        ['loading', 'ready'].includes(imageLoadState(candidate, entry.sceneId))
+                      "
                       class="preview-visual-image"
-                      :src="toAssetHref(assetRefPath(candidate), entry.sceneId)"
+                      :src="cardAssetHref(candidate, entry.sceneId)"
                       :alt="candidate.file_name || 'candidate-image'"
-                      @error="retryImageGet(assetRefPath(candidate), entry.sceneId)"
+                      :width="candidate.thumbnail_width || 480"
+                      :height="candidate.thumbnail_height || 270"
+                      loading="lazy"
+                      decoding="async"
+                      fetchpriority="low"
+                      @load="markImageReady(candidate, entry.sceneId)"
+                      @error="retryImageGet(candidate, entry.sceneId)"
                     />
+
+                    <div
+                      v-else-if="isImageAsset(cardAssetPath(candidate))"
+                      class="placeholder-card image-load-placeholder"
+                    >
+                      <div class="image-load-message">
+                        <span>
+                          {{
+                            imageLoadState(candidate, entry.sceneId) === 'retrying'
+                              ? '图片加载重试中…'
+                              : '图片暂时加载失败'
+                          }}
+                        </span>
+                        <div
+                          v-if="imageLoadState(candidate, entry.sceneId) === 'failed'"
+                          class="image-load-actions"
+                        >
+                          <span
+                            role="button"
+                            tabindex="0"
+                            @click.stop="reloadImageManually(candidate, entry.sceneId)"
+                          >重新加载</span>
+                          <span
+                            role="link"
+                            tabindex="0"
+                            @click.stop="openOriginalAsset(candidate, entry.sceneId)"
+                          >查看原图</span>
+                        </div>
+                      </div>
+                    </div>
 
                     <div v-else class="placeholder-card">
                       <div class="placeholder-art">
@@ -1822,6 +2020,39 @@ const renderEntries = computed<ReviewRenderEntry[]>(() => {
     color-mix(in srgb, var(--arc-400) 4%, #0a0a0d) 0%,
     color-mix(in srgb, var(--arc-400) 2%, #0e0e12) 100%
   );
+}
+
+.image-load-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.image-load-message {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.image-load-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.image-load-actions button,
+.image-load-actions span {
+  border: 0;
+  background: transparent;
+  color: var(--arc-300);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
 }
 
 .placeholder-art {
