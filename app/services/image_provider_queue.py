@@ -563,30 +563,33 @@ class ImageProviderQueue:
             )
 
             image_bytes = self._generate_candidate_bytes(provider=provider, task=task)
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_bytes(bytes(image_bytes))
-
             candidate_asset_refs.append(
-                {
-                    "scene_id": scene_id,
-                    "shot_id": shot_id,
-                    "file_name": file_name,
-                    "relative_path": task.relative_path,
-                    "public_url": task.public_url,
-                    "mime_type": "image/png",
-                    "provider": provider,
-                    "duration_sec": candidate_scene.get("duration_sec"),
-                    "duration_estimate_sec": candidate_scene.get("duration_estimate_sec"),
-                    "reference_images": task.reference_images,
-                    "reference_image_support": {
-                        "requested": bool(task.reference_images),
-                        "provider_supports_reference_image": False,
-                        "mode": "metadata_only",
+                self._runner._image_asset_refs.persist_image_asset(
+                    output_path,
+                    bytes(image_bytes),
+                    {
+                        "scene_id": scene_id,
+                        "shot_id": shot_id,
+                        "file_name": file_name,
+                        "relative_path": task.relative_path,
+                        "public_url": task.public_url,
+                        "mime_type": "image/png",
+                        "provider": provider,
+                        "duration_sec": candidate_scene.get("duration_sec"),
+                        "duration_estimate_sec": candidate_scene.get(
+                            "duration_estimate_sec"
+                        ),
+                        "reference_images": task.reference_images,
+                        "reference_image_support": {
+                            "requested": bool(task.reference_images),
+                            "provider_supports_reference_image": False,
+                            "mode": "metadata_only",
+                        },
+                        "quality_tier": str(
+                            getattr(ctx.input, "quality_tier", "quality") or "quality"
+                        ),
                     },
-                    "quality_tier": str(
-                        getattr(ctx.input, "quality_tier", "quality") or "quality"
-                    ),
-                }
+                )
             )
 
         # throttle between scenes to avoid IPM limit
@@ -663,29 +666,32 @@ class ImageProviderQueue:
             )
 
             image_bytes = self._generate_candidate_bytes(provider=provider, task=task)
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_bytes(bytes(image_bytes))
-
             candidate_asset_refs.append(
-                {
-                    "scene_id": scene_id,
-                    "file_name": file_name,
-                    "relative_path": task.relative_path,
-                    "public_url": task.public_url,
-                    "mime_type": "image/png",
-                    "provider": provider,
-                    "duration_sec": candidate_scene.get("duration_sec"),
-                    "duration_estimate_sec": candidate_scene.get("duration_estimate_sec"),
-                    "reference_images": task.reference_images,
-                    "reference_image_support": {
-                        "requested": bool(task.reference_images),
-                        "provider_supports_reference_image": False,
-                        "mode": "metadata_only",
+                self._runner._image_asset_refs.persist_image_asset(
+                    output_path,
+                    bytes(image_bytes),
+                    {
+                        "scene_id": scene_id,
+                        "file_name": file_name,
+                        "relative_path": task.relative_path,
+                        "public_url": task.public_url,
+                        "mime_type": "image/png",
+                        "provider": provider,
+                        "duration_sec": candidate_scene.get("duration_sec"),
+                        "duration_estimate_sec": candidate_scene.get(
+                            "duration_estimate_sec"
+                        ),
+                        "reference_images": task.reference_images,
+                        "reference_image_support": {
+                            "requested": bool(task.reference_images),
+                            "provider_supports_reference_image": False,
+                            "mode": "metadata_only",
+                        },
+                        "quality_tier": str(
+                            getattr(ctx.input, "quality_tier", "quality") or "quality"
+                        ),
                     },
-                    "quality_tier": str(
-                        getattr(ctx.input, "quality_tier", "quality") or "quality"
-                    ),
-                }
+                )
             )
 
         return candidate_asset_refs

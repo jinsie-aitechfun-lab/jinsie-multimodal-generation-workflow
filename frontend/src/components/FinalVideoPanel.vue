@@ -2,13 +2,18 @@
   <section class="final-hero">
     <h3 class="final-title">最终视频</h3>
 
-    <div class="final-shell" :class="{ ready: Boolean(finalVideoUrl) }">
+    <div class="final-shell" :class="{ ready: videoLoadState === 'ready' }">
       <video
         v-if="finalVideoUrl"
-        :src="finalVideoUrl"
+        :key="videoPlayerKey"
+        :src="videoPreviewUrl"
         controls
         playsinline
+        preload="metadata"
         class="final-video"
+        @loadedmetadata="$emit('video-ready')"
+        @canplay="$emit('video-ready')"
+        @error="$emit('video-error')"
       />
 
       <div v-else class="final-placeholder">
@@ -107,6 +112,18 @@
       </div>
     </div>
 
+    <div v-if="finalVideoUrl" class="ph-meta">
+      <span>{{ videoStatusText }}</span>
+      <template v-if="videoLoadState === 'failed'">
+        <button type="button" class="ph-render-cta" @click="$emit('reload-video')">
+          重新加载
+        </button>
+        <a class="ph-render-cta" :href="finalVideoUrl" target="_blank" rel="noopener noreferrer">
+          打开原视频
+        </a>
+      </template>
+    </div>
+
     <!-- JSON only shown in dev/debug context, hidden in main view -->
   </section>
 </template>
@@ -121,6 +138,10 @@ type UnknownRecord = Record<string, unknown>
 
 const props = defineProps<{
   finalVideoUrl: string
+  videoPreviewUrl: string
+  videoPlayerKey: string
+  videoLoadState: 'idle' | 'loading' | 'ready' | 'retrying' | 'failed'
+  videoStatusText: string
   finalVideoText: string
   workflowResponse: UnknownRecord | null
   renderInFlight: boolean
@@ -148,6 +169,9 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'render'): void
   (e: 'discard'): void
+  (e: 'video-ready'): void
+  (e: 'video-error'): void
+  (e: 'reload-video'): void
 }>()
 
 function asObj(v: unknown): UnknownRecord | null {

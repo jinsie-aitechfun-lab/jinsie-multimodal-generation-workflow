@@ -5,7 +5,21 @@
       <span class="pp-header-icon" aria-hidden="true">▶</span>
       <span class="pp-header-title">视频预览</span>
       <span v-if="renderInFlight"   class="badge badge-arc" style="font-size:0.6rem;">渲染中</span>
-      <span v-else-if="displayUrl" class="badge badge-ok"  style="font-size:0.6rem;">已完成</span>
+      <span
+        v-else-if="displayUrl && (!isCurrentVideo || videoLoadState === 'ready')"
+        class="badge badge-ok"
+        style="font-size:0.6rem;"
+      >已完成</span>
+      <span
+        v-else-if="isCurrentVideo && videoLoadState === 'failed'"
+        class="badge badge-warn"
+        style="font-size:0.6rem;"
+      >加载失败</span>
+      <span
+        v-else-if="isCurrentVideo"
+        class="badge badge-arc"
+        style="font-size:0.6rem;"
+      >加载中</span>
     </div>
 
     <!-- ── Body ── -->
@@ -15,17 +29,33 @@
       <template v-if="displayUrl">
         <div class="pp-player-wrap">
           <video
-            :src="displayUrl"
+            :src="currentPlayerUrl"
             class="pp-video"
             controls
             playsinline
-            :key="displayUrl"
+            preload="metadata"
+            :key="currentPlayerKey"
+            @loadedmetadata="handleCurrentVideoReady"
+            @canplay="handleCurrentVideoReady"
+            @error="handleCurrentVideoLoadError"
           />
         </div>
         <div class="pp-current-label">
           <span v-if="displayUrl === props.finalVideoUrl" class="pp-current-tag">当前生成</span>
           <span v-else class="pp-current-tag pp-current-tag--hist">历史回放</span>
           <span class="pp-current-url">{{ shortUrl(displayUrl) }}</span>
+          <span v-if="isCurrentVideo">{{ videoStatusText }}</span>
+          <template v-if="isCurrentVideo && videoLoadState === 'failed'">
+            <button type="button" class="pp-cancel-link" @click="$emit('reload-video')">
+              重新加载
+            </button>
+            <a
+              class="pp-cancel-link"
+              :href="props.finalVideoUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+            >打开原视频</a>
+          </template>
         </div>
         <!-- Current work card — workflow chain visualisation.
              Always shown when a video is loaded so the user keeps the
@@ -43,7 +73,9 @@
                   ? '取消中 · 工作流'
                   : workInProgress
                     ? '生成中 · 工作流'
-                    : '已完成 · 完整视频'
+                    : isCurrentVideo && videoLoadState !== 'ready'
+                      ? videoStatusText
+                      : '已完成 · 完整视频'
               }}
             </span>
           </div>
@@ -99,7 +131,18 @@
                 :title="historyVideoTooltip(url, idx)"
                 @click="selectVideo(url)"
               >
-                <video class="pp-thumb-video" :src="url" preload="metadata" :muted="true"/>
+                <img
+                  v-if="historyPosterUrl(url)"
+                  class="pp-thumb-video"
+                  :src="historyPosterUrl(url)"
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  @error="markHistoryPosterFailed(url)"
+                />
+                <div v-else class="pp-thumb-video pp-poster-placeholder" aria-label="视频封面暂不可用">
+                  <span aria-hidden="true">◇</span>
+                </div>
                 <div class="pp-thumb-overlay"><span class="pp-thumb-play">▶</span></div>
                 <div class="pp-thumb-index">{{ historyVideoIndex(idx) }}</div>
                 <div class="pp-thumb-caption">{{ historyVideoLabel(url, idx) }}</div>
@@ -184,7 +227,18 @@
                 @click="selectVideo(url)"
               >
                 <div class="pp-hist-card-frame">
-                  <video class="pp-hist-card-video" :src="url" preload="metadata" :muted="true"/>
+                  <img
+                    v-if="historyPosterUrl(url)"
+                    class="pp-hist-card-video"
+                    :src="historyPosterUrl(url)"
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                    @error="markHistoryPosterFailed(url)"
+                  />
+                  <div v-else class="pp-hist-card-video pp-poster-placeholder" aria-label="视频封面暂不可用">
+                    <span aria-hidden="true">◇</span>
+                  </div>
                   <div class="pp-hist-card-chrome" aria-hidden="true">
                     <span class="pp-hist-card-index">{{ historyVideoIndex(idx) }}</span>
                   </div>
@@ -277,7 +331,18 @@
               @click="selectVideo(url)"
             >
               <div class="pp-hist-card-frame">
-                <video class="pp-hist-card-video" :src="url" preload="metadata" :muted="true"/>
+                <img
+                  v-if="historyPosterUrl(url)"
+                  class="pp-hist-card-video"
+                  :src="historyPosterUrl(url)"
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  @error="markHistoryPosterFailed(url)"
+                />
+                <div v-else class="pp-hist-card-video pp-poster-placeholder" aria-label="视频封面暂不可用">
+                  <span aria-hidden="true">◇</span>
+                </div>
                 <div class="pp-hist-card-chrome" aria-hidden="true">
                   <span class="pp-hist-card-index">{{ historyVideoIndex(idx) }}</span>
                 </div>
@@ -432,10 +497,17 @@ interface RecentVideoMeta {
   title?: string
   topic?: string
   createdAt?: string
+  posterUrl?: string
+  workflowId?: string
+  runId?: string
 }
 
 const props = defineProps<{
   finalVideoUrl?: string
+  videoPreviewUrl?: string
+  videoPlayerKey?: string
+  videoLoadState?: 'idle' | 'loading' | 'ready' | 'retrying' | 'failed'
+  videoStatusText?: string
   recentVideoUrls?: string[]
   /** url → { title, topic, createdAt } map. Optional; missing entries
    *  fall back to "视频 N" / "视频 N (N=index+1)" tooltip. */
@@ -474,6 +546,9 @@ const emit = defineEmits<{
   (e: 'set-topic', topic: string): void
   (e: 'cancel'): void
   (e: 'delete-video', url: string): void
+  (e: 'video-ready'): void
+  (e: 'video-error'): void
+  (e: 'reload-video'): void
 }>()
 
 /* Local-only history delete. Bubbles the URL up to the parent — the
@@ -492,6 +567,19 @@ function historyVideoIndex(fallbackIndex: number): string {
 
 function historyVideoStatus(url: string): string {
   return url === props.finalVideoUrl ? '当前作品' : '已完成'
+}
+
+const failedPosterUrls = ref<Record<string, string>>({})
+
+function historyPosterUrl(url: string): string {
+  const posterUrl = props.recentVideoMetadata?.[url]?.posterUrl || ''
+  return failedPosterUrls.value[url] === posterUrl ? '' : posterUrl
+}
+
+function markHistoryPosterFailed(url: string) {
+  const posterUrl = props.recentVideoMetadata?.[url]?.posterUrl || ''
+  if (!posterUrl) return
+  failedPosterUrls.value = { ...failedPosterUrls.value, [url]: posterUrl }
 }
 
 /* History card label — the human-readable subtitle shown beneath the
@@ -574,6 +662,24 @@ const displayUrl = computed(() => {
   // Only auto-show the current generation result, not historical ones
   return props.finalVideoUrl ?? null
 })
+
+const isCurrentVideo = computed(
+  () => Boolean(displayUrl.value && displayUrl.value === props.finalVideoUrl),
+)
+const currentPlayerUrl = computed(() =>
+  isCurrentVideo.value ? props.videoPreviewUrl : displayUrl.value || undefined,
+)
+const currentPlayerKey = computed(() =>
+  isCurrentVideo.value ? props.videoPlayerKey : displayUrl.value || undefined,
+)
+
+function handleCurrentVideoReady() {
+  if (isCurrentVideo.value) emit('video-ready')
+}
+
+function handleCurrentVideoLoadError() {
+  if (isCurrentVideo.value) emit('video-error')
+}
 
 function selectVideo(url: string) {
   selectedUrl.value = url
@@ -1112,7 +1218,7 @@ const doneCount = computed(
   border-radius: 10px;
   overflow: hidden;
   border: 1.5px solid rgba(255,255,255,0.08);
-  background: #000;
+  background: var(--surface-overlay-strong);
   transition: border-color 0.18s, box-shadow 0.18s;
 }
 
@@ -1177,6 +1283,17 @@ const doneCount = computed(
   object-fit: cover;
   display: block;
   pointer-events: none;
+}
+
+.pp-poster-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(circle at 50% 35%, rgba(245,158,11,0.14), transparent 48%),
+    var(--surface-overlay-strong);
+  color: var(--arc-300);
+  font-size: 1.35rem;
 }
 
 .pp-hist-card-overlay {
@@ -1671,7 +1788,7 @@ const doneCount = computed(
   border-radius: 8px;
   overflow: hidden;
   border: 1.5px solid rgba(255,255,255,0.08);
-  background: #000;
+  background: var(--surface-overlay-strong);
   transition: border-color 0.18s, box-shadow 0.18s, transform 0.18s;
 }
 .pp-thumb-main {

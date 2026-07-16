@@ -64,6 +64,15 @@ type ImageAssetRef = {
   mime_type?: string
   provider?: string
   version?: string | number
+  thumbnail_url?: string
+  thumbnail_path?: string
+  thumbnail_version?: string | number
+  width?: number
+  height?: number
+  size_bytes?: number
+  thumbnail_width?: number
+  thumbnail_height?: number
+  thumbnail_size_bytes?: number
 }
 
 type ImageReviewSelectedAsset = {
@@ -319,6 +328,84 @@ const subtitlesText = ref('')
 const renderPlanText = ref('')
 const finalVideoText = ref('')
 const finalVideoUrl = ref('')
+type VideoPreviewLoadState = 'idle' | 'loading' | 'ready' | 'retrying' | 'failed'
+const VIDEO_PREVIEW_RETRY_DELAYS_MS = [1000, 2500] as const
+const videoPreviewLoadState = ref<VideoPreviewLoadState>('idle')
+const videoPreviewRetryCount = ref(0)
+const videoPreviewRetryVersion = ref(0)
+let videoPreviewRetryTimer: number | null = null
+
+function clearVideoPreviewRetryTimer() {
+  if (videoPreviewRetryTimer == null) return
+  window.clearTimeout(videoPreviewRetryTimer)
+  videoPreviewRetryTimer = null
+}
+
+const videoPreviewUrl = computed(() => {
+  const url = finalVideoUrl.value
+  if (!url || videoPreviewRetryVersion.value === 0) return url
+  const hashIndex = url.indexOf('#')
+  const base = hashIndex >= 0 ? url.slice(0, hashIndex) : url
+  const hash = hashIndex >= 0 ? url.slice(hashIndex) : ''
+  const separator = base.includes('?') ? '&' : '?'
+  return `${base}${separator}preview_retry=${videoPreviewRetryVersion.value}${hash}`
+})
+const videoPreviewPlayerKey = computed(
+  () => `${finalVideoUrl.value || 'idle'}::${videoPreviewRetryVersion.value}`,
+)
+const videoPreviewStatusText = computed(() => {
+  if (videoPreviewLoadState.value === 'loading') return '视频已生成，正在加载预览…'
+  if (videoPreviewLoadState.value === 'retrying') return '视频预览加载失败，正在重试…'
+  if (videoPreviewLoadState.value === 'ready') return '视频预览已就绪'
+  if (videoPreviewLoadState.value === 'failed') return '视频预览加载失败'
+  return ''
+})
+
+watch(finalVideoUrl, (url) => {
+  clearVideoPreviewRetryTimer()
+  videoPreviewRetryCount.value = 0
+  videoPreviewRetryVersion.value = 0
+  videoPreviewLoadState.value = url ? 'loading' : 'idle'
+}, { immediate: true })
+
+function markVideoPreviewReady() {
+  if (!finalVideoUrl.value) return
+  clearVideoPreviewRetryTimer()
+  videoPreviewLoadState.value = 'ready'
+}
+
+function handleVideoPreviewError() {
+  const failedUrl = finalVideoUrl.value
+  if (
+    !failedUrl ||
+    videoPreviewLoadState.value === 'failed' ||
+    videoPreviewRetryTimer != null
+  ) return
+  if (videoPreviewRetryCount.value >= VIDEO_PREVIEW_RETRY_DELAYS_MS.length) {
+    videoPreviewLoadState.value = 'failed'
+    return
+  }
+
+  const delay = VIDEO_PREVIEW_RETRY_DELAYS_MS[videoPreviewRetryCount.value]
+  videoPreviewRetryCount.value += 1
+  videoPreviewLoadState.value = 'retrying'
+  videoPreviewRetryTimer = window.setTimeout(() => {
+    videoPreviewRetryTimer = null
+    if (finalVideoUrl.value !== failedUrl) return
+    videoPreviewRetryVersion.value += 1
+    videoPreviewLoadState.value = 'loading'
+  }, delay)
+}
+
+function reloadVideoPreviewManually() {
+  if (!finalVideoUrl.value) return
+  clearVideoPreviewRetryTimer()
+  videoPreviewRetryCount.value = 0
+  videoPreviewRetryVersion.value += 1
+  videoPreviewLoadState.value = 'loading'
+}
+
+onBeforeUnmount(clearVideoPreviewRetryTimer)
 const finalVideoAudioEnabled = ref(true)
 const recentFinalVideoUrls = ref<string[]>([])
 
@@ -327,13 +414,16 @@ const recentFinalVideoUrls = ref<string[]>([])
 // simple — they only deal with URLs. Hover labels, card subtitles and
 // future analytics read from this map.
 //
-// Schema (per URL): { title?: 故事标题, topic?: 用户输入主题, createdAt?: ISO ts }
+// Schema (per URL): { title?, topic?, createdAt?, posterUrl?, workflowId?, runId? }
 // All fields optional — old entries from before this commit have no
 // metadata and gracefully fall back to "视频 N".
 export interface RecentVideoMeta {
   title?: string
   topic?: string
   createdAt?: string
+  posterUrl?: string
+  workflowId?: string
+  runId?: string
 }
 const recentVideoMetadata = ref<Record<string, RecentVideoMeta>>({})
 
@@ -350,17 +440,22 @@ function pushRecentFinalVideoUrl(url: string, meta?: RecentVideoMeta) {
     ...recentFinalVideoUrls.value.filter((item) => item !== u),
   ].slice(0, 10)
 
-  // First-write-wins: metadata is set ONLY when a URL is brand new in
-  // the map. Re-applies of the same workflow (e.g. tab nav, SPA mount
-  // restoration) must not overwrite the topic with whatever the form
-  // currently holds — otherwise a user who generated 「小海豹」then
-  // edited the form to 「小兔子」would see the seal card's tooltip
-  // suddenly say "rabbit". The topic-at-time-of-generation is what
-  // history wants to preserve, not the live form value.
-  if (meta && !recentVideoMetadata.value[u]) {
+  // Existing values win so a later SPA restore cannot overwrite the
+  // generation-time title/topic. Newly available fields (notably posterUrl
+  // for records written by older builds) are still allowed to backfill.
+  if (meta) {
+    const existing = recentVideoMetadata.value[u]
     recentVideoMetadata.value = {
       ...recentVideoMetadata.value,
-      [u]: meta,
+      [u]: existing
+        ? {
+            ...meta,
+            ...existing,
+            posterUrl: existing.posterUrl || meta.posterUrl,
+            workflowId: existing.workflowId || meta.workflowId,
+            runId: existing.runId || meta.runId,
+          }
+        : meta,
     }
   }
   // Drop metadata entries whose URL is no longer in the list so the
@@ -404,11 +499,53 @@ function deriveVideoMeta(response: WorkflowRunResponse | null | undefined): Rece
   const title =
     story && typeof story.title === 'string' ? story.title.trim() : ''
   const topic = (workflowForm.value?.topic || '').trim()
-  if (!title && !topic) return undefined
+  const storyboard = response.outputs?.storyboard as Record<string, unknown> | undefined
+  const scenes = Array.isArray(storyboard?.scenes) ? storyboard.scenes : []
+  const firstSceneId = scenes.length > 0 && scenes[0] && typeof scenes[0] === 'object'
+    ? String((scenes[0] as Record<string, unknown>).scene_id || '')
+    : ''
+  const imageReview = response.outputs?.image_review as Record<string, unknown> | undefined
+  const selectedAssets = Array.isArray(imageReview?.selected_assets)
+    ? imageReview.selected_assets
+    : []
+  const firstSelected = selectedAssets.find(
+    (item) =>
+      item &&
+      typeof item === 'object' &&
+      String((item as Record<string, unknown>).scene_id || '') === firstSceneId,
+  ) || selectedAssets[0]
+  const selectedAssetRef = firstSelected && typeof firstSelected === 'object'
+    ? (firstSelected as Record<string, unknown>).selected_asset_ref
+    : undefined
+  const posterPath = selectedAssetRef && typeof selectedAssetRef === 'object'
+    ? String(
+        (selectedAssetRef as Record<string, unknown>).thumbnail_url ||
+        (selectedAssetRef as Record<string, unknown>).thumbnail_path ||
+        (selectedAssetRef as Record<string, unknown>).public_url ||
+        (selectedAssetRef as Record<string, unknown>).relative_path ||
+        '',
+      )
+    : ''
+  const posterVersion = selectedAssetRef && typeof selectedAssetRef === 'object'
+    ? (
+        (selectedAssetRef as Record<string, unknown>).thumbnail_version ||
+        (selectedAssetRef as Record<string, unknown>).version
+      )
+    : undefined
+  const posterBaseUrl = toAssetHref(posterPath)
+  const posterUrl = posterBaseUrl && posterVersion != null
+    ? `${posterBaseUrl}${posterBaseUrl.includes('?') ? '&' : '?'}v=${encodeURIComponent(String(posterVersion))}`
+    : posterBaseUrl
+  if (!title && !topic && !posterUrl && !response.workflow_id && !response.run_id) {
+    return undefined
+  }
   return {
     title: title || undefined,
     topic: topic || undefined,
     createdAt: new Date().toISOString(),
+    posterUrl: posterUrl || undefined,
+    workflowId: response.workflow_id || undefined,
+    runId: response.run_id || undefined,
   }
 }
 
@@ -1748,25 +1885,9 @@ const reviewRefreshProgress = computed(() => {
     }
   }
 
-  const summary = imageGenerationSummary.value
-  const currentPlaceholder = reviewPlaceholders.value.find(
-    (item) => item.scene_id === summary.currentScene,
-  )
-  const currentSceneTitle = currentPlaceholder?.scene_title || summary.currentScene
-  const confirmingOnly =
-    summary.confirmingCount > 0 && summary.queuedCount + summary.generatingCount === 0
-
   return {
-    text: `${confirmingOnly ? '候选图结果确认中' : '候选图生成中'}：${summary.readyCount}/${summary.totalCount}${
-      currentSceneTitle ? ` · ${currentSceneTitle}` : ''
-    }`,
-    percent: Math.max(
-      5,
-      Math.min(
-        100,
-        Math.round((summary.readyCount / Math.max(1, summary.totalCount)) * 100),
-      ),
-    ),
+    text: workflowProgressSummary.value.stageLabel,
+    percent: workflowProgressSummary.value.stagePercent ?? 0,
   }
 })
 
@@ -2706,6 +2827,21 @@ async function fetchAuthoritativeWorkflow(workflowId: string, signal?: AbortSign
   return (await response.json()) as WorkflowRunResponse
 }
 
+function getAuthoritativeReadySceneIds(data: WorkflowRunResponse): Set<string> {
+  const selectedAssets = (
+    data.outputs?.image_review as Record<string, unknown> | undefined
+  )?.selected_assets
+  return new Set(
+    (Array.isArray(selectedAssets) ? selectedAssets : [])
+      .map((item) =>
+        item && typeof item === 'object'
+          ? String((item as Record<string, unknown>).scene_id || '')
+          : '',
+      )
+      .filter(Boolean),
+  )
+}
+
 async function lookupSceneTask(
   workflowId: string,
   runId: string,
@@ -3338,6 +3474,8 @@ async function pollImageRefreshTasksForWorkflow(
   signal: AbortSignal,
 ) {
   const retriedFailedSceneIds = new Set<string>()
+  const observedSucceededSceneIds = new Set<string>()
+  const syncedSucceededSceneIds = new Set<string>()
   const submittedSceneIds = (() => {
     const existing = submittedImageTaskSceneIdsByWorkflow.get(workflowKey)
     if (existing) return existing
@@ -3384,7 +3522,10 @@ async function pollImageRefreshTasksForWorkflow(
         !retriedFailedSceneIds.has(sceneId),
       )
       const shouldCreateMissing = Boolean(
-        !task && allowCreate && !submittedSceneIds.has(sceneId),
+        !task &&
+        allowCreate &&
+        !submittedSceneIds.has(sceneId) &&
+        !observedSucceededSceneIds.has(sceneId),
       )
       if (shouldCreateMissing || shouldRetryFailed) {
         task = await createImageRefreshTask(
@@ -3411,6 +3552,8 @@ async function pollImageRefreshTasksForWorkflow(
 
     let hasActiveTask = false
     let hasSucceededTask = false
+    const newlySucceededSceneIds: string[] = []
+    const scenesNeedingResultSync: string[] = []
     const failures: string[] = []
     sceneRefreshingId.value = ''
 
@@ -3436,7 +3579,16 @@ async function pollImageRefreshTasksForWorkflow(
         markPlaceholderState(sceneId, 'refreshing')
       } else if (task.status === 'succeeded') {
         hasSucceededTask = true
-        markPlaceholderState(sceneId, 'confirming')
+        if (!observedSucceededSceneIds.has(sceneId)) {
+          observedSucceededSceneIds.add(sceneId)
+          newlySucceededSceneIds.push(sceneId)
+        }
+        if (syncedSucceededSceneIds.has(sceneId)) {
+          markPlaceholderState(sceneId, 'done')
+        } else {
+          scenesNeedingResultSync.push(sceneId)
+          markPlaceholderState(sceneId, 'confirming')
+        }
       } else {
         const message = `${sceneId} 候选图生成失败：${task.error || '服务端任务失败'}`
         failures.push(message)
@@ -3445,8 +3597,16 @@ async function pollImageRefreshTasksForWorkflow(
       }
     }
 
-    if (!hasActiveTask) {
-      if (hasSucceededTask) {
+    // A batch can report several newly succeeded scenes at once. Pull the
+    // authoritative workflow snapshot once for the whole batch, then let the
+    // existing selected_assets -> placeholders -> imageGenerationSummary chain
+    // advance readyCount. A failed/missing snapshot leaves the scenes in
+    // confirming so the next batch-poll iteration retries only this read.
+    if (
+      hasActiveTask &&
+      (newlySucceededSceneIds.length > 0 || scenesNeedingResultSync.length > 0)
+    ) {
+      try {
         const authoritative = await fetchAuthoritativeWorkflow(workflowId, signal)
         if (
           generation !== imageReviewPollingGeneration ||
@@ -3455,13 +3615,68 @@ async function pollImageRefreshTasksForWorkflow(
           throw new DOMException('Superseded', 'AbortError')
         }
         applyWorkflowResponse(authoritative)
-        for (const sceneId of sceneIds) {
-          if (taskByScene.get(sceneId)?.status === 'succeeded') {
+        const authoritativeReadySceneIds = getAuthoritativeReadySceneIds(authoritative)
+        for (const sceneId of scenesNeedingResultSync) {
+          if (authoritativeReadySceneIds.has(sceneId)) {
+            syncedSucceededSceneIds.add(sceneId)
             markPlaceholderState(sceneId, 'done')
+          } else {
+            markPlaceholderState(sceneId, 'confirming')
           }
         }
+        // applyWorkflowResponse rebuilds placeholders from persisted assets.
+        // Restore the finer task states for scenes that are still in flight.
+        for (const sceneId of sceneIds) {
+          const task = taskByScene.get(sceneId)
+          if (task?.status === 'queued') markPlaceholderState(sceneId, 'queued')
+          if (task?.status === 'running') markPlaceholderState(sceneId, 'refreshing')
+        }
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') throw error
+        for (const sceneId of scenesNeedingResultSync) {
+          markPlaceholderState(sceneId, 'confirming')
+        }
       }
-      return failures
+    }
+
+    if (!hasActiveTask) {
+      if (hasSucceededTask) {
+        try {
+          // Keep one final authoritative reconciliation after every task is
+          // terminal, even if incremental snapshots already populated scenes.
+          const authoritative = await fetchAuthoritativeWorkflow(workflowId, signal)
+          if (
+            generation !== imageReviewPollingGeneration ||
+            activeImageReviewPollingKey !== workflowKey
+          ) {
+            throw new DOMException('Superseded', 'AbortError')
+          }
+          applyWorkflowResponse(authoritative)
+          const authoritativeReadySceneIds = getAuthoritativeReadySceneIds(authoritative)
+          for (const sceneId of sceneIds) {
+            if (taskByScene.get(sceneId)?.status !== 'succeeded') continue
+            if (authoritativeReadySceneIds.has(sceneId)) {
+              syncedSucceededSceneIds.add(sceneId)
+              markPlaceholderState(sceneId, 'done')
+            } else {
+              markPlaceholderState(sceneId, 'confirming')
+            }
+          }
+          const hasUnsyncedSucceededTask = sceneIds.some(
+            (sceneId) =>
+              taskByScene.get(sceneId)?.status === 'succeeded' &&
+              !syncedSucceededSceneIds.has(sceneId),
+          )
+          if (!hasUnsyncedSucceededTask) return failures
+        } catch (error) {
+          if (error instanceof DOMException && error.name === 'AbortError') throw error
+          for (const sceneId of scenesNeedingResultSync) {
+            markPlaceholderState(sceneId, 'confirming')
+          }
+        }
+      } else {
+        return failures
+      }
     }
 
     const visibilityDelay = document.hidden ? 20000 : 5000
@@ -4157,6 +4372,10 @@ async function executeRunWorkflow() {
 
       <StudioPreviewPanel
         :final-video-url="finalVideoUrl"
+        :video-preview-url="videoPreviewUrl"
+        :video-player-key="videoPreviewPlayerKey"
+        :video-load-state="videoPreviewLoadState"
+        :video-status-text="videoPreviewStatusText"
         :recent-video-urls="recentFinalVideoUrls"
         :recent-video-metadata="recentVideoMetadata"
         :render-in-flight="finalVideoRenderInFlight"
@@ -4178,6 +4397,9 @@ async function executeRunWorkflow() {
         @set-topic="setExampleTopic"
         @cancel="cancelActivePhase"
         @delete-video="requestDeleteRecentVideo"
+        @video-ready="markVideoPreviewReady"
+        @video-error="handleVideoPreviewError"
+        @reload-video="reloadVideoPreviewManually"
       />
     </section>
       <section v-if="activeTab === 'review'" class="review-layout">
@@ -4188,7 +4410,9 @@ async function executeRunWorkflow() {
               <span class="review-section-icon" aria-hidden="true">▶</span>
               <span class="review-section-title">最终视频</span>
               <span v-if="finalVideoRenderInFlight" class="badge badge-arc" style="font-size:0.6rem;">渲染中</span>
-              <span v-else-if="finalVideoUrl" class="badge badge-ok" style="font-size:0.6rem;">已完成</span>
+              <span v-else-if="finalVideoUrl && videoPreviewLoadState === 'ready'" class="badge badge-ok" style="font-size:0.6rem;">已完成</span>
+              <span v-else-if="finalVideoUrl && videoPreviewLoadState === 'failed'" class="badge badge-warn" style="font-size:0.6rem;">加载失败</span>
+              <span v-else-if="finalVideoUrl" class="badge badge-arc" style="font-size:0.6rem;">加载中</span>
               <span v-if="finalVideoAudioEnabled === false" class="badge badge-warn" style="font-size:0.6rem;">无声</span>
               <!-- Manual render CTA is rendered inside `FinalVideoPanel`'s
                    body so it sits next to the "等待用户触发渲染" copy and
@@ -4200,6 +4424,10 @@ async function executeRunWorkflow() {
             <div class="review-video-body">
               <FinalVideoPanel
                 :final-video-url="finalVideoUrl"
+                :video-preview-url="videoPreviewUrl"
+                :video-player-key="videoPreviewPlayerKey"
+                :video-load-state="videoPreviewLoadState"
+                :video-status-text="videoPreviewStatusText"
                 :final-video-text="finalVideoText"
                 :workflow-response="currentWorkflowResponse"
                 :render-in-flight="finalVideoRenderInFlight"
@@ -4215,6 +4443,9 @@ async function executeRunWorkflow() {
                 :render-mode="workflowForm.renderMode"
                 :scene-refreshing-id="sceneRefreshingId"
                 @render="renderFinalVideoIfReady(currentWorkflowResponse || {})"
+                @video-ready="markVideoPreviewReady"
+                @video-error="handleVideoPreviewError"
+                @reload-video="reloadVideoPreviewManually"
                 @discard="discardCurrentDraft"
                 :show-render-button="workflowForm.renderMode === 'auto'"
               />
@@ -4655,9 +4886,17 @@ async function executeRunWorkflow() {
 /* ── Homepage 2-column grid ── */
 .studio-home-grid {
   display: grid;
-  grid-template-columns: 420px 1fr;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  grid-template-columns: minmax(0, 420px) minmax(0, 1fr);
   gap: 1.5rem;
   align-items: start;
+}
+
+.studio-home-grid > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* Right column (preview panel) stays visible while form scrolls.
@@ -4674,7 +4913,7 @@ async function executeRunWorkflow() {
 
 @media (max-width: 960px) {
   .studio-home-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .studio-home-grid > :nth-child(2) {
     position: static;
