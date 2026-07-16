@@ -11,6 +11,7 @@ from queue import Queue
 from typing import Any
 
 from app.services.atomic_json_store import read_json, update_json_atomic, write_json_atomic
+from app.services.runner_image_asset_refs import RunnerImageAssetRefsSupport
 from app.services.storage_ids import safe_child_dir
 
 
@@ -32,6 +33,9 @@ class ImageRefreshCoordinator:
         self.assets_dir = assets_dir
         self.mock_root = assets_dir / "mock"
         self.runner = runner
+        self.image_asset_refs = getattr(
+            runner, "_image_asset_refs", RunnerImageAssetRefsSupport(runner)
+        )
 
     def outputs_path(self, workflow_id: str) -> Path:
         return safe_child_dir(
@@ -54,15 +58,18 @@ class ImageRefreshCoordinator:
                 return []
             relative = f"assets/mock/image/{run_id}/{path.name}"
             refs.append(
-                {
-                    "scene_id": scene_id,
-                    "file_name": path.name,
-                    "relative_path": relative,
-                    "public_url": f"/{relative}",
-                    "mime_type": "image/png",
-                    "provider": "reconciled_existing_file",
-                    "version": str(path.stat().st_mtime_ns),
-                }
+                self.image_asset_refs.enrich_existing_image_ref(
+                    path,
+                    {
+                        "scene_id": scene_id,
+                        "file_name": path.name,
+                        "relative_path": relative,
+                        "public_url": f"/{relative}",
+                        "mime_type": "image/png",
+                        "provider": "reconciled_existing_file",
+                        "version": str(path.stat().st_mtime_ns),
+                    },
+                )
             )
         return refs
 

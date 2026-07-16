@@ -177,17 +177,19 @@ class RunnerSingleSceneImageSupport:
                     f"pillow fallback returned invalid bytes for scene {scene_id} ({candidate_suffix})"
                 )
 
-            output_path.write_bytes(bytes(image_bytes))
-
             candidate_asset_refs.append(
-                {
-                    "scene_id": scene_id,
-                    "file_name": file_name,
-                    "relative_path": f"assets/mock/image/{ctx.run_id}/{file_name}",
-                    "public_url": f"/assets/mock/image/{ctx.run_id}/{file_name}",
-                    "mime_type": "image/png",
-                    "provider": "pillow_storybook_renderer",
-                }
+                self._runner._image_asset_refs.persist_image_asset(
+                    output_path,
+                    bytes(image_bytes),
+                    {
+                        "scene_id": scene_id,
+                        "file_name": file_name,
+                        "relative_path": f"assets/mock/image/{ctx.run_id}/{file_name}",
+                        "public_url": f"/assets/mock/image/{ctx.run_id}/{file_name}",
+                        "mime_type": "image/png",
+                        "provider": "pillow_storybook_renderer",
+                    },
+                )
             )
 
         primary_ref = candidate_asset_refs[0]
@@ -316,26 +318,28 @@ class RunnerSingleSceneImageSupport:
                     )
 
                 output_path = Path(output_path)
-                output_path.parent.mkdir(parents=True, exist_ok=True)
-                output_path.write_bytes(bytes(image_bytes))
-
                 candidates.append(
-                    {
-                        "scene_id": scene_id,
-                        "file_name": file_name,
-                        "relative_path": task.relative_path,
-                        "public_url": task.public_url,
-                        "mime_type": "image/png",
-                        "provider": "api_image_generator",
-                        "negative_prompt": active_negative,
-                        # Persist the quality tier so the frontend can show
-                        # a "✦" badge on candidates rendered at Cinematic.
-                        # This is what tells the user "this candidate was
-                        # produced by 增强画质" vs a default-tier roll.
-                        "quality_tier": str(
-                            getattr(ctx.input, "quality_tier", "quality") or "quality"
-                        ),
-                    }
+                    self._runner._image_asset_refs.persist_image_asset(
+                        output_path,
+                        bytes(image_bytes),
+                        {
+                            "scene_id": scene_id,
+                            "file_name": file_name,
+                            "relative_path": task.relative_path,
+                            "public_url": task.public_url,
+                            "mime_type": "image/png",
+                            "provider": "api_image_generator",
+                            "negative_prompt": active_negative,
+                            # Persist the quality tier so the frontend can show
+                            # a "✦" badge on candidates rendered at Cinematic.
+                            # This is what tells the user "this candidate was
+                            # produced by 增强画质" vs a default-tier roll.
+                            "quality_tier": str(
+                                getattr(ctx.input, "quality_tier", "quality")
+                                or "quality"
+                            ),
+                        },
+                    )
                 )
             return candidates
 

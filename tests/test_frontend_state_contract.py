@@ -37,6 +37,61 @@ class FrontendStateContractTests(unittest.TestCase):
         self.assertIn("imageRetryAttempts", retry_body)
         self.assertNotIn("refresh-scene", retry_body)
 
+    def test_image_cards_prefer_thumbnails_and_original_action_keeps_public_url(self):
+        review = (ROOT / "frontend/src/components/InteractiveImageReview.vue").read_text(
+            encoding="utf-8"
+        )
+        card_path = review.split("function cardAssetPath", 1)[1].split(
+            "function cardAssetVersion", 1
+        )[0]
+        original_path = review.split("function assetRefPath", 1)[1].split(
+            "function cardAssetPath", 1
+        )[0]
+        self.assertLess(card_path.index("assetRef.thumbnail_url"), card_path.index("assetRef.public_url"))
+        self.assertIn("assetRef.public_url || assetRef.relative_path", original_path)
+        self.assertIn("function originalAssetHref", review)
+        self.assertIn("thumbnail_version", review)
+
+    def test_image_cards_use_bounded_real_reload_state_machine(self):
+        review = (ROOT / "frontend/src/components/InteractiveImageReview.vue").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("const IMAGE_RETRY_DELAYS_MS = [500, 1000, 2000] as const", review)
+        self.assertIn("const imageRetryTimers = new Map<string, number>()", review)
+        self.assertIn("imageRetryTimers.has(key)", review)
+        self.assertIn("[key]: (imageRetryVersions.value[key] || 0) + 1", review)
+        self.assertIn("setImageLoadState(key, 'failed')", review)
+        self.assertIn("图片暂时加载失败", review)
+        self.assertIn("重新加载", review)
+        self.assertIn("查看原图", review)
+        self.assertIn("onBeforeUnmount(() => {", review)
+        self.assertIn("for (const timer of imageRetryTimers.values()) window.clearTimeout(timer)", review)
+        self.assertNotIn("Date.now()", review)
+
+    def test_image_asset_change_clears_old_retry_and_error_state(self):
+        review = (ROOT / "frontend/src/components/InteractiveImageReview.vue").read_text(
+            encoding="utf-8"
+        )
+        signature_watch = review.split("watch(assetVersionSignature", 1)[1].split(
+            "onBeforeUnmount", 1
+        )[0]
+        self.assertIn("imageRetryTimers.clear()", signature_watch)
+        self.assertIn("imageRetryAttempts.value = {}", signature_watch)
+        self.assertIn("imageLoadStates.value = {}", signature_watch)
+        self.assertIn("thumbnail_version", review)
+
+    def test_image_loading_hints_prioritize_only_current_selected_image(self):
+        review = (ROOT / "frontend/src/components/InteractiveImageReview.vue").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('loading="eager"', review)
+        self.assertIn('fetchpriority="high"', review)
+        self.assertIn('loading="lazy"', review)
+        self.assertIn('fetchpriority="low"', review)
+        self.assertGreaterEqual(review.count('decoding="async"'), 2)
+        self.assertIn(':width="entry.item.selected_asset_ref?.thumbnail_width || 480"', review)
+        self.assertIn(':height="entry.item.selected_asset_ref?.thumbnail_height || 270"', review)
+
     def test_top_and_final_panel_receive_the_same_summaries(self):
         studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
         final_panel = (ROOT / "frontend/src/components/FinalVideoPanel.vue").read_text(
@@ -207,6 +262,14 @@ class FrontendStateContractTests(unittest.TestCase):
         self.assertIn("workflowId: response.workflow_id", derive_meta)
         self.assertIn("runId: response.run_id", derive_meta)
         self.assertIn("STORAGE_KEY_RECENT_VIDEO_META", studio)
+
+    def test_history_poster_prefers_selected_asset_thumbnail(self):
+        studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        derive_meta = studio.split("function deriveVideoMeta", 1)[1].split(
+            "History video delete", 1
+        )[0]
+        self.assertLess(derive_meta.index("thumbnail_url"), derive_meta.index(".public_url"))
+        self.assertIn(".thumbnail_version", derive_meta)
 
     def test_history_cards_do_not_load_full_mp4_for_covers(self):
         preview = (ROOT / "frontend/src/components/studio/StudioPreviewPanel.vue").read_text(
