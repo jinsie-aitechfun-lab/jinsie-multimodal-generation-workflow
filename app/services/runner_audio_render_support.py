@@ -5,6 +5,13 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from app.services.subtitle_layout import (
+    build_ffmpeg_subtitle_filter,
+    build_subtitle_layout,
+    infer_video_dimensions,
+    layout_subtitle_cues,
+)
+
 # Final video is rendered at 25 fps via `-vsync cfr -r 25`. Each per-scene
 # image duration written into scene_concat.txt is therefore rounded by
 # ffmpeg to the nearest 1/25s = 0.04s frame boundary. When the rounding
@@ -717,6 +724,11 @@ class RunnerAudioRenderSupport:
         items: List[Dict[str, Any]] = []
         current_start = 0.0
         srt_lines: List[str] = []
+        video_width, video_height = infer_video_dimensions(
+            outputs.get("image_assets") or {}
+        )
+        subtitle_layout = build_subtitle_layout(video_width, video_height)
+        cue_index = 0
 
         def _format_srt_time(total_seconds: float) -> str:
             millis = int(round(total_seconds * 1000))
@@ -728,7 +740,7 @@ class RunnerAudioRenderSupport:
             millis %= 1000
             return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
 
-        for index, segment in enumerate(items_source, start=1):
+        for segment in items_source:
             text = str(segment.get("text", "")).strip()
             if not text:
                 continue
@@ -739,33 +751,53 @@ class RunnerAudioRenderSupport:
             if duration_sec <= 0:
                 duration_sec = 3.0
 
-            start_sec = current_start
-            end_sec = current_start + duration_sec
-            current_start = end_sec
+            laid_out_cues = layout_subtitle_cues(text, subtitle_layout) or [text]
+            cue_duration_sec = duration_sec / len(laid_out_cues)
+            segment_start = current_start
+            segment_end = segment_start + duration_sec
 
-            item = {
-                "index": index,
-                "shot_id": segment.get("shot_id"),
-                "scene_id": segment.get("scene_id"),
-                "start_sec": start_sec,
-                "end_sec": end_sec,
-                "text": text,
-            }
-            items.append(item)
+            for chunk_index, laid_out_text in enumerate(laid_out_cues):
+                cue_index += 1
+                start_sec = segment_start + chunk_index * cue_duration_sec
+                end_sec = (
+                    segment_end
+                    if chunk_index == len(laid_out_cues) - 1
+                    else segment_start + (chunk_index + 1) * cue_duration_sec
+                )
+                item = {
+                    "index": cue_index,
+                    "shot_id": segment.get("shot_id"),
+                    "scene_id": segment.get("scene_id"),
+                    "start_sec": start_sec,
+                    "end_sec": end_sec,
+                    "text": laid_out_text,
+                    "source_text": text,
+                }
+                items.append(item)
 
-            srt_lines.extend(
-                [
-                    str(index),
-                    f"{_format_srt_time(start_sec)} --> {_format_srt_time(end_sec)}",
-                    text,
-                    "",
-                ]
-            )
+                srt_lines.extend(
+                    [
+                        str(cue_index),
+                        f"{_format_srt_time(start_sec)} --> {_format_srt_time(end_sec)}",
+                        laid_out_text,
+                        "",
+                    ]
+                )
+
+            current_start = segment_end
 
         return {
             "enabled": True,
             "items": items,
             "srt_preview": "\n".join(srt_lines).strip(),
+            "layout": {
+                "video_width": subtitle_layout.video_width,
+                "video_height": subtitle_layout.video_height,
+                "font_name": subtitle_layout.font_name,
+                "font_size": subtitle_layout.font_size,
+                "max_text_width": round(subtitle_layout.max_text_width, 2),
+                "max_lines": 2,
+            },
         }
 
     def build_video_concat_file(
@@ -871,6 +903,7 @@ class RunnerAudioRenderSupport:
         image_assets = outputs.get("image_assets") or {}
         audio_segments = outputs.get("audio_segments") or {}
         subtitles = outputs.get("subtitles") or {}
+        video_width, video_height = infer_video_dimensions(image_assets)
 
         raw_asset_list = image_assets.get("assets") or []
         audio_item_list = audio_segments.get("items") or []
@@ -1159,6 +1192,11 @@ class RunnerAudioRenderSupport:
         subtitle_available = (
             subtitle_path.exists() and subtitle_path.stat().st_size > 0
         )
+        subtitle_layout = (
+            build_subtitle_layout(video_width, video_height)
+            if subtitle_available
+            else None
+        )
 
         if has_audio and merged_audio_path:
             ffmpeg_cmd = [
@@ -1172,13 +1210,16 @@ class RunnerAudioRenderSupport:
                 f"{total_duration_sec:.3f}",
             ]
             if subtitle_available:
-                escaped_subtitle_path = (
-                    str(subtitle_path)
-                    .replace("\\", "\\\\")
-                    .replace(":", "\\:")
-                    .replace("'", "\\'")
+                assert subtitle_layout is not None
+                ffmpeg_cmd.extend(
+                    [
+                        "-vf",
+                        build_ffmpeg_subtitle_filter(
+                            subtitle_path,
+                            subtitle_layout,
+                        ),
+                    ]
                 )
-                ffmpeg_cmd.extend(["-vf", f"subtitles='{escaped_subtitle_path}'"])
             else:
                 print("[final-video] subtitle file missing or empty, skip subtitles (audio branch)")
             ffmpeg_cmd.extend(
@@ -1196,14 +1237,12 @@ class RunnerAudioRenderSupport:
             subprocess.run(ffmpeg_cmd, check=True)
         else:
             # 如果字幕文件不存在或为空，就不要加字幕滤镜
-            if subtitle_path.exists() and subtitle_path.stat().st_size > 0:
-                escaped_subtitle_path = (
-                    str(subtitle_path)
-                    .replace("\\", "\\\\")
-                    .replace(":", "\\:")
-                    .replace("'", "\\'")
+            if subtitle_available:
+                assert subtitle_layout is not None
+                subtitle_filter = build_ffmpeg_subtitle_filter(
+                    subtitle_path,
+                    subtitle_layout,
                 )
-                subtitle_filter = f"subtitles='{escaped_subtitle_path}'"
 
                 subprocess.run(
                     [
