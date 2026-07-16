@@ -271,6 +271,18 @@ class FrontendStateContractTests(unittest.TestCase):
         self.assertLess(derive_meta.index("thumbnail_url"), derive_meta.index(".public_url"))
         self.assertIn(".thumbnail_version", derive_meta)
 
+    def test_async_history_poster_backfill_replaces_and_persists_fallback(self):
+        studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        push_recent = studio.split("function pushRecentFinalVideoUrl", 1)[1].split(
+            "function deriveVideoMeta", 1
+        )[0]
+        self.assertIn("posterUrl: meta.posterUrl || existing.posterUrl", push_recent)
+        self.assertNotIn("posterUrl: existing.posterUrl || meta.posterUrl", push_recent)
+        self.assertIn(
+            "localStorage.setItem(\n      STORAGE_KEY_RECENT_VIDEO_META",
+            push_recent,
+        )
+
     def test_history_cards_do_not_load_full_mp4_for_covers(self):
         preview = (ROOT / "frontend/src/components/studio/StudioPreviewPanel.vue").read_text(
             encoding="utf-8"

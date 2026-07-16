@@ -451,7 +451,7 @@ function pushRecentFinalVideoUrl(url: string, meta?: RecentVideoMeta) {
         ? {
             ...meta,
             ...existing,
-            posterUrl: existing.posterUrl || meta.posterUrl,
+            posterUrl: meta.posterUrl || existing.posterUrl,
             workflowId: existing.workflowId || meta.workflowId,
             runId: existing.runId || meta.runId,
           }
