@@ -411,6 +411,131 @@ class FrontendStateContractTests(unittest.TestCase):
         self.assertIn("markPlaceholderState(sceneId, 'confirming')", polling_body)
         self.assertIn("submittedImageTaskSceneIdsByWorkflow.get(workflowKey)", polling_body)
 
+    def test_workflow_identity_is_persisted_before_create_request(self):
+        studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        execute = studio.split("async function executeRunWorkflow", 1)[1].split(
+            "</script>", 1
+        )[0]
+        self.assertIn("const STORAGE_KEY_RUN = 'jinsie_run_id'", studio)
+        self.assertLess(
+            execute.index("persistActiveWorkflowIdentity(workflowId)"),
+            execute.index("/v1/workflow/run"),
+        )
+        self.assertIn("persistActiveWorkflowIdentity(workflowId, data.run_id || '')", studio)
+
+    def test_studio_reentry_uses_one_authoritative_restore_entry(self):
+        studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        restore = studio.split("async function restorePersistedWorkflowState", 1)[1].split(
+            "function onStudioPageShow", 1
+        )[0]
+        self.assertIn("if (workflowRestorePromise) return workflowRestorePromise", restore)
+        self.assertIn("/v1/workflow/results/", restore)
+        self.assertIn("applyWorkflowResponse(data)", restore)
+        self.assertIn("resumePendingSceneGenerationAfterRestore()", restore)
+        self.assertIn("void restorePersistedWorkflowState('mount')", studio)
+        self.assertIn("void restorePersistedWorkflowState('pageshow')", studio)
+        self.assertIn("void restorePersistedWorkflowState('visibility')", studio)
+
+    def test_reentry_resumes_image_polling_without_creating_tasks(self):
+        studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        resume = studio.split("function resumePendingSceneGenerationAfterRestore", 1)[1].split(
+            "async function waitForAsyncWorkflowOutputs", 1
+        )[0]
+        self.assertIn("void refreshImageReview(false)", resume)
+        self.assertNotIn("refresh-scene-tasks", resume)
+        self.assertNotIn("method: 'POST'", resume)
+
+    def test_final_video_render_marker_prevents_duplicate_post(self):
+        studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        render = studio.split("async function renderFinalVideoIfReady", 1)[1].split(
+            "function waitForTaskPoll", 1
+        )[0]
+        self.assertLess(
+            render.index("readFinalVideoRenderMarker(renderWorkflowId)"),
+            render.index("fetch(`${apiBaseUrl}/v1/final-video/render`"),
+        )
+        self.assertLess(
+            render.index("persistFinalVideoRenderMarker(renderWorkflowId"),
+            render.index("fetch(`${apiBaseUrl}/v1/final-video/render`"),
+        )
+        self.assertIn("scheduleFinalVideoAuthoritativeRecovery(renderWorkflowId)", render)
+
+    def test_final_video_recovery_only_reads_authoritative_results(self):
+        studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        recovery = studio.split("function scheduleFinalVideoAuthoritativeRecovery", 1)[1].split(
+            "function isDeletedWorkflowResponse", 1
+        )[0]
+        self.assertIn("fetchAuthoritativeWorkflow(workflowId)", recovery)
+        self.assertIn("applyWorkflowResponse(data)", recovery)
+        self.assertNotIn("final-video/render", recovery)
+        self.assertNotIn("method: 'POST'", recovery)
+
+    def test_completed_video_clears_render_recovery_state(self):
+        studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        apply_response = studio.split("function applyWorkflowResponse", 1)[1].split(
+            "function buildReviewPlaceholdersFromStoryboard", 1
+        )[0]
+        self.assertIn("clearFinalVideoRenderMarker", apply_response)
+        self.assertIn("clearFinalVideoRecoveryTimer()", apply_response)
+        self.assertIn("finalVideoRenderInFlight.value = false", apply_response)
+
+    def test_resume_listeners_and_video_timer_are_cleaned_on_unmount(self):
+        studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        unmount = studio.split("onBeforeUnmount(() => {", 1)[1].split("})", 1)[0]
+        self.assertIn("removeEventListener('pageshow', onStudioPageShow)", unmount)
+        self.assertIn("removeEventListener('visibilitychange', onImageReviewVisibilityChange)", unmount)
+        self.assertIn("clearFinalVideoRecoveryTimer()", unmount)
+
+    def test_new_workflow_invalidates_old_lifecycle_recovery(self):
+        studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        execute = studio.split("async function executeRunWorkflow", 1)[1].split(
+            "</script>", 1
+        )[0]
+        self.assertIn("let workflowLifecycleGeneration = 0", studio)
+        self.assertIn("workflowLifecycleGeneration += 1", studio)
+        self.assertLess(
+            execute.index("invalidateWorkflowLifecycleRecovery()"),
+            execute.index("persistActiveWorkflowIdentity(workflowId)"),
+        )
+        self.assertIn("clearFinalVideoRecoveryTimer()", studio)
+
+    def test_restore_rejects_old_workflow_response_before_apply(self):
+        studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        restore = studio.split("async function restorePersistedWorkflowState", 1)[1].split(
+            "function onStudioPageShow", 1
+        )[0]
+        direct_result = restore.split(
+            "const data = (await resultsResponse.json()) as WorkflowRunResponse", 1
+        )[1].split("if (resultsResponse.status !== 404)", 1)[0]
+        self.assertLess(
+            direct_result.index("isCurrentWorkflowLifecycle(savedWorkflowId, restoreGeneration)"),
+            direct_result.index("applyWorkflowResponse(data)"),
+        )
+        self.assertIn("isCurrentWorkflowLifecycle(savedWorkflowId, restoreGeneration)", restore)
+        self.assertIn("workflowRestorePromise === restorePromise", restore)
+
+    def test_final_video_poll_rejects_old_marker_before_apply(self):
+        studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        recovery = studio.split("function scheduleFinalVideoAuthoritativeRecovery", 1)[1].split(
+            "function isDeletedWorkflowResponse", 1
+        )[0]
+        after_fetch = recovery.split("const data = await fetchAuthoritativeWorkflow(workflowId)", 1)[1]
+        before_apply = after_fetch.split("applyWorkflowResponse(data)", 1)[0]
+        self.assertIn("isCurrentWorkflowLifecycle(workflowId, recoveryGeneration)", before_apply)
+        self.assertIn("readFinalVideoRenderMarker(workflowId)", before_apply)
+        self.assertIn("recoveryGeneration", recovery)
+
+    def test_old_final_render_response_cannot_overwrite_new_workflow(self):
+        studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        render = studio.split("async function renderFinalVideoIfReady", 1)[1].split(
+            "function waitForTaskPoll", 1
+        )[0]
+        response_block = render.split(
+            "const data: FinalVideoRenderResponse = await response.json()", 1
+        )[1].split("applyWorkflowResponse(mergedResponse)", 1)[0]
+        self.assertIn("isCurrentWorkflowLifecycle(renderWorkflowId, renderGeneration)", response_block)
+        self.assertIn("readFinalVideoRenderMarker(renderWorkflowId)", response_block)
+
 
     def test_studio_shell_flex_items_can_shrink_to_mobile_viewport(self):
         layout = (ROOT / "frontend/src/components/studio/StudioLayout.vue").read_text(
