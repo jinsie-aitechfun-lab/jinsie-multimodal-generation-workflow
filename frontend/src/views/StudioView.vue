@@ -3102,6 +3102,17 @@ async function refreshImageReviewScene(
   let task: ImageRefreshTaskResponse | null = null
   let pollDelay = 2000
 
+  if (retryFailed && allowCreate) {
+    const response = await fetch(`${apiBaseUrl}/v1/image-review/refresh-scene-task`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...payload, retry_failed: true }),
+      signal,
+    })
+    if (!response.ok) throw new Error(`Image task recreate HTTP ${response.status}`)
+    task = (await response.json()) as ImageRefreshTaskResponse
+  }
+
   while (!task) {
     try {
       const knownTaskId = sceneTaskIds.value[sceneId]

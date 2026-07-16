@@ -346,6 +346,16 @@ class FrontendStateContractTests(unittest.TestCase):
         self.assertIn("imageReviewRefreshAbortController?.abort()", unmount_body)
         self.assertIn("imageReviewPollingGeneration += 1", unmount_body)
 
+    def test_manual_scene_regeneration_posts_a_fresh_task(self):
+        studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        refresh = studio.split("async function refreshImageReviewScene", 1)[1].split(
+            "async function retryImageReviewScene", 1
+        )[0]
+        force_create = refresh.split("while (!task)", 1)[0]
+        self.assertIn("if (retryFailed && allowCreate)", force_create)
+        self.assertIn("retry_failed: true", force_create)
+        self.assertIn("method: 'POST'", force_create)
+
     def test_succeeded_scenes_sync_incrementally_before_all_tasks_finish(self):
         studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
         polling_body = studio.split(

@@ -103,14 +103,47 @@ class _FakeRunner:
     def refresh_image_review_scene(self, **kwargs):
         with self.provider_lock:
             self.provider_calls += 1
+            generation = self.provider_calls
         time.sleep(0.03)
         run_id = kwargs["run_id"]
         scene_id = kwargs["scene_id"]
         run_dir = self.assets_dir / "mock" / "image" / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
+        refs = []
         for suffix in ("candidate_a", "candidate_b"):
-            (run_dir / f"{scene_id}__{suffix}.png").write_bytes(b"png")
-        return {"scene_id": scene_id}
+            file_name = f"{scene_id}__{suffix}.png"
+            relative_path = f"assets/mock/image/{run_id}/{file_name}"
+            (run_dir / file_name).write_bytes(
+                f"png-generation-{generation}-{suffix}".encode()
+            )
+            refs.append(
+                {
+                    "scene_id": scene_id,
+                    "file_name": file_name,
+                    "relative_path": relative_path,
+                    "public_url": f"/{relative_path}",
+                    "mime_type": "image/png",
+                    "auto_filter_score": 10 if suffix == "candidate_a" else 90,
+                }
+            )
+        selected_ref = refs[1]
+        return {
+            "scene_id": scene_id,
+            "scene_review_item": {
+                "scene_id": scene_id,
+                "scene_title": scene_id,
+                "review_status": "auto_selected",
+                "selection_mode": "auto_filter",
+                "selection_source": "auto_filter",
+                "selection_reason": "candidate_b scored higher",
+                "selected_asset_ref": selected_ref,
+                "candidate_asset_refs": refs,
+                "candidate_scores": [
+                    {"file_name": refs[1]["file_name"], "score": 90},
+                    {"file_name": refs[0]["file_name"], "score": 10},
+                ],
+            },
+        }
 
 
 class ImageRefreshReliabilityTests(unittest.TestCase):
@@ -303,6 +336,62 @@ class ImageRefreshReliabilityTests(unittest.TestCase):
             "workflow_input": {},
             "image_review": {},
         }
+
+    def _wait_for_terminal(self, manager, task_id):
+        deadline = time.time() + 2
+        task = manager.get(task_id)
+        while task and task["status"] not in {"succeeded", "failed"}:
+            self.assertLess(time.time(), deadline)
+            time.sleep(0.01)
+            task = manager.get(task_id)
+        return task
+
+    def test_explicit_refresh_generates_different_candidate_files(self):
+        manager = ImageRefreshTaskManager(self.assets_dir, self.coordinator)
+        manager.start()
+        payload = self._task_payload("scene_01")
+        first, _ = manager.submit(payload)
+        first = self._wait_for_terminal(manager, first["task_id"])
+        self.assertEqual("succeeded", first["status"])
+        candidate_path = (
+            self.assets_dir
+            / "mock"
+            / "image"
+            / self.run_id
+            / "scene_01__candidate_a.png"
+        )
+        first_bytes = candidate_path.read_bytes()
+
+        regenerated, created = manager.submit(
+            {**payload, "force_regenerate": True},
+            retry_failed=True,
+        )
+        self.assertTrue(created)
+        regenerated = self._wait_for_terminal(manager, regenerated["task_id"])
+
+        self.assertEqual("succeeded", regenerated["status"])
+        self.assertEqual(2, self.runner.provider_calls)
+        self.assertNotEqual(first_bytes, candidate_path.read_bytes())
+
+    def test_generated_selector_choice_survives_authoritative_reconcile(self):
+        result = self.coordinator.generate_and_merge(
+            {
+                **self._task_payload("scene_02"),
+                "force_regenerate": True,
+            }
+        )
+
+        selected = next(
+            item
+            for item in result["image_review"]["selected_assets"]
+            if item["scene_id"] == "scene_02"
+        )
+        self.assertEqual(
+            "scene_02__candidate_b.png",
+            selected["selected_asset_ref"]["file_name"],
+        )
+        self.assertEqual("auto_filter", selected["selection_source"])
+        self.assertEqual(90, selected["candidate_scores"][0]["score"])
 
     def test_persistent_index_survives_empty_memory_cache_and_new_manager(self):
         manager = ImageRefreshTaskManager(self.assets_dir, self.coordinator)
