@@ -9,6 +9,9 @@ from app.services.character_visual_profile_llm import (
     build_llm_character_visual_profile,
     build_llm_character_visual_profiles,
 )
+from app.services.character_visual_disambiguation import (
+    character_visual_disambiguation,
+)
 from app.services.image_prompt_policy import (
     build_image_prompt_policy_blocks,
     clean_image_prompt_text,
@@ -92,6 +95,7 @@ def _scene_action_fallback(
 
 
 _CHINESE_SPECIES_LABEL_HINTS = (
+    ("小熊猫", "red panda"),
     ("大熊猫", "panda"),
     ("熊猫", "panda"),
     ("小汽车", "toy car"),
@@ -169,6 +173,13 @@ def _english_label_for_character(character: Dict[str, Any]) -> str:
     species = str(character.get("species") or "").strip()
     if _ascii_only(species):
         return species
+
+    visual_disambiguation = character_visual_disambiguation(character)
+    disambiguated_species = str(
+        visual_disambiguation.get("english_species") or ""
+    ).strip()
+    if disambiguated_species:
+        return disambiguated_species
 
     identity = str(character.get("visual_identity") or "").strip()
     if identity:
@@ -559,11 +570,19 @@ def ensure_character_identity_lock(
             for item in signature_traits
             if str(item).strip()
         )
+        visual_disambiguation = character_visual_disambiguation(character)
+        disambiguation_block = str(
+            visual_disambiguation.get("prompt_block") or ""
+        ).strip()
 
         parts = [
-            f"{canonical_identity} is exactly {species or canonical_identity}",
+            (
+                f"{canonical_identity} is exactly "
+                f"{visual_disambiguation.get('english_species') or species or canonical_identity}"
+            ),
             f"fixed visual identity: {visual_identity}" if visual_identity else "",
             f"must keep: {traits_text[:240]}" if traits_text else "",
+            disambiguation_block,
         ]
         identity_parts.append("; ".join(part for part in parts if part))
 
