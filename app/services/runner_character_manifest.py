@@ -196,6 +196,61 @@ class RunnerCharacterManifestSupport:
 
         return enriched_manifest
 
+    def ensure_fallback_character_identities(
+        self,
+        character_manifest: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Keep an exact canonical identity even when no visual profile is available.
+
+        Automatically extracted characters often have only a display name/species and
+        no appearance traits yet. Preserve that full subject phrase as an indivisible
+        identity so pronoun-only scenes do not force the image provider to infer a new
+        character from scratch.
+        """
+        enriched_manifest: List[Dict[str, Any]] = []
+
+        for item in character_manifest:
+            if not isinstance(item, dict):
+                continue
+
+            enriched_item = dict(item)
+            display_name = str(enriched_item.get("display_name") or "").strip()
+            species = str(enriched_item.get("species") or "").strip()
+            canonical_identity = display_name or species
+
+            if not canonical_identity:
+                enriched_manifest.append(enriched_item)
+                continue
+
+            signature_traits = enriched_item.get("signature_traits") or []
+            if not isinstance(signature_traits, list):
+                signature_traits = self._split_trait_text(str(signature_traits))
+
+            fallback_traits = [
+                f"exact canonical character identity: {canonical_identity}",
+                (
+                    f"treat the full subject phrase '{canonical_identity}' as indivisible; "
+                    "do not shorten it or reinterpret a substring as another character"
+                ),
+            ]
+            for trait in fallback_traits:
+                if trait not in signature_traits:
+                    signature_traits.append(trait)
+
+            enriched_item["signature_traits"] = signature_traits
+            if not str(enriched_item.get("visual_identity") or "").strip():
+                enriched_item["visual_identity"] = (
+                    f"{canonical_identity} is the exact canonical character identity. "
+                    f"Keep {species or canonical_identity} as the same subject in every scene, "
+                    "including scenes that refer to the character only by a pronoun or nickname. "
+                    "Do not replace, shorten, or reinterpret the full identity."
+                )
+                enriched_item["profile_source"] = "manifest_fallback_identity"
+
+            enriched_manifest.append(enriched_item)
+
+        return enriched_manifest
+
     def apply_visual_profiles_to_character_manifest(
         self,
         character_manifest: Dict[str, Any],

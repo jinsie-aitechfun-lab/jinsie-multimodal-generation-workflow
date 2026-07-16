@@ -971,6 +971,9 @@ class WorkflowRunner:
             character_manifest,
             req.input.topic,
         )
+        character_manifest = self._character_manifest_support.ensure_fallback_character_identities(
+            character_manifest
+        )
 
         aggregated_outputs: Dict[str, Any] = {
             "character_candidates": {

@@ -1,6 +1,34 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, Optional
+
+from app.services.story_subject_extractor import extract_story_subjects
+
+
+def _normalized_primary_subject(topic: str) -> str:
+    extracted = extract_story_subjects(topic)
+    subject = str(extracted.primary_subject or "").strip().lower()
+    if subject.startswith("小") and len(subject) > 1:
+        subject = subject[1:]
+    return subject
+
+
+def _matches_subject(
+    *,
+    subject: str,
+    topic: str,
+    chinese_names: tuple[str, ...],
+    english_names: tuple[str, ...],
+) -> bool:
+    if subject in chinese_names:
+        return True
+
+    lower = str(topic or "").lower()
+    return any(
+        re.search(rf"\b{re.escape(name)}\b", lower)
+        for name in english_names
+    )
 
 
 def infer_primary_character_manifest(topic: str) -> Optional[Dict[str, Any]]:
@@ -21,10 +49,15 @@ def infer_primary_character_manifest(topic: str) -> Optional[Dict[str, Any]]:
     if not t:
         return None
 
-    lower = t.lower()
+    primary_subject = _normalized_primary_subject(t)
 
     # --- cat ---
-    if ("猫" in t) or ("cat" in lower) or ("kitten" in lower):
+    if _matches_subject(
+        subject=primary_subject,
+        topic=t,
+        chinese_names=("猫",),
+        english_names=("cat", "kitten"),
+    ):
         return {
             "id": "primary-1",
             "role_type": "primary",
@@ -40,7 +73,12 @@ def infer_primary_character_manifest(topic: str) -> Optional[Dict[str, Any]]:
         }
 
     # --- dog ---
-    if ("狗" in t) or ("dog" in lower) or ("puppy" in lower):
+    if _matches_subject(
+        subject=primary_subject,
+        topic=t,
+        chinese_names=("狗",),
+        english_names=("dog", "puppy"),
+    ):
         return {
             "id": "primary-1",
             "role_type": "primary",
@@ -51,7 +89,12 @@ def infer_primary_character_manifest(topic: str) -> Optional[Dict[str, Any]]:
         }
 
     # --- rabbit ---
-    if ("兔" in t) or ("rabbit" in lower) or ("bunny" in lower):
+    if _matches_subject(
+        subject=primary_subject,
+        topic=t,
+        chinese_names=("兔", "兔子"),
+        english_names=("rabbit", "bunny"),
+    ):
         return {
             "id": "primary-1",
             "role_type": "primary",
@@ -62,7 +105,12 @@ def infer_primary_character_manifest(topic: str) -> Optional[Dict[str, Any]]:
         }
 
     # --- turtle ---
-    if ("乌龟" in t) or ("龟" in t) or ("turtle" in lower):
+    if _matches_subject(
+        subject=primary_subject,
+        topic=t,
+        chinese_names=("乌龟", "龟"),
+        english_names=("turtle", "tortoise"),
+    ):
         return {
             "id": "primary-1",
             "role_type": "primary",
@@ -73,7 +121,12 @@ def infer_primary_character_manifest(topic: str) -> Optional[Dict[str, Any]]:
         }
 
     # --- seal ---
-    if ("海豹" in t) or ("seal" in lower):
+    if _matches_subject(
+        subject=primary_subject,
+        topic=t,
+        chinese_names=("海豹",),
+        english_names=("seal",),
+    ):
         return {
             "id": "primary-1",
             "role_type": "primary",
@@ -84,7 +137,12 @@ def infer_primary_character_manifest(topic: str) -> Optional[Dict[str, Any]]:
         }
 
     # --- robot ---
-    if ("机器人" in t) or ("robot" in lower):
+    if _matches_subject(
+        subject=primary_subject,
+        topic=t,
+        chinese_names=("机器人",),
+        english_names=("robot",),
+    ):
         return {
             "id": "primary-1",
             "role_type": "primary",
