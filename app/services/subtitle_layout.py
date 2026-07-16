@@ -235,6 +235,24 @@ def layout_subtitle_cues(text: str, layout: SubtitleLayout) -> List[str]:
     return ["\n".join(lines[index : index + 2]) for index in range(0, len(lines), 2)]
 
 
+def subtitle_cue_speech_text(cue: str) -> str:
+    lines = [line.strip() for line in str(cue or "").splitlines() if line.strip()]
+    if not lines:
+        return ""
+
+    speech_text = lines[0]
+    for line in lines[1:]:
+        needs_space = (
+            bool(speech_text)
+            and speech_text[-1].isascii()
+            and line[0].isascii()
+            and not speech_text[-1].isspace()
+            and not line[0].isspace()
+        )
+        speech_text += (" " if needs_space else "") + line
+    return speech_text
+
+
 def escape_ffmpeg_filter_value(value: str) -> str:
     return (
         value.replace("\\", "\\\\")

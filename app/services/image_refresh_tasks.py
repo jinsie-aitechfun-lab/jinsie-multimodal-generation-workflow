@@ -80,10 +80,35 @@ class ImageRefreshCoordinator:
                 return True
         return False
 
-    def reconcile(self, workflow_id: str, run_id: str, scene_id: str) -> dict[str, Any] | None:
+    def reconcile(
+        self,
+        workflow_id: str,
+        run_id: str,
+        scene_id: str,
+        *,
+        preferred_scene_item: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
         refs = self._candidate_refs(run_id, scene_id)
         if len(refs) != 2:
             return None
+        if isinstance(preferred_scene_item, dict):
+            preferred_candidates = preferred_scene_item.get("candidate_asset_refs") or []
+            if isinstance(preferred_candidates, list):
+                refs = [
+                    {
+                        **ref,
+                        **next(
+                            (
+                                candidate
+                                for candidate in preferred_candidates
+                                if isinstance(candidate, dict)
+                                and self._same_asset(candidate, ref)
+                            ),
+                            {},
+                        ),
+                    }
+                    for ref in refs
+                ]
 
         path = self.outputs_path(workflow_id)
         if not path.exists():
@@ -121,7 +146,21 @@ class ImageRefreshCoordinator:
                 None,
             )
             selected_ref = refs[0]
-            if isinstance(existing, dict):
+            preferred_selected = (
+                preferred_scene_item.get("selected_asset_ref")
+                if isinstance(preferred_scene_item, dict)
+                else None
+            )
+            if isinstance(preferred_selected, dict) and preferred_selected:
+                selected_ref = next(
+                    (
+                        ref
+                        for ref in refs
+                        if self._same_asset(preferred_selected, ref)
+                    ),
+                    refs[0],
+                )
+            elif isinstance(existing, dict):
                 old_selected = existing.get("selected_asset_ref")
                 if isinstance(old_selected, dict):
                     selected_ref = next(
@@ -143,7 +182,20 @@ class ImageRefreshCoordinator:
                 "selected_asset_ref": selected_ref,
                 "candidate_asset_refs": refs,
             }
-            if isinstance(existing, dict):
+            if isinstance(preferred_scene_item, dict):
+                item = dict(existing or {})
+                item.update(preferred_scene_item)
+                item.update(
+                    {
+                        "selected_asset_ref": selected_ref,
+                        "candidate_asset_refs": refs,
+                        "review_status": (
+                            preferred_scene_item.get("review_status")
+                            or "auto_selected"
+                        ),
+                    }
+                )
+            elif isinstance(existing, dict):
                 item = dict(existing)
                 item.update(
                     {
@@ -195,10 +247,12 @@ class ImageRefreshCoordinator:
         workflow_id = str(payload["workflow_id"])
         run_id = str(payload["run_id"])
         scene_id = str(payload["scene_id"])
+        force_regenerate = bool(payload.get("force_regenerate"))
 
-        reconciled = self.reconcile(workflow_id, run_id, scene_id)
-        if reconciled is not None:
-            return reconciled
+        if not force_regenerate:
+            reconciled = self.reconcile(workflow_id, run_id, scene_id)
+            if reconciled is not None:
+                return reconciled
 
         stored = read_json(self.outputs_path(workflow_id), default={}) or {}
         outputs = _outputs_container(stored) if isinstance(stored, dict) else {}
@@ -229,7 +283,17 @@ class ImageRefreshCoordinator:
 
         # Files are authoritative. Reconcile under the shared outputs lock so
         # a late scene can only upsert itself, never replace another scene.
-        merged = self.reconcile(workflow_id, run_id, scene_id)
+        generated_scene_item = generated.get("scene_review_item")
+        merged = self.reconcile(
+            workflow_id,
+            run_id,
+            scene_id,
+            preferred_scene_item=(
+                generated_scene_item
+                if isinstance(generated_scene_item, dict)
+                else None
+            ),
+        )
         if merged is None:
             raise RuntimeError("candidate files missing after provider succeeded")
         return merged
@@ -382,10 +446,14 @@ class ImageRefreshTaskManager:
                         run_id, {}
                     )[scene_id] = task_id
                 if str(task.get("status") or "") in {"queued", "running"}:
-                    recovered = self.coordinator.reconcile(
-                        str(task.get("workflow_id") or ""),
-                        str(task.get("run_id") or ""),
-                        str(task.get("scene_id") or ""),
+                    recovered = (
+                        None
+                        if bool(task.get("force_regenerate"))
+                        else self.coordinator.reconcile(
+                            str(task.get("workflow_id") or ""),
+                            str(task.get("run_id") or ""),
+                            str(task.get("scene_id") or ""),
+                        )
                     )
                     task["status"] = "succeeded" if recovered else "failed"
                     task["result"] = recovered or {}
@@ -413,25 +481,27 @@ class ImageRefreshTaskManager:
         workflow_id = str(payload["workflow_id"])
         run_id = str(payload["run_id"])
         scene_id = str(payload["scene_id"])
+        force_regenerate = bool(payload.get("force_regenerate"))
         task_id = self.task_id_for(workflow_id, run_id, scene_id)
         path = self._task_path(workflow_id, task_id)
         self._register_task(task_id, path, workflow_id, run_id)
 
-        reconciled = self.coordinator.reconcile(workflow_id, run_id, scene_id)
-        if reconciled is not None:
-            task = {
-                "task_id": task_id,
-                "workflow_id": workflow_id,
-                "run_id": run_id,
-                "scene_id": scene_id,
-                "status": "succeeded",
-                "result": reconciled,
-                "error": "",
-                "updated_at": int(time.time()),
-            }
-            write_json_atomic(path, task)
-            self._upsert_task_index(workflow_id, run_id, scene_id, task_id)
-            return task, False
+        if not force_regenerate:
+            reconciled = self.coordinator.reconcile(workflow_id, run_id, scene_id)
+            if reconciled is not None:
+                task = {
+                    "task_id": task_id,
+                    "workflow_id": workflow_id,
+                    "run_id": run_id,
+                    "scene_id": scene_id,
+                    "status": "succeeded",
+                    "result": reconciled,
+                    "error": "",
+                    "updated_at": int(time.time()),
+                }
+                write_json_atomic(path, task)
+                self._upsert_task_index(workflow_id, run_id, scene_id, task_id)
+                return task, False
 
         with self.guard:
             existing = read_json(path, default=None)
@@ -440,7 +510,7 @@ class ImageRefreshTaskManager:
                 if status in {"queued", "running"}:
                     self._upsert_task_index(workflow_id, run_id, scene_id, task_id)
                     return existing, False
-                if status == "succeeded":
+                if status == "succeeded" and not force_regenerate:
                     existing["status"] = "failed"
                     existing["error"] = "task metadata succeeded but candidate files are missing"
                     existing["updated_at"] = int(time.time())
@@ -456,6 +526,7 @@ class ImageRefreshTaskManager:
                 "run_id": run_id,
                 "scene_id": scene_id,
                 "status": "queued",
+                "force_regenerate": force_regenerate,
                 "payload": payload,
                 "result": {},
                 "error": "",
@@ -590,6 +661,9 @@ class ImageRefreshTaskManager:
         task_id = self.task_id_for(workflow_id, run_id, scene_id)
         path = self._task_path(workflow_id, task_id)
         self._register_task(task_id, path, workflow_id, run_id)
+        existing = self.get(task_id)
+        if existing and bool(existing.get("force_regenerate")):
+            return existing
         reconciled = self.coordinator.reconcile(workflow_id, run_id, scene_id)
         if reconciled is not None:
             task = {
@@ -605,7 +679,6 @@ class ImageRefreshTaskManager:
             write_json_atomic(path, task)
             self._upsert_task_index(workflow_id, run_id, scene_id, task_id)
             return task
-        existing = self.get(task_id)
         if existing and str(existing.get("status") or "") == "succeeded":
             existing["status"] = "failed"
             existing["error"] = "task metadata succeeded but candidate files are missing"
@@ -656,10 +729,15 @@ class ImageRefreshTaskManager:
                     task["result"] = result
                     task["error"] = ""
                 except Exception as error:
-                    recovered = self.coordinator.reconcile(
-                        str(task.get("workflow_id") or ""),
-                        str(task.get("run_id") or ""),
-                        str(task.get("scene_id") or ""),
+                    force_regenerate = bool(task.get("force_regenerate"))
+                    recovered = (
+                        None
+                        if force_regenerate
+                        else self.coordinator.reconcile(
+                            str(task.get("workflow_id") or ""),
+                            str(task.get("run_id") or ""),
+                            str(task.get("scene_id") or ""),
+                        )
                     )
                     if recovered is not None:
                         task["status"] = "succeeded"

@@ -730,6 +730,7 @@ def create_image_review_scene_task(req: ImageReviewRefreshSceneTaskRequest):
     payload["workflow_id"] = workflow_id
     payload["run_id"] = run_id
     payload["scene_id"] = scene_id
+    payload["force_regenerate"] = bool(req.retry_failed)
     try:
         task, _created = _image_refresh_tasks.submit(
             payload, retry_failed=req.retry_failed

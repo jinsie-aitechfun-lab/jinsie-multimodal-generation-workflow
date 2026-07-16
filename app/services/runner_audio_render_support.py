@@ -10,6 +10,7 @@ from app.services.subtitle_layout import (
     build_subtitle_layout,
     infer_video_dimensions,
     layout_subtitle_cues,
+    subtitle_cue_speech_text,
 )
 
 # Final video is rendered at 25 fps via `-vsync cfr -r 25`. Each per-scene
@@ -292,6 +293,34 @@ class RunnerAudioRenderSupport:
         tts_enabled = self._runner._tts_enabled()
         fallback_to_mock = self._runner._tts_fallback_to_mock()
         real_generation_count = 0
+        if ctx.input.subtitle_enabled:
+            video_width, video_height = infer_video_dimensions(
+                outputs.get("image_assets") or {}
+            )
+            subtitle_layout = build_subtitle_layout(video_width, video_height)
+            expanded_lines: List[Dict[str, Any]] = []
+            for line in lines:
+                source_text = str(line.get("text", "")).strip()
+                cues = layout_subtitle_cues(source_text, subtitle_layout) or [
+                    source_text
+                ]
+                for chunk_index, subtitle_text in enumerate(cues, start=1):
+                    expanded_lines.append(
+                        {
+                            **line,
+                            "line_id": (
+                                f"{line.get('line_id') or 'line'}"
+                                f"__subtitle_{chunk_index:02d}"
+                            ),
+                            "source_line_id": line.get("line_id"),
+                            "source_text": source_text,
+                            "text": subtitle_cue_speech_text(subtitle_text),
+                            "subtitle_text": subtitle_text,
+                            "subtitle_chunk_index": chunk_index,
+                            "subtitle_chunk_count": len(cues),
+                        }
+                    )
+            lines = expanded_lines
 
         for index, line in enumerate(lines, start=1):
             text = str(line.get("text", "")).strip()
@@ -497,6 +526,12 @@ class RunnerAudioRenderSupport:
                 "asset_public_url": public_url,
                 "mock_asset": asset,
             }
+            if line.get("subtitle_text"):
+                item["subtitle_text"] = str(line["subtitle_text"])
+                item["source_text"] = str(line.get("source_text") or text)
+                item["source_line_id"] = line.get("source_line_id")
+                item["subtitle_chunk_index"] = line.get("subtitle_chunk_index")
+                item["subtitle_chunk_count"] = line.get("subtitle_chunk_count")
 
             if error_message:
                 item["error"] = error_message
@@ -695,6 +730,10 @@ class RunnerAudioRenderSupport:
 
         audio_segments = outputs.get("audio_segments") or {}
         items_source = audio_segments.get("items") or []
+        video_width, video_height = infer_video_dimensions(
+            outputs.get("image_assets") or {}
+        )
+        subtitle_layout = build_subtitle_layout(video_width, video_height)
 
         # ---- fallback: silent 场景也要能生成字幕（用 storyboard.scenes 驱动时间轴）----
         if not items_source:
@@ -711,23 +750,29 @@ class RunnerAudioRenderSupport:
                     duration_sec = float(scene.get("duration_sec") or 0.0)
                     if duration_sec <= 0:
                         duration_sec = 3.0
-                    synthesized.append(
-                        {
-                            "text": text,
-                            "duration_sec": duration_sec,
-                            "scene_id": scene.get("scene_id"),
-                            "shot_id": scene.get("shot_id"),
-                        }
-                    )
+                    cues = layout_subtitle_cues(text, subtitle_layout) or [text]
+                    cue_weights = [
+                        max(1, len(subtitle_cue_speech_text(cue))) for cue in cues
+                    ]
+                    total_weight = sum(cue_weights)
+                    for cue, cue_weight in zip(cues, cue_weights):
+                        synthesized.append(
+                            {
+                                "text": subtitle_cue_speech_text(cue),
+                                "subtitle_text": cue,
+                                "source_text": text,
+                                "duration_sec": duration_sec
+                                * cue_weight
+                                / total_weight,
+                                "scene_id": scene.get("scene_id"),
+                                "shot_id": scene.get("shot_id"),
+                            }
+                        )
                 items_source = synthesized
 
         items: List[Dict[str, Any]] = []
         current_start = 0.0
         srt_lines: List[str] = []
-        video_width, video_height = infer_video_dimensions(
-            outputs.get("image_assets") or {}
-        )
-        subtitle_layout = build_subtitle_layout(video_width, video_height)
         cue_index = 0
 
         def _format_srt_time(total_seconds: float) -> str:
@@ -751,40 +796,34 @@ class RunnerAudioRenderSupport:
             if duration_sec <= 0:
                 duration_sec = 3.0
 
-            laid_out_cues = layout_subtitle_cues(text, subtitle_layout) or [text]
-            cue_duration_sec = duration_sec / len(laid_out_cues)
-            segment_start = current_start
-            segment_end = segment_start + duration_sec
-
-            for chunk_index, laid_out_text in enumerate(laid_out_cues):
-                cue_index += 1
-                start_sec = segment_start + chunk_index * cue_duration_sec
-                end_sec = (
-                    segment_end
-                    if chunk_index == len(laid_out_cues) - 1
-                    else segment_start + (chunk_index + 1) * cue_duration_sec
+            laid_out_text = str(segment.get("subtitle_text") or "").strip()
+            if not laid_out_text:
+                laid_out_text = "\n".join(
+                    layout_subtitle_cues(text, subtitle_layout) or [text]
                 )
-                item = {
-                    "index": cue_index,
-                    "shot_id": segment.get("shot_id"),
-                    "scene_id": segment.get("scene_id"),
-                    "start_sec": start_sec,
-                    "end_sec": end_sec,
-                    "text": laid_out_text,
-                    "source_text": text,
-                }
-                items.append(item)
+            start_sec = current_start
+            end_sec = start_sec + duration_sec
+            current_start = end_sec
+            cue_index += 1
+            item = {
+                "index": cue_index,
+                "shot_id": segment.get("shot_id"),
+                "scene_id": segment.get("scene_id"),
+                "start_sec": start_sec,
+                "end_sec": end_sec,
+                "text": laid_out_text,
+                "source_text": str(segment.get("source_text") or text),
+            }
+            items.append(item)
 
-                srt_lines.extend(
-                    [
-                        str(cue_index),
-                        f"{_format_srt_time(start_sec)} --> {_format_srt_time(end_sec)}",
-                        laid_out_text,
-                        "",
-                    ]
-                )
-
-            current_start = segment_end
+            srt_lines.extend(
+                [
+                    str(cue_index),
+                    f"{_format_srt_time(start_sec)} --> {_format_srt_time(end_sec)}",
+                    laid_out_text,
+                    "",
+                ]
+            )
 
         return {
             "enabled": True,

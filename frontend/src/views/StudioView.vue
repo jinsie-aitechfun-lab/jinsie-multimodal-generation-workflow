@@ -451,7 +451,7 @@ function pushRecentFinalVideoUrl(url: string, meta?: RecentVideoMeta) {
         ? {
             ...meta,
             ...existing,
-            posterUrl: existing.posterUrl || meta.posterUrl,
+            posterUrl: meta.posterUrl || existing.posterUrl,
             workflowId: existing.workflowId || meta.workflowId,
             runId: existing.runId || meta.runId,
           }
@@ -718,8 +718,10 @@ function performDeleteRecentVideo() {
     try {
       localStorage.removeItem(STORAGE_KEY_VIDEO_URL)
       localStorage.removeItem(STORAGE_KEY_WORKFLOW)
+      localStorage.removeItem(STORAGE_KEY_RUN)
       localStorage.removeItem(STORAGE_KEY_PAYLOAD)
       localStorage.removeItem(STORAGE_KEY_REFRESH_CANCELLED)
+      clearFinalVideoRenderMarker()
     } catch { /* ignore */ }
   }
 
@@ -795,6 +797,11 @@ let activeImageReviewPollingKey = ''
 let imageReviewPollingGeneration = 0
 let wakeImageReviewPolling: (() => void) | null = null
 let imageReviewVisibilityRefreshRequested = false
+let workflowRestorePromise: Promise<void> | null = null
+let finalVideoRecoveryTimer: number | null = null
+let finalVideoRecoveryInFlight = false
+let workflowLifecycleGeneration = 0
+let studioViewUnmounted = false
 const submittedImageTaskSceneIdsByWorkflow = new Map<string, Set<string>>()
 type ViewTab = 'run' | 'review' | 'assets' | 'debug'
 const activeTab = ref<ViewTab>('run')
@@ -907,7 +914,10 @@ const STORAGE_KEY_RECENT_VIDEO_META = 'jinsie_recent_video_meta'
 const STORAGE_KEY_DELETED_VIDEOS = 'jinsie_deleted_video_urls'
 const STORAGE_KEY_DEV = 'jinsie_dev_mode'
 const STORAGE_KEY_WORKFLOW = 'jinsie_workflow_id'
+const STORAGE_KEY_RUN = 'jinsie_run_id'
 const STORAGE_KEY_PAYLOAD = 'jinsie_workflow_payload'
+const STORAGE_KEY_FINAL_VIDEO_RENDER = 'jinsie_final_video_render_state'
+const FINAL_VIDEO_RENDER_MARKER_TTL_MS = 2 * 60 * 60 * 1000
 // Persists "user explicitly cancelled image refresh for this workflow_id".
 // Survives Landing → Studio nav so auto-resume does NOT restart a run
 // the user just stopped. Cleared by: starting a new workflow, manually
@@ -915,6 +925,70 @@ const STORAGE_KEY_PAYLOAD = 'jinsie_workflow_payload'
 const STORAGE_KEY_REFRESH_CANCELLED = 'jinsie_workflow_refresh_cancelled'
 const STORAGE_KEY_IMAGE_TASKS = 'jinsie_image_refresh_tasks'
 const STORAGE_KEY_FORM = 'jinsie_workflow_form'
+
+type FinalVideoRenderMarker = {
+  workflowId: string
+  runId: string
+  startedAt: number
+}
+
+function persistActiveWorkflowIdentity(workflowId: string, runId = '') {
+  const normalizedWorkflowId = String(workflowId || '').trim()
+  const normalizedRunId = String(runId || '').trim()
+  if (normalizedWorkflowId) localStorage.setItem(STORAGE_KEY_WORKFLOW, normalizedWorkflowId)
+  if (normalizedRunId) localStorage.setItem(STORAGE_KEY_RUN, normalizedRunId)
+}
+
+function readFinalVideoRenderMarker(workflowId = ''): FinalVideoRenderMarker | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_FINAL_VIDEO_RENDER)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<FinalVideoRenderMarker>
+    const marker: FinalVideoRenderMarker = {
+      workflowId: String(parsed.workflowId || '').trim(),
+      runId: String(parsed.runId || '').trim(),
+      startedAt: Number(parsed.startedAt || 0),
+    }
+    const stale = !marker.workflowId || !marker.startedAt ||
+      Date.now() - marker.startedAt > FINAL_VIDEO_RENDER_MARKER_TTL_MS
+    const mismatched = Boolean(workflowId && marker.workflowId !== workflowId)
+    if (stale || mismatched) {
+      if (stale) localStorage.removeItem(STORAGE_KEY_FINAL_VIDEO_RENDER)
+      return null
+    }
+    return marker
+  } catch {
+    localStorage.removeItem(STORAGE_KEY_FINAL_VIDEO_RENDER)
+    return null
+  }
+}
+
+function persistFinalVideoRenderMarker(workflowId: string, runId = '') {
+  const marker: FinalVideoRenderMarker = {
+    workflowId: String(workflowId || '').trim(),
+    runId: String(runId || '').trim(),
+    startedAt: Date.now(),
+  }
+  if (!marker.workflowId) return
+  localStorage.setItem(STORAGE_KEY_FINAL_VIDEO_RENDER, JSON.stringify(marker))
+}
+
+function clearFinalVideoRenderMarker(workflowId = '') {
+  try {
+    if (!workflowId) {
+      localStorage.removeItem(STORAGE_KEY_FINAL_VIDEO_RENDER)
+      return
+    }
+    const raw = localStorage.getItem(STORAGE_KEY_FINAL_VIDEO_RENDER)
+    if (!raw) return
+    const marker = JSON.parse(raw) as Partial<FinalVideoRenderMarker>
+    if (String(marker.workflowId || '') === workflowId) {
+      localStorage.removeItem(STORAGE_KEY_FINAL_VIDEO_RENDER)
+    }
+  } catch {
+    localStorage.removeItem(STORAGE_KEY_FINAL_VIDEO_RENDER)
+  }
+}
 
 function imageTaskStorageKey(workflowId: string, runId: string) {
   return `${workflowId}:${runId}`
@@ -1065,8 +1139,11 @@ function onGlobalKeydown(event: KeyboardEvent) {
 }
 
 onBeforeUnmount(() => {
+  studioViewUnmounted = true
   window.removeEventListener('keydown', onGlobalKeydown)
+  window.removeEventListener('pageshow', onStudioPageShow)
   document.removeEventListener('visibilitychange', onImageReviewVisibilityChange)
+  clearFinalVideoRecoveryTimer()
   clearImageReviewAutoRefreshTimer()
   imageReviewPollingGeneration += 1
   activeImageReviewPollingKey = ''
@@ -1197,8 +1274,10 @@ function keepCharacterFieldsAfterTopicChange() {
 }
 
 onMounted(() => {
+  studioViewUnmounted = false
   // Global keyboard shortcut for the dev-mode toggle (Cmd/Ctrl+Shift+D).
   window.addEventListener('keydown', onGlobalKeydown)
+  window.addEventListener('pageshow', onStudioPageShow)
   document.addEventListener('visibilitychange', onImageReviewVisibilityChange)
 
   // URL is the single source of truth for dev mode. localStorage used to
@@ -1344,147 +1423,220 @@ onMounted(() => {
     pushRecentFinalVideoUrl(savedVideoUrl)
   }
 
-  // Reattach to any in-flight workflow regardless of how we got here
-  // (reload, SPA navigation from /, fresh tab open). The workflow_id in
-  // localStorage is the source of truth; the previous `isReload` gate
-  // silently dropped resume on SPA nav, which made "go to Landing during
-  // a generation then come back" look like the run was lost.
-  const savedWorkflowId = localStorage.getItem(STORAGE_KEY_WORKFLOW)
-
-  // Restore the "user paused image refresh" reactive mirror so post-remount
-  // placeholder copy says "已暂停" instead of "失败" (latter is reserved for
-  // actual API/network failures). Marker is auth'd against current workflow_id.
-  try {
-    const markerWf = localStorage.getItem(STORAGE_KEY_REFRESH_CANCELLED) || ''
-    if (markerWf && savedWorkflowId && markerWf === savedWorkflowId) {
-      imageRefreshPausedByUser.value = true
-    }
-  } catch { /* ignore */ }
-
-  if (savedWorkflowId) {
-    imageStateHydrating.value = true
-    const base = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() || 'http://127.0.0.1:8004'
-
-    const reconnectInFlight = (statusData: any) => {
-      const status = String(statusData?.status || '').trim().toLowerCase()
-      const isProcessing = status === 'processing'
-      const isCancelling = status === 'cancel_requested'
-      if (!isProcessing && !isCancelling) return false
-
-      // Restore the running-UI surface so cancel button / timeline /
-      // progress bar / generation animation all wake up.
-      loading.value = true
-      workflowStatusData.value = statusData
-      activeWorkflowId.value = savedWorkflowId
-      cancelRequested.value = isCancelling
-      // Leave activeTab alone — Landing entries set it to 'run' (which
-      // already shows the timeline + CTA "正在生成…"); reload restores
-      // last tab; neither needs to be overridden here.
-
-      waitForAsyncWorkflowOutputs(savedWorkflowId)
-        .then(asyncData => {
-          if (asyncData) {
-            // Same blacklist guard as the direct-results path below —
-            // if the user already deleted this run's final video, don't
-            // resurrect it on async reattach either.
-            const restoredFinalUrl = extractFinalVideoUrl(asyncData)
-            if (restoredFinalUrl && deletedVideoUrlsSet.value.has(restoredFinalUrl)) {
-              try {
-                localStorage.removeItem(STORAGE_KEY_WORKFLOW)
-                localStorage.removeItem(STORAGE_KEY_PAYLOAD)
-                localStorage.removeItem(STORAGE_KEY_VIDEO_URL)
-                localStorage.removeItem(STORAGE_KEY_REFRESH_CANCELLED)
-              } catch { /* ignore */ }
-              currentWorkflowPayload.value = null
-              return
-            }
-            applyWorkflowResponse(asyncData)
-            imageStateHydrating.value = false
-            // Match runWorkflow()'s post-completion path so the deferred
-            // candidate-image refresh kicks in automatically (sets
-            // refreshingImageReview=true → CTA + progress bar reflect it).
-            // Without this, the user lands on "立即生成候选图" with no
-            // running indicators even though refreshImageReview is the
-            // expected next step.
-            scheduleImageReviewAutoRefreshIfNeeded()
-          }
-        })
-        .catch(() => {})
-        .finally(() => {
-          // Workflow reached a terminal state — clear the per-run handles
-          // so the cancel button / activeWorkflowId disappear cleanly.
-          loading.value = false
-          activeWorkflowId.value = ''
-          cancelRequested.value = false
-        })
-      return true
-    }
-
-    fetch(`${base}/v1/workflow/results/${savedWorkflowId}`)
-      .then(r => {
-        if (r.status === 404) return { __notFound: true } as any
-        return r.ok ? r.json() : null
-      })
-      .then(data => {
-        if (!data) return
-        if (data.__notFound) {
-          // Outputs not on disk yet — the run may still be in flight.
-          return fetch(`${base}/v1/workflow/status/${savedWorkflowId}`)
-            .then(r => r.ok ? r.json() : null)
-            .then(statusData => {
-              // If the previous server crashed mid-run, the backend marks
-              // status as 'abandoned' on startup. Wipe the stale
-              // workflow_id from localStorage so we don't keep re-attaching
-              // to a dead run on every reload.
-              const stale = String(statusData?.status || '').trim().toLowerCase()
-              if (stale === 'abandoned' || stale === 'cancelled' || stale === 'failed') {
-                try {
-                  localStorage.removeItem(STORAGE_KEY_WORKFLOW)
-                  localStorage.removeItem(STORAGE_KEY_PAYLOAD)
-                  localStorage.removeItem(STORAGE_KEY_REFRESH_CANCELLED)
-                } catch { /* ignore */ }
-                return
-              }
-              reconnectInFlight(statusData)
-            })
-            .catch(() => {})
-        }
-        if (data.outputs || data.steps) {
-          // Defensive guard: if the fetched workflow's final-video URL is
-          // on the user's deletion blacklist, they've already discarded
-          // this run. Calling applyWorkflowResponse would populate
-          // currentWorkflowResponse with the deleted run's data, which
-          // then triggers the isWorkflowReadyForRender watcher and gets
-          // stuck on "等待用户触发渲染" because the URL is blocked from
-          // restoration but the rest of the response is live. Wipe the
-          // persisted workflow keys and bail so the new tab loads to a
-          // clean idle state instead of resurrecting the deleted run.
-          const restoredFinalUrl = extractFinalVideoUrl(data as WorkflowRunResponse)
-          if (restoredFinalUrl && deletedVideoUrlsSet.value.has(restoredFinalUrl)) {
-            try {
-              localStorage.removeItem(STORAGE_KEY_WORKFLOW)
-              localStorage.removeItem(STORAGE_KEY_PAYLOAD)
-              localStorage.removeItem(STORAGE_KEY_VIDEO_URL)
-              localStorage.removeItem(STORAGE_KEY_REFRESH_CANCELLED)
-            } catch { /* ignore */ }
-            currentWorkflowPayload.value = null
-            return
-          }
-          applyWorkflowResponse(data)
-          imageStateHydrating.value = false
-          resumePendingSceneGenerationAfterRestore()
-        }
-      })
-      .catch(() => {/* silently ignore — server may not be up yet */})
-      .finally(() => {
-        imageStateHydrating.value = false
-      })
-  }
+  void restorePersistedWorkflowState('mount')
 })
 
 const apiBaseUrl =
   (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() ||
   'http://127.0.0.1:8004'
+
+function clearPersistedWorkflowIdentity(workflowId = '') {
+  try {
+    localStorage.removeItem(STORAGE_KEY_WORKFLOW)
+    localStorage.removeItem(STORAGE_KEY_RUN)
+    localStorage.removeItem(STORAGE_KEY_PAYLOAD)
+    localStorage.removeItem(STORAGE_KEY_REFRESH_CANCELLED)
+    clearFinalVideoRenderMarker(workflowId)
+  } catch { /* best-effort local recovery cleanup */ }
+}
+
+function clearFinalVideoRecoveryTimer() {
+  if (finalVideoRecoveryTimer !== null) {
+    window.clearTimeout(finalVideoRecoveryTimer)
+    finalVideoRecoveryTimer = null
+  }
+}
+
+function invalidateWorkflowLifecycleRecovery() {
+  workflowLifecycleGeneration += 1
+  workflowRestorePromise = null
+  finalVideoRecoveryInFlight = false
+  imageStateHydrating.value = false
+  clearFinalVideoRecoveryTimer()
+}
+
+function isCurrentWorkflowLifecycle(workflowId: string, generation: number): boolean {
+  if (studioViewUnmounted || generation !== workflowLifecycleGeneration) return false
+  return String(localStorage.getItem(STORAGE_KEY_WORKFLOW) || '').trim() === workflowId
+}
+
+function reconcileRestoredFinalVideoState(workflowId: string) {
+  if (finalVideoUrl.value) {
+    clearFinalVideoRenderMarker(workflowId)
+    clearFinalVideoRecoveryTimer()
+    finalVideoRenderInFlight.value = false
+    finalVideoRendering.value = false
+    return
+  }
+
+  const marker = readFinalVideoRenderMarker(workflowId)
+  finalVideoRenderInFlight.value = Boolean(marker)
+  finalVideoRendering.value = Boolean(marker)
+  if (marker) scheduleFinalVideoAuthoritativeRecovery(workflowId)
+}
+
+function scheduleFinalVideoAuthoritativeRecovery(
+  workflowId: string,
+  delayMs = 0,
+  recoveryGeneration = workflowLifecycleGeneration,
+) {
+  if (
+    !isCurrentWorkflowLifecycle(workflowId, recoveryGeneration) ||
+    !workflowId ||
+    finalVideoUrl.value ||
+    finalVideoRecoveryTimer !== null ||
+    finalVideoRecoveryInFlight
+  ) {
+    return
+  }
+  if (!readFinalVideoRenderMarker(workflowId)) {
+    finalVideoRenderInFlight.value = false
+    finalVideoRendering.value = false
+    return
+  }
+
+  finalVideoRecoveryTimer = window.setTimeout(async () => {
+    finalVideoRecoveryTimer = null
+    if (!isCurrentWorkflowLifecycle(workflowId, recoveryGeneration)) return
+    if (!readFinalVideoRenderMarker(workflowId)) return
+    if (finalVideoRecoveryInFlight) return
+    finalVideoRecoveryInFlight = true
+    try {
+      const data = await fetchAuthoritativeWorkflow(workflowId)
+      if (!isCurrentWorkflowLifecycle(workflowId, recoveryGeneration)) return
+      if (!readFinalVideoRenderMarker(workflowId)) return
+      applyWorkflowResponse(data)
+      reconcileRestoredFinalVideoState(workflowId)
+    } catch {
+      // The render request can finish before outputs.json is updated. Keep
+      // the persisted marker and retry the authoritative GET only.
+    } finally {
+      if (recoveryGeneration === workflowLifecycleGeneration) {
+        finalVideoRecoveryInFlight = false
+      }
+    }
+
+    if (
+      isCurrentWorkflowLifecycle(workflowId, recoveryGeneration) &&
+      !finalVideoUrl.value &&
+      readFinalVideoRenderMarker(workflowId)
+    ) {
+      scheduleFinalVideoAuthoritativeRecovery(
+        workflowId,
+        document.hidden ? 10_000 : 2_500,
+        recoveryGeneration,
+      )
+    }
+  }, delayMs)
+}
+
+function isDeletedWorkflowResponse(data: WorkflowRunResponse): boolean {
+  const restoredFinalUrl = extractFinalVideoUrl(data)
+  if (!restoredFinalUrl || !deletedVideoUrlsSet.value.has(restoredFinalUrl)) return false
+  clearPersistedWorkflowIdentity(String(data.workflow_id || ''))
+  localStorage.removeItem(STORAGE_KEY_VIDEO_URL)
+  currentWorkflowPayload.value = null
+  return true
+}
+
+async function restorePersistedWorkflowState(
+  _reason: 'mount' | 'visibility' | 'pageshow',
+): Promise<void> {
+  if (workflowRestorePromise) return workflowRestorePromise
+
+  const savedWorkflowId = String(localStorage.getItem(STORAGE_KEY_WORKFLOW) || '').trim()
+  if (!savedWorkflowId) return
+  if (loading.value && activeWorkflowId.value === savedWorkflowId) return
+  const restoreGeneration = workflowLifecycleGeneration
+
+  const restorePromise = (async () => {
+    if (!isCurrentWorkflowLifecycle(savedWorkflowId, restoreGeneration)) return
+    imageStateHydrating.value = true
+    const renderMarker = readFinalVideoRenderMarker(savedWorkflowId)
+    finalVideoRenderInFlight.value = Boolean(renderMarker)
+    finalVideoRendering.value = Boolean(renderMarker)
+
+    try {
+      if (!isCurrentWorkflowLifecycle(savedWorkflowId, restoreGeneration)) return
+      const markerWorkflowId = localStorage.getItem(STORAGE_KEY_REFRESH_CANCELLED) || ''
+      imageRefreshPausedByUser.value = markerWorkflowId === savedWorkflowId
+
+      const resultsResponse = await fetch(
+        `${apiBaseUrl}/v1/workflow/results/${encodeURIComponent(savedWorkflowId)}`,
+      )
+      if (!isCurrentWorkflowLifecycle(savedWorkflowId, restoreGeneration)) return
+      if (resultsResponse.ok) {
+        const data = (await resultsResponse.json()) as WorkflowRunResponse
+        if (!isCurrentWorkflowLifecycle(savedWorkflowId, restoreGeneration)) return
+        if (isDeletedWorkflowResponse(data)) return
+        applyWorkflowResponse(data)
+        imageStateHydrating.value = false
+        resumePendingSceneGenerationAfterRestore()
+        reconcileRestoredFinalVideoState(savedWorkflowId)
+        return
+      }
+      if (resultsResponse.status !== 404) return
+
+      const statusResponse = await fetch(
+        `${apiBaseUrl}/v1/workflow/status/${encodeURIComponent(savedWorkflowId)}`,
+      )
+      if (!isCurrentWorkflowLifecycle(savedWorkflowId, restoreGeneration)) return
+      if (!statusResponse.ok) return
+      const statusData = (await statusResponse.json()) as WorkflowStatusResponse
+      if (!isCurrentWorkflowLifecycle(savedWorkflowId, restoreGeneration)) return
+      const status = String(statusData.status || '').trim().toLowerCase()
+
+      if (status === 'abandoned' || status === 'cancelled' || status === 'failed') {
+        clearPersistedWorkflowIdentity(savedWorkflowId)
+        return
+      }
+      if (status !== 'processing' && status !== 'cancel_requested') return
+
+      loading.value = true
+      workflowStatusData.value = statusData
+      activeWorkflowId.value = savedWorkflowId
+      cancelRequested.value = status === 'cancel_requested'
+      const asyncData = await waitForAsyncWorkflowOutputs(savedWorkflowId)
+      if (
+        asyncData &&
+        isCurrentWorkflowLifecycle(savedWorkflowId, restoreGeneration) &&
+        !isDeletedWorkflowResponse(asyncData)
+      ) {
+        applyWorkflowResponse(asyncData)
+        imageStateHydrating.value = false
+        scheduleImageReviewAutoRefreshIfNeeded()
+        reconcileRestoredFinalVideoState(savedWorkflowId)
+      }
+    } catch {
+      // Mobile resume is best-effort; pageshow/visibility will retry when
+      // connectivity returns without creating a new workflow or task.
+    } finally {
+      if (isCurrentWorkflowLifecycle(savedWorkflowId, restoreGeneration)) {
+        imageStateHydrating.value = false
+      }
+      if (
+        isCurrentWorkflowLifecycle(savedWorkflowId, restoreGeneration) &&
+        loading.value &&
+        activeWorkflowId.value === savedWorkflowId
+      ) {
+        loading.value = false
+        activeWorkflowId.value = ''
+        cancelRequested.value = false
+      }
+    }
+  })()
+  workflowRestorePromise = restorePromise
+
+  try {
+    await restorePromise
+  } finally {
+    if (workflowRestorePromise === restorePromise) workflowRestorePromise = null
+  }
+}
+
+function onStudioPageShow() {
+  void restorePersistedWorkflowState('pageshow')
+}
 
 const canSubmit = computed(() => {
   return (
@@ -1813,6 +1965,8 @@ function resetWorkflowRuntimeState() {
   imageReviewRefreshAbortController = null
   try {
     localStorage.removeItem(STORAGE_KEY_WORKFLOW)
+    localStorage.removeItem(STORAGE_KEY_RUN)
+    clearFinalVideoRenderMarker()
   } catch {
     /* localStorage unavailable — best-effort */
   }
@@ -2253,6 +2407,10 @@ function applyWorkflowResponse(data: WorkflowRunResponse) {
       if (finalVideoUrl.value) {
         pushRecentFinalVideoUrl(finalVideoUrl.value, deriveVideoMeta(data))
         localStorage.setItem(STORAGE_KEY_VIDEO_URL, finalVideoUrl.value)
+        clearFinalVideoRenderMarker(String(data.workflow_id || ''))
+        clearFinalVideoRecoveryTimer()
+        finalVideoRenderInFlight.value = false
+        finalVideoRendering.value = false
         // Pipeline is fully done — drop the "user cancelled refresh"
         // marker so a brand-new workflow after this isn't blocked.
         clearImageRefreshCancelledMarker()
@@ -2306,7 +2464,7 @@ function applyWorkflowResponse(data: WorkflowRunResponse) {
   }
   const workflowId = data.workflow_id
   if (workflowId) {
-    localStorage.setItem(STORAGE_KEY_WORKFLOW, workflowId)
+    persistActiveWorkflowIdentity(workflowId, data.run_id || '')
   }
 }
 
@@ -2629,6 +2787,7 @@ function onImageReviewVisibilityChange() {
   if (document.hidden) return
   imageReviewVisibilityRefreshRequested = true
   wakeImageReviewPolling?.()
+  void restorePersistedWorkflowState('visibility')
 }
 
 function waitForImageReviewBatchPoll(ms: number, signal: AbortSignal) {
@@ -2710,6 +2869,18 @@ async function renderFinalVideoIfReady(baseResponse: WorkflowRunResponse) {
     errorMessage.value = '缺少本次生成的 workflow 输入参数，请回到「创作故事」重新开始生成。'
     return
   }
+  const renderWorkflowId = String(
+    baseResponse.workflow_id || payloadForRender.workflow_id || '',
+  ).trim()
+  const renderGeneration = workflowLifecycleGeneration
+  if (!isCurrentWorkflowLifecycle(renderWorkflowId, renderGeneration)) return
+  const existingRenderMarker = readFinalVideoRenderMarker(renderWorkflowId)
+  if (existingRenderMarker) {
+    finalVideoRendering.value = true
+    finalVideoRenderInFlight.value = true
+    scheduleFinalVideoAuthoritativeRecovery(renderWorkflowId)
+    return
+  }
   if (finalVideoRendering.value || finalVideoRenderInFlight.value) return
 
   const outputs = baseResponse.outputs || {}
@@ -2753,7 +2924,7 @@ async function renderFinalVideoIfReady(baseResponse: WorkflowRunResponse) {
   if (audioEnabled && audioItems.length === 0) return
 
   const payload = {
-    workflow_id: baseResponse.workflow_id || payloadForRender.workflow_id,
+    workflow_id: renderWorkflowId,
     session_id: baseResponse.session_id || payloadForRender.session_id,
     run_id: baseResponse.run_id || '',
     workflow_input: payloadForRender.input,
@@ -2762,6 +2933,7 @@ async function renderFinalVideoIfReady(baseResponse: WorkflowRunResponse) {
     subtitles: subtitles || {},
   }
 
+  persistFinalVideoRenderMarker(renderWorkflowId, String(payload.run_id || ''))
   finalVideoRendering.value = true
   finalVideoRenderInFlight.value = true
   errorMessage.value = ''
@@ -2778,6 +2950,8 @@ async function renderFinalVideoIfReady(baseResponse: WorkflowRunResponse) {
     }
 
     const data: FinalVideoRenderResponse = await response.json()
+    if (!isCurrentWorkflowLifecycle(renderWorkflowId, renderGeneration)) return
+    if (!readFinalVideoRenderMarker(renderWorkflowId)) return
 
     const mergedResponse: WorkflowRunResponse = {
       ...(baseResponse || {}),
@@ -2791,12 +2965,20 @@ async function renderFinalVideoIfReady(baseResponse: WorkflowRunResponse) {
     }
 
     applyWorkflowResponse(mergedResponse)
+    reconcileRestoredFinalVideoState(renderWorkflowId)
   } catch (error) {
+    clearFinalVideoRenderMarker(renderWorkflowId)
+    if (!isCurrentWorkflowLifecycle(renderWorkflowId, renderGeneration)) return
     const message = error instanceof Error ? error.message : 'Request failed'
     errorMessage.value = `最终视频生成失败：${message}`
   } finally {
-    finalVideoRenderInFlight.value = false
-    finalVideoRendering.value = false
+    if (
+      isCurrentWorkflowLifecycle(renderWorkflowId, renderGeneration) &&
+      !readFinalVideoRenderMarker(renderWorkflowId)
+    ) {
+      finalVideoRenderInFlight.value = false
+      finalVideoRendering.value = false
+    }
   }
 }
 
@@ -2919,6 +3101,17 @@ async function refreshImageReviewScene(
   const runId = String(payload.run_id)
   let task: ImageRefreshTaskResponse | null = null
   let pollDelay = 2000
+
+  if (retryFailed && allowCreate) {
+    const response = await fetch(`${apiBaseUrl}/v1/image-review/refresh-scene-task`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...payload, retry_failed: true }),
+      signal,
+    })
+    if (!response.ok) throw new Error(`Image task recreate HTTP ${response.status}`)
+    task = (await response.json()) as ImageRefreshTaskResponse
+  }
 
   while (!task) {
     try {
@@ -3383,9 +3576,11 @@ function performDiscardCurrentDraft() {
   // (those are user-level state, not part of this draft).
   try {
     localStorage.removeItem(STORAGE_KEY_WORKFLOW)
+    localStorage.removeItem(STORAGE_KEY_RUN)
     localStorage.removeItem(STORAGE_KEY_PAYLOAD)
     localStorage.removeItem(STORAGE_KEY_REFRESH_CANCELLED)
     localStorage.removeItem(STORAGE_KEY_SESSION)
+    clearFinalVideoRenderMarker()
   } catch { /* ignore */ }
 
   // Drop the user back on 创作故事 — clean starting point for the next run.
@@ -3897,8 +4092,10 @@ async function waitForAsyncWorkflowOutputs(
   const startedAt = Date.now()
 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    if (studioViewUnmounted) return null
     workflowRunElapsedSec.value = Math.floor((Date.now() - startedAt) / 1000)
     await new Promise((resolve) => window.setTimeout(resolve, intervalMs))
+    if (studioViewUnmounted) return null
     workflowRunElapsedSec.value = Math.floor((Date.now() - startedAt) / 1000)
 
     const statusResponse = await fetch(
@@ -4250,6 +4447,10 @@ async function executeRunWorkflow() {
     steps: Array.from(stepsSet).map((name) => ({ name })),
   }
   currentWorkflowPayload.value = payload as WorkflowRunPayload
+  invalidateWorkflowLifecycleRecovery()
+  clearFinalVideoRenderMarker()
+  localStorage.removeItem(STORAGE_KEY_RUN)
+  persistActiveWorkflowIdentity(workflowId)
   localStorage.setItem(STORAGE_KEY_PAYLOAD, JSON.stringify(payload))
   // New workflow starts clean — any prior "user cancelled image refresh"
   // marker shouldn't haunt this fresh run.
