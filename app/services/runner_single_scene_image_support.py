@@ -12,7 +12,10 @@ from app.services.image_quality_retry_policy import (
     quality_max_retries,
     summarize_selection_for_history,
 )
-from app.services.runner_image_prompts_support import ensure_multi_character_anchor
+from app.services.runner_image_prompts_support import (
+    ensure_character_identity_lock,
+    ensure_multi_character_anchor,
+)
 
 
 class RunnerSingleSceneImageSupport:
@@ -150,10 +153,19 @@ class RunnerSingleSceneImageSupport:
         # scene_id and we fell back to bare visual_description), prepend
         # the roster block so the diffusion model still gets the
         # "two different species, not two X, not two Y" signal.
+        provider_characters = (
+            self._runner._scene_characters.enriched_scene_characters_from_manifest(
+                outputs,
+                scene,
+            )
+            or asset_meta.get("characters")
+            or []
+        )
         base_prompt = ensure_multi_character_anchor(
             base_prompt,
-            asset_meta.get("characters") or [],
+            provider_characters,
         )
+        base_prompt = ensure_character_identity_lock(base_prompt, provider_characters)
 
         candidate_asset_refs: List[Dict[str, Any]] = []
 
@@ -238,12 +250,21 @@ class RunnerSingleSceneImageSupport:
         # Last-mile multi-character guard — same purpose as the pillow
         # branch above. Critical here because the API path drives
         # generation for the real image-provider integration.
+        provider_characters = (
+            runner._scene_characters.enriched_scene_characters_from_manifest(
+                outputs,
+                scene,
+            )
+            or asset_meta.get("characters")
+            or []
+        )
         base_prompt = ensure_multi_character_anchor(
             base_prompt,
-            asset_meta.get("characters") or [],
+            provider_characters,
         )
+        base_prompt = ensure_character_identity_lock(base_prompt, provider_characters)
         negative_prompt = self.scene_negative_prompt_from_characters(
-            asset_meta["characters"]
+            provider_characters
         )
 
         adapter = ApiImageGeneratorAdapter(runner)
