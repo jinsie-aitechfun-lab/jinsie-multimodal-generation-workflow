@@ -528,6 +528,58 @@ def ensure_multi_character_anchor(
     return f"{roster}, {text}" if text else roster
 
 
+def ensure_character_identity_lock(
+    prompt: str,
+    enriched_scene_characters: List[Dict[str, Any]],
+) -> str:
+    """Last-mile identity lock shared by single- and multi-character scenes."""
+    text = str(prompt or "").strip()
+    if "provider character identity lock:" in text.lower():
+        return text
+    if not isinstance(enriched_scene_characters, list):
+        return text
+
+    identity_parts: List[str] = []
+    for character in enriched_scene_characters:
+        if not isinstance(character, dict):
+            continue
+
+        display_name = str(character.get("display_name") or "").strip()
+        species = str(character.get("species") or "").strip()
+        canonical_identity = display_name or species
+        if not canonical_identity:
+            continue
+
+        visual_identity = str(character.get("visual_identity") or "").strip()
+        signature_traits = character.get("signature_traits") or []
+        if not isinstance(signature_traits, list):
+            signature_traits = []
+        traits_text = ", ".join(
+            str(item).strip()
+            for item in signature_traits
+            if str(item).strip()
+        )
+
+        parts = [
+            f"{canonical_identity} is exactly {species or canonical_identity}",
+            f"fixed visual identity: {visual_identity}" if visual_identity else "",
+            f"must keep: {traits_text[:240]}" if traits_text else "",
+        ]
+        identity_parts.append("; ".join(part for part in parts if part))
+
+    if not identity_parts:
+        return text
+
+    lock = (
+        "provider character identity lock: "
+        + " | ".join(identity_parts)
+        + "; when scene text uses a pronoun, nickname, or generic reference, "
+        "it still means the exact canonical character above; never replace it "
+        "with a different character or species"
+    )
+    return f"{lock}, {text}" if text else lock
+
+
 def _build_multi_character_roster_for_scene(
     enriched_scene_characters: List[Dict[str, Any]],
 ) -> str:

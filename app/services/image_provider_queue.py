@@ -18,6 +18,7 @@ from app.services.image_provider_types import (
 )
 from app.services.runner_image_prompts_support import (
     build_multi_character_negative_prompt,
+    ensure_character_identity_lock,
     ensure_multi_character_anchor,
 )
 
@@ -134,9 +135,21 @@ class ImageProviderQueue:
                 )
                 # Last-mile multi-character guard for the queue batch path.
                 # See ensure_multi_character_anchor() for full context.
+                provider_characters = (
+                    self._runner._scene_characters.enriched_scene_characters_from_manifest(
+                        outputs,
+                        parent_scene,
+                    )
+                    or asset_meta.get("characters")
+                    or []
+                )
                 base_prompt = ensure_multi_character_anchor(
                     base_prompt,
-                    asset_meta.get("characters") or [],
+                    provider_characters,
+                )
+                base_prompt = ensure_character_identity_lock(
+                    base_prompt,
+                    provider_characters,
                 )
 
                 candidate_asset_refs = self._generate_shot_candidates(
@@ -251,9 +264,21 @@ class ImageProviderQueue:
                 # Last-mile multi-character guard for the queue scene-mode
                 # path. See ensure_multi_character_anchor() for full
                 # context.
+                provider_characters = (
+                    self._runner._scene_characters.enriched_scene_characters_from_manifest(
+                        outputs,
+                        scene,
+                    )
+                    or asset_meta.get("characters")
+                    or []
+                )
                 base_prompt = ensure_multi_character_anchor(
                     base_prompt,
-                    asset_meta.get("characters") or [],
+                    provider_characters,
+                )
+                base_prompt = ensure_character_identity_lock(
+                    base_prompt,
+                    provider_characters,
                 )
 
                 candidate_asset_refs = self._generate_scene_candidates(
