@@ -330,15 +330,67 @@ class FrontendStateContractTests(unittest.TestCase):
 
     def test_async_history_poster_backfill_replaces_and_persists_fallback(self):
         studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
-        push_recent = studio.split("function pushRecentFinalVideoUrl", 1)[1].split(
-            "function deriveVideoMeta", 1
+        merge_meta = studio.split("function mergeRecentVideoMetadata", 1)[1].split(
+            "function persistRecentVideoMetadata", 1
         )[0]
-        self.assertIn("posterUrl: meta.posterUrl || existing.posterUrl", push_recent)
-        self.assertNotIn("posterUrl: existing.posterUrl || meta.posterUrl", push_recent)
+        persist_meta = studio.split("function persistRecentVideoMetadata", 1)[1].split(
+            "function pushRecentFinalVideoUrl", 1
+        )[0]
+        self.assertIn("posterUrl: meta.posterUrl || existing.posterUrl", merge_meta)
+        self.assertIn("workflowId: existing.workflowId || meta.workflowId", merge_meta)
+        self.assertIn("runId: existing.runId || meta.runId", merge_meta)
         self.assertIn(
             "localStorage.setItem(\n      STORAGE_KEY_RECENT_VIDEO_META",
-            push_recent,
+            persist_meta,
         )
+
+    def test_history_poster_backfill_only_requests_identified_missing_metadata(self):
+        studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        backfill = studio.split("async function backfillMissingHistoryPosters", 1)[1].split(
+            "History video delete", 1
+        )[0]
+        self.assertIn("Object.entries(recentVideoMetadata.value)", backfill)
+        self.assertIn("Boolean(meta.workflowId) && !meta.posterUrl", backfill)
+        self.assertIn("fetchHistoryPosterAuthoritativeResult(workflowId)", backfill)
+        self.assertNotIn("recentFinalVideoUrls.value.map", backfill)
+        self.assertNotIn("applyWorkflowResponse", backfill)
+
+    def test_history_poster_backfill_validates_workflow_and_run_before_writing(self):
+        studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        backfill = studio.split("async function backfillMissingHistoryPosters", 1)[1].split(
+            "History video delete", 1
+        )[0]
+        workflow_check = "String(response.workflow_id || '').trim() !== workflowId"
+        run_check = "String(response.run_id || '').trim() !== String(initialMeta.runId).trim()"
+        merge_call = "mergeRecentVideoMetadata(videoUrl, {"
+        self.assertIn(workflow_check, backfill)
+        self.assertIn(run_check, backfill)
+        self.assertLess(backfill.index(workflow_check), backfill.index(merge_call))
+        self.assertLess(backfill.index(run_check), backfill.index(merge_call))
+        self.assertIn("persistRecentVideoMetadata()", backfill)
+
+    def test_history_poster_backfill_dedupes_and_avoids_current_restore(self):
+        studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        fetch_helper = studio.split(
+            "function fetchHistoryPosterAuthoritativeResult", 1
+        )[1].split("async function backfillMissingHistoryPosters", 1)[0]
+        backfill = studio.split("async function backfillMissingHistoryPosters", 1)[1].split(
+            "History video delete", 1
+        )[0]
+        self.assertIn("historyPosterRecoveryRequests.get(workflowId)", fetch_helper)
+        self.assertIn("historyPosterRecoveryRequests.set(workflowId, request)", fetch_helper)
+        self.assertIn("workflowId === currentWorkflowId", backfill)
+
+    def test_history_poster_backfill_does_not_reorder_recent_video_urls(self):
+        studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
+        merge_meta = studio.split("function mergeRecentVideoMetadata", 1)[1].split(
+            "function persistRecentVideoMetadata", 1
+        )[0]
+        backfill = studio.split("async function backfillMissingHistoryPosters", 1)[1].split(
+            "History video delete", 1
+        )[0]
+        self.assertNotIn("recentFinalVideoUrls.value =", merge_meta)
+        self.assertNotIn("pushRecentFinalVideoUrl", backfill)
 
     def test_history_cards_do_not_load_full_mp4_for_covers(self):
         preview = (ROOT / "frontend/src/components/studio/StudioPreviewPanel.vue").read_text(

@@ -426,6 +426,41 @@ export interface RecentVideoMeta {
   runId?: string
 }
 const recentVideoMetadata = ref<Record<string, RecentVideoMeta>>({})
+const historyPosterRecoveryRequests = new Map<
+  string,
+  Promise<WorkflowRunResponse | null>
+>()
+
+function mergeRecentVideoMetadata(url: string, meta: RecentVideoMeta): boolean {
+  const u = String(url || '').trim()
+  if (!u || !recentFinalVideoUrls.value.includes(u)) return false
+
+  const existing = recentVideoMetadata.value[u]
+  recentVideoMetadata.value = {
+    ...recentVideoMetadata.value,
+    [u]: existing
+      ? {
+          ...meta,
+          ...existing,
+          posterUrl: meta.posterUrl || existing.posterUrl,
+          workflowId: existing.workflowId || meta.workflowId,
+          runId: existing.runId || meta.runId,
+        }
+      : meta,
+  }
+  return true
+}
+
+function persistRecentVideoMetadata() {
+  try {
+    localStorage.setItem(
+      STORAGE_KEY_RECENT_VIDEO_META,
+      JSON.stringify(recentVideoMetadata.value),
+    )
+  } catch {
+    /* quota / serialisation failures are non-fatal */
+  }
+}
 
 function pushRecentFinalVideoUrl(url: string, meta?: RecentVideoMeta) {
   const u = String(url || '').trim()
@@ -443,21 +478,7 @@ function pushRecentFinalVideoUrl(url: string, meta?: RecentVideoMeta) {
   // Existing values win so a later SPA restore cannot overwrite the
   // generation-time title/topic. Newly available fields (notably posterUrl
   // for records written by older builds) are still allowed to backfill.
-  if (meta) {
-    const existing = recentVideoMetadata.value[u]
-    recentVideoMetadata.value = {
-      ...recentVideoMetadata.value,
-      [u]: existing
-        ? {
-            ...meta,
-            ...existing,
-            posterUrl: meta.posterUrl || existing.posterUrl,
-            workflowId: existing.workflowId || meta.workflowId,
-            runId: existing.runId || meta.runId,
-          }
-        : meta,
-    }
-  }
+  if (meta) mergeRecentVideoMetadata(u, meta)
   // Drop metadata entries whose URL is no longer in the list so the
   // map doesn't grow unbounded as users churn history.
   const liveUrlSet = new Set(recentFinalVideoUrls.value)
@@ -472,10 +493,7 @@ function pushRecentFinalVideoUrl(url: string, meta?: RecentVideoMeta) {
       STORAGE_KEY_RECENT_VIDEOS,
       JSON.stringify(recentFinalVideoUrls.value),
     )
-    localStorage.setItem(
-      STORAGE_KEY_RECENT_VIDEO_META,
-      JSON.stringify(recentVideoMetadata.value),
-    )
+    persistRecentVideoMetadata()
   } catch {
     /* quota / serialisation failures are non-fatal */
   }
@@ -547,6 +565,76 @@ function deriveVideoMeta(response: WorkflowRunResponse | null | undefined): Rece
     workflowId: response.workflow_id || undefined,
     runId: response.run_id || undefined,
   }
+}
+
+function fetchHistoryPosterAuthoritativeResult(
+  workflowId: string,
+): Promise<WorkflowRunResponse | null> {
+  const existingRequest = historyPosterRecoveryRequests.get(workflowId)
+  if (existingRequest) return existingRequest
+
+  const request = (async () => {
+    try {
+      return await fetchAuthoritativeWorkflow(workflowId)
+    } catch {
+      return null
+    } finally {
+      historyPosterRecoveryRequests.delete(workflowId)
+    }
+  })()
+  historyPosterRecoveryRequests.set(workflowId, request)
+  return request
+}
+
+async function backfillMissingHistoryPosters() {
+  if (studioViewUnmounted) return
+  const currentWorkflowId = String(
+    localStorage.getItem(STORAGE_KEY_WORKFLOW) || '',
+  ).trim()
+  const candidates = Object.entries(recentVideoMetadata.value).filter(
+    ([, meta]) => Boolean(meta.workflowId) && !meta.posterUrl,
+  )
+
+  await Promise.all(candidates.map(async ([videoUrl, initialMeta]) => {
+    const workflowId = String(initialMeta.workflowId || '').trim()
+    // The lifecycle restore owns this workflow and already performs the same
+    // authoritative GET; the normal restore path persists its poster.
+    if (!workflowId || workflowId === currentWorkflowId) return
+
+    const response = await fetchHistoryPosterAuthoritativeResult(workflowId)
+    if (studioViewUnmounted || !response) return
+    if (String(response.workflow_id || '').trim() !== workflowId) return
+    if (
+      initialMeta.runId &&
+      String(response.run_id || '').trim() !== String(initialMeta.runId).trim()
+    ) {
+      return
+    }
+
+    const recoveredMeta = deriveVideoMeta(response)
+    if (!recoveredMeta?.posterUrl) return
+
+    // Re-check after the async request: the entry may have been deleted,
+    // completed by another recovery, or replaced with another workflow.
+    const currentMeta = recentVideoMetadata.value[videoUrl]
+    if (
+      !currentMeta ||
+      currentMeta.posterUrl ||
+      String(currentMeta.workflowId || '').trim() !== workflowId ||
+      (currentMeta.runId &&
+        String(response.run_id || '').trim() !== String(currentMeta.runId).trim())
+    ) {
+      return
+    }
+
+    if (mergeRecentVideoMetadata(videoUrl, {
+      posterUrl: recoveredMeta.posterUrl,
+      workflowId,
+      runId: currentMeta.runId || recoveredMeta.runId,
+    })) {
+      persistRecentVideoMetadata()
+    }
+  }))
 }
 
 /* ── History video delete ───────────────────────────────────────────
@@ -1423,7 +1511,9 @@ onMounted(() => {
     pushRecentFinalVideoUrl(savedVideoUrl)
   }
 
-  void restorePersistedWorkflowState('mount')
+  void restorePersistedWorkflowState('mount').finally(() => {
+    void backfillMissingHistoryPosters()
+  })
 })
 
 const apiBaseUrl =
