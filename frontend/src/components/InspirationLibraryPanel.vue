@@ -195,7 +195,7 @@ function onCardMouseLeave(event: MouseEvent) {
     <Teleport to="body">
       <div
         v-if="activeItem"
-        class="detail-backdrop"
+        class="modal-backdrop detail-backdrop"
         role="dialog"
         aria-modal="true"
         :aria-label="activeItem.title"
@@ -810,18 +810,10 @@ function onCardMouseLeave(event: MouseEvent) {
 /* ── Detail modal ───────────────────────────────────── */
 
 .detail-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 1200;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 24px;
-  /* Mid-strength overlay — page still shows through faintly so the modal
-     reads as a "lifted layer" not a wall covering the page. */
-  background: var(--surface-overlay-mid);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
 }
 
 .detail-modal {

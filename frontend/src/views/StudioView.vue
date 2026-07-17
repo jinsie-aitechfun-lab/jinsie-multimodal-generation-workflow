@@ -4937,7 +4937,7 @@ async function executeRunWorkflow() {
     <Transition name="confirm-fade">
       <div
         v-if="showDiscardConfirm"
-        class="confirm-overlay"
+        class="modal-backdrop confirm-overlay"
         role="dialog"
         aria-modal="true"
         @click.self="cancelDiscardDialog"
@@ -4963,7 +4963,7 @@ async function executeRunWorkflow() {
     <Transition name="confirm-fade">
       <div
         v-if="showStartRunConfirm"
-        class="confirm-overlay"
+        class="modal-backdrop confirm-overlay"
         role="dialog"
         aria-modal="true"
         @click.self="cancelStartRunDialog"
@@ -4989,7 +4989,7 @@ async function executeRunWorkflow() {
     <Transition name="confirm-fade">
       <div
         v-if="deleteVideoTarget"
-        class="confirm-overlay"
+        class="modal-backdrop confirm-overlay"
         role="dialog"
         aria-modal="true"
         @click.self="cancelDeleteRecentVideo"
@@ -5016,7 +5016,7 @@ async function executeRunWorkflow() {
     <Transition name="confirm-fade">
       <div
         v-if="topicChangeWarningOpen"
-        class="confirm-overlay"
+        class="modal-backdrop confirm-overlay"
         role="dialog"
         aria-modal="true"
         @click.self="keepCharacterFieldsAfterTopicChange"
@@ -6324,18 +6324,9 @@ details.summary-item[open] > summary .summary-chevron { transform: rotate(90deg)
 }
 
 .confirm-overlay {
-  position: fixed;
-  inset: 0;
-  /* Lighter than 0.55 so the dialog reads as "card on top" instead of
-     "dark hole on darker hole". 0.42 still dims the studio surface enough
-     to clearly indicate focus without crushing contrast. */
-  background: rgba(0, 0, 0, 0.42);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
   padding: 16px;
 }
 

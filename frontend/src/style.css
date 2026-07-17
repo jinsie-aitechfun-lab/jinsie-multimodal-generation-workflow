@@ -75,6 +75,11 @@
   --surface-overlay-mid:    rgba(0,0,0,0.18);
   --surface-overlay-soft:   rgba(0,0,0,0.12);
 
+  /* Full-viewport modal scrim. This is intentionally separate from the
+     surface-overlay tokens above: cards tint their own surface, while a
+     modal backdrop must consistently darken the page behind it. */
+  --modal-backdrop-bg: rgba(0, 0, 0, 0.56);
+
   /* Chip button (template selectors etc) */
   --chip-hover-bg:    rgba(245,158,11,0.09);
   --chip-active-bg:   rgba(245,158,11,0.15);
@@ -303,6 +308,7 @@
   --surface-overlay-strong: rgba(255, 255, 255, 0.85);
   --surface-overlay-mid:    rgba(252, 252, 250, 0.72);
   --surface-overlay-soft:   rgba(250, 251, 253, 0.58);
+  --modal-backdrop-bg: rgba(15, 20, 30, 0.42);
 
   /* Chip button — clean white hover, restrained gold for active state */
   --chip-hover-bg:      rgba(255, 255, 255, 0.85);
@@ -412,6 +418,59 @@ body {
   min-height: 100vh;
   overflow-x: hidden;
   transition: background-color 0.35s ease, color 0.35s ease;
+}
+
+/* Shared modal viewport layer. Keep this above Studio's highest fixed chrome
+   (mobile navigation currently uses z-index: 10020) while leaving room for
+   the landing showcase's dedicated top-level presentation layer. */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20000;
+  background: var(--modal-backdrop-bg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* Pearl modals need more separation than dark-theme glass: a deeper neutral
+   scrim makes the bright workspace recede, while translucent warm-pearl
+   surfaces retain the glass character without becoming flat white panels. */
+:root[data-theme="pearl"] .modal-backdrop {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+:root[data-theme="pearl"] .modal-backdrop .detail-modal,
+:root[data-theme="pearl"] .modal-backdrop .confirm-dialog {
+  background:
+    linear-gradient(
+      155deg,
+      rgba(255, 253, 247, 0.88) 0%,
+      rgba(246, 241, 229, 0.80) 58%,
+      rgba(235, 231, 224, 0.74) 100%
+    );
+  border-color: rgba(166, 119, 43, 0.52);
+  box-shadow:
+    0 34px 82px rgba(12, 18, 28, 0.30),
+    0 10px 28px rgba(94, 70, 28, 0.15),
+    0 0 0 1px rgba(255, 255, 255, 0.52),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82);
+}
+
+:root[data-theme="pearl"] .modal-backdrop .detail-eyebrow,
+:root[data-theme="pearl"] .modal-backdrop .detail-block-label {
+  color: #8a5e18;
+}
+
+:root[data-theme="pearl"] .modal-backdrop .detail-apply,
+:root[data-theme="pearl"] .modal-backdrop .confirm-btn-primary {
+  color: #62400f;
+  border-color: rgba(145, 94, 22, 0.68);
+  background: linear-gradient(
+    180deg,
+    rgba(224, 194, 129, 0.38),
+    rgba(196, 151, 66, 0.24)
+  );
 }
 
 /* ─── Theme transitions ─────────────────────────────
