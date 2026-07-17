@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import unittest
 from pathlib import Path
 
@@ -8,6 +9,62 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 class FrontendStateContractTests(unittest.TestCase):
+    def test_story_package_detail_uses_shared_modal_backdrop(self):
+        source = (
+            ROOT / "frontend/src/components/InspirationLibraryPanel.vue"
+        ).read_text(encoding="utf-8")
+        self.assertIn('class="modal-backdrop detail-backdrop"', source)
+
+    def test_studio_confirm_modals_use_shared_modal_backdrop(self):
+        source = (ROOT / "frontend/src/views/StudioView.vue").read_text(
+            encoding="utf-8"
+        )
+        self.assertEqual(source.count('class="modal-backdrop confirm-overlay"'), 4)
+        self.assertNotIn('class="confirm-overlay"', source)
+
+    def test_modal_backdrop_sits_above_studio_fixed_chrome(self):
+        global_css = (ROOT / "frontend/src/style.css").read_text(encoding="utf-8")
+        layout = (
+            ROOT / "frontend/src/components/studio/StudioLayout.vue"
+        ).read_text(encoding="utf-8")
+        modal_rule = global_css.split(".modal-backdrop {", 1)[1].split("}", 1)[0]
+        modal_z = int(re.search(r"z-index:\s*(\d+)", modal_rule).group(1))
+        chrome_z_values = [
+            int(value) for value in re.findall(r"z-index:\s*(\d+)", layout)
+        ]
+        self.assertGreater(modal_z, max(chrome_z_values))
+
+    def test_dark_and_light_themes_use_darkening_modal_scrims(self):
+        global_css = (ROOT / "frontend/src/style.css").read_text(encoding="utf-8")
+        root_tokens = global_css.split(":root {", 1)[1].split("}", 1)[0]
+        pearl_tokens = global_css.split(':root[data-theme="pearl"] {', 1)[1].split(
+            "}", 1
+        )[0]
+        self.assertRegex(
+            root_tokens,
+            r"--modal-backdrop-bg:\s*rgba\(0,\s*0,\s*0,\s*0\.\d+\)",
+        )
+        self.assertRegex(
+            pearl_tokens,
+            r"--modal-backdrop-bg:\s*rgba\(15,\s*20,\s*30,\s*0\.42\)",
+        )
+        self.assertIn("background: var(--modal-backdrop-bg)", global_css)
+
+    def test_pearl_modal_backdrop_and_surfaces_have_stronger_separation(self):
+        global_css = (ROOT / "frontend/src/style.css").read_text(encoding="utf-8")
+        pearl_backdrop = global_css.split(
+            ':root[data-theme="pearl"] .modal-backdrop {', 1
+        )[1].split("}", 1)[0]
+        pearl_surfaces = global_css.split(
+            ':root[data-theme="pearl"] .modal-backdrop .detail-modal,', 1
+        )[1].split("}", 1)[0]
+
+        self.assertIn("backdrop-filter: blur(12px)", pearl_backdrop)
+        self.assertIn("rgba(255, 253, 247, 0.88)", pearl_surfaces)
+        self.assertIn("rgba(246, 241, 229, 0.80)", pearl_surfaces)
+        self.assertIn("border-color: rgba(166, 119, 43, 0.52)", pearl_surfaces)
+        self.assertIn("0 34px 82px rgba(12, 18, 28, 0.30)", pearl_surfaces)
+
     def test_task_polling_and_progress_have_no_old_render_constants(self):
         studio = (ROOT / "frontend/src/views/StudioView.vue").read_text(encoding="utf-8")
         final_panel = (ROOT / "frontend/src/components/FinalVideoPanel.vue").read_text(
