@@ -358,6 +358,29 @@ class FrontendStateContractTests(unittest.TestCase):
         self.assertIn("markHistoryPosterFailed(url)", preview)
         self.assertIn(".pp-poster-placeholder", preview)
 
+    def test_history_cover_falls_back_from_poster_to_thumbnail_then_placeholder(self):
+        preview = (ROOT / "frontend/src/components/studio/StudioPreviewPanel.vue").read_text(
+            encoding="utf-8"
+        )
+        candidates = preview.split("function historyPosterCandidates", 1)[1].split(
+            "function historyPosterUrl", 1
+        )[0]
+        self.assertLess(candidates.index("meta?.posterUrl"), candidates.index("meta?.thumbnail"))
+        self.assertIn("find((candidate) => !failed.includes(candidate)) || ''", preview)
+        self.assertEqual(3, preview.count('class="pp-poster-fallback-play"'))
+
+    def test_pearl_history_cards_have_branded_non_blank_fallback_and_contrast(self):
+        preview = (ROOT / "frontend/src/components/studio/StudioPreviewPanel.vue").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(':root[data-theme="pearl"] .pp-hist-card {', preview)
+        self.assertIn(':root[data-theme="pearl"] .pp-poster-placeholder {', preview)
+        self.assertIn("rgba(218,229,241,0.90)", preview)
+        self.assertIn(':root[data-theme="pearl"] .pp-hist-card-index,', preview)
+        self.assertIn(':root[data-theme="pearl"] .pp-thumb-index {', preview)
+        self.assertIn(':root[data-theme="pearl"] .pp-hist-card-label {', preview)
+        self.assertIn("color: #3d3a34", preview)
+
     def test_clicking_history_card_only_selects_existing_video_url(self):
         preview = (ROOT / "frontend/src/components/studio/StudioPreviewPanel.vue").read_text(
             encoding="utf-8"

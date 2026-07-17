@@ -141,7 +141,7 @@
                   @error="markHistoryPosterFailed(url)"
                 />
                 <div v-else class="pp-thumb-video pp-poster-placeholder" aria-label="视频封面暂不可用">
-                  <span aria-hidden="true">◇</span>
+                  <span class="pp-poster-fallback-play" aria-hidden="true">▶</span>
                 </div>
                 <div class="pp-thumb-overlay"><span class="pp-thumb-play">▶</span></div>
                 <div class="pp-thumb-index">{{ historyVideoIndex(idx) }}</div>
@@ -237,7 +237,7 @@
                     @error="markHistoryPosterFailed(url)"
                   />
                   <div v-else class="pp-hist-card-video pp-poster-placeholder" aria-label="视频封面暂不可用">
-                    <span aria-hidden="true">◇</span>
+                    <span class="pp-poster-fallback-play" aria-hidden="true">▶</span>
                   </div>
                   <div class="pp-hist-card-chrome" aria-hidden="true">
                     <span class="pp-hist-card-index">{{ historyVideoIndex(idx) }}</span>
@@ -341,7 +341,7 @@
                   @error="markHistoryPosterFailed(url)"
                 />
                 <div v-else class="pp-hist-card-video pp-poster-placeholder" aria-label="视频封面暂不可用">
-                  <span aria-hidden="true">◇</span>
+                  <span class="pp-poster-fallback-play" aria-hidden="true">▶</span>
                 </div>
                 <div class="pp-hist-card-chrome" aria-hidden="true">
                   <span class="pp-hist-card-index">{{ historyVideoIndex(idx) }}</span>
@@ -498,6 +498,9 @@ interface RecentVideoMeta {
   topic?: string
   createdAt?: string
   posterUrl?: string
+  thumbnail?: string
+  thumbnailUrl?: string
+  thumbnail_url?: string
   workflowId?: string
   runId?: string
 }
@@ -569,17 +572,27 @@ function historyVideoStatus(url: string): string {
   return url === props.finalVideoUrl ? '当前作品' : '已完成'
 }
 
-const failedPosterUrls = ref<Record<string, string>>({})
+const failedPosterUrls = ref<Record<string, string[]>>({})
+
+function historyPosterCandidates(url: string): string[] {
+  const meta = props.recentVideoMetadata?.[url]
+  return [meta?.posterUrl, meta?.thumbnail, meta?.thumbnailUrl, meta?.thumbnail_url]
+    .map((candidate) => String(candidate || '').trim())
+    .filter((candidate, index, candidates) => candidate && candidates.indexOf(candidate) === index)
+}
 
 function historyPosterUrl(url: string): string {
-  const posterUrl = props.recentVideoMetadata?.[url]?.posterUrl || ''
-  return failedPosterUrls.value[url] === posterUrl ? '' : posterUrl
+  const failed = failedPosterUrls.value[url] || []
+  return historyPosterCandidates(url).find((candidate) => !failed.includes(candidate)) || ''
 }
 
 function markHistoryPosterFailed(url: string) {
-  const posterUrl = props.recentVideoMetadata?.[url]?.posterUrl || ''
+  const posterUrl = historyPosterUrl(url)
   if (!posterUrl) return
-  failedPosterUrls.value = { ...failedPosterUrls.value, [url]: posterUrl }
+  failedPosterUrls.value = {
+    ...failedPosterUrls.value,
+    [url]: [...(failedPosterUrls.value[url] || []), posterUrl],
+  }
 }
 
 /* History card label — the human-readable subtitle shown beneath the
@@ -1290,10 +1303,32 @@ const doneCount = computed(
   align-items: center;
   justify-content: center;
   background:
-    radial-gradient(circle at 50% 35%, rgba(245,158,11,0.14), transparent 48%),
-    var(--surface-overlay-strong);
-  color: var(--arc-300);
-  font-size: 1.35rem;
+    radial-gradient(circle at 50% 38%, rgba(245,158,11,0.18), transparent 42%),
+    linear-gradient(145deg, #151922 0%, #090b10 62%, #050608 100%);
+  color: #f2bd5c;
+}
+
+.pp-poster-fallback-play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding-left: 2px;
+  border: 1px solid rgba(245,158,11,0.42);
+  border-radius: 999px;
+  background: rgba(245,158,11,0.12);
+  color: inherit;
+  font-size: 0.875rem;
+  box-shadow:
+    0 8px 22px rgba(0,0,0,0.34),
+    0 0 18px rgba(245,158,11,0.14);
+}
+
+.pp-thumb-video.pp-poster-placeholder .pp-poster-fallback-play {
+  width: 28px;
+  height: 28px;
+  font-size: 0.6875rem;
 }
 
 .pp-hist-card-overlay {
@@ -2181,6 +2216,84 @@ const doneCount = computed(
     0 18px 46px rgba(46,42,34,0.06);
   backdrop-filter: blur(18px) saturate(1.08);
   -webkit-backdrop-filter: blur(18px) saturate(1.08);
+}
+
+/* Pearl history cards need a visible cool-glass layer of their own. The
+   poster remains the first choice; this surface only frames real covers or
+   gives old entries a branded fallback instead of a blank white rectangle. */
+:root[data-theme="pearl"] .pp-hist-card {
+  padding: 8px;
+  border: 1px solid rgba(126, 147, 171, 0.22);
+  border-radius: 15px;
+  background:
+    linear-gradient(145deg, rgba(255,255,255,0.76), rgba(231,238,246,0.58));
+  box-shadow:
+    0 12px 30px rgba(46, 58, 72, 0.10),
+    0 2px 8px rgba(76, 100, 126, 0.07),
+    inset 0 1px 0 rgba(255,255,255,0.92);
+}
+
+:root[data-theme="pearl"] .pp-hist-card:hover {
+  border-color: rgba(184, 132, 62, 0.38);
+  box-shadow:
+    0 16px 36px rgba(46, 58, 72, 0.13),
+    0 4px 12px rgba(184, 132, 62, 0.10),
+    inset 0 1px 0 rgba(255,255,255,0.96);
+}
+
+:root[data-theme="pearl"] .pp-hist-card-frame {
+  border-color: rgba(99, 123, 150, 0.28);
+  background: rgba(222, 232, 242, 0.72);
+  box-shadow: 0 5px 16px rgba(53, 70, 89, 0.09);
+}
+
+:root[data-theme="pearl"] .pp-poster-placeholder {
+  background:
+    radial-gradient(circle at 50% 36%, rgba(214,179,90,0.24), transparent 38%),
+    linear-gradient(145deg, rgba(250,251,252,0.94), rgba(218,229,241,0.90) 58%, rgba(199,215,231,0.86));
+  color: #9b6a1f;
+}
+
+:root[data-theme="pearl"] .pp-poster-fallback-play {
+  border-color: rgba(166, 113, 31, 0.48);
+  background: rgba(255, 249, 234, 0.68);
+  box-shadow:
+    0 8px 20px rgba(62, 78, 96, 0.14),
+    0 0 18px rgba(184, 132, 62, 0.13),
+    inset 0 1px 0 rgba(255,255,255,0.90);
+}
+
+:root[data-theme="pearl"] .pp-hist-card-index,
+:root[data-theme="pearl"] .pp-thumb-index {
+  border-color: rgba(166, 113, 31, 0.42);
+  background: rgba(255, 250, 238, 0.84);
+  color: #765019;
+  box-shadow: 0 4px 14px rgba(55, 69, 84, 0.13);
+}
+
+:root[data-theme="pearl"] .pp-hist-card-label {
+  color: #3d3a34;
+  font-weight: 700;
+}
+
+:root[data-theme="pearl"] .pp-hist-card:hover .pp-hist-card-label {
+  color: #7b5319;
+}
+
+:root[data-theme="pearl"] .pp-hist-card-meta {
+  color: #746f66;
+}
+
+:root[data-theme="pearl"] .pp-hist-card-status {
+  border-color: rgba(166, 113, 31, 0.28);
+  background: rgba(248, 232, 198, 0.46);
+  color: #765019;
+}
+
+:root[data-theme="pearl"] .pp-hist-card-status--current {
+  border-color: rgba(166, 113, 31, 0.46);
+  background: rgba(224, 194, 129, 0.52);
+  color: #60400f;
 }
 
 :root[data-theme="pearl"] .pp-empty {
